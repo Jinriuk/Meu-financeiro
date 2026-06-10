@@ -6,13 +6,9 @@
 <title>Minhas Finanças</title>
 <meta name="theme-color" content="#16513F" />
 
-<!-- ================================================================= -->
-<!--  CONFIGURAÇÃO: cole aqui os 2 valores do seu projeto Supabase.     -->
-<!--  (Project Settings > Data API > URL  e  anon public key)           -->
-<!-- ================================================================= -->
 <script>
-  window.SUPABASE_URL = "COLE_AQUI_A_URL_DO_PROJETO";
-  window.SUPABASE_ANON_KEY = "COLE_AQUI_A_CHAVE_ANON_PUBLIC";
+  window.SUPABASE_URL = "https://omulvrxwuudfmbsuvcqo.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tdWx2cnh3dXVkZm1ic3V2Y3FvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU4ODEsImV4cCI6MjA5NjY3MTg4MX0.nKPZcF06hlg28snrwtNJw05ObDuIUgbENuGVqwYUDDQ";
 </script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -46,6 +42,7 @@
     .bottomnav{display:none}
     .grid2{grid-template-columns:1fr 1fr}
     main{padding-bottom:30px !important}
+    .mobile-only{display:none !important}
   }
 </style>
 </head>
@@ -87,19 +84,20 @@ function parseValor(s){
   const n=parseFloat(s); return isNaN(n)?0:n;
 }
 
-/* ---------- ícones (svg inline) ---------- */
+/* ---------- ícones ---------- */
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
-const IcoPanel = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
-const IcoSwap = p => <Svg {...p}><path d="M7 10l-3-3 3-3"/><path d="M4 7h13"/><path d="M17 14l3 3-3 3"/><path d="M20 17H7"/></Svg>;
-const IcoCard = p => <Svg {...p}><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></Svg>;
-const IcoTrend = p => <Svg {...p}><path d="M3 17l6-6 4 4 7-7"/><path d="M17 8h4v4"/></Svg>;
+const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
+const IcoSwap   = p => <Svg {...p}><path d="M7 10l-3-3 3-3"/><path d="M4 7h13"/><path d="M17 14l3 3-3 3"/><path d="M20 17H7"/></Svg>;
+const IcoCard   = p => <Svg {...p}><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></Svg>;
+const IcoTrend  = p => <Svg {...p}><path d="M3 17l6-6 4 4 7-7"/><path d="M17 8h4v4"/></Svg>;
 const IcoWallet = p => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v10a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H5"/><circle cx="17" cy="13" r="1.3" fill="currentColor" stroke="none"/></Svg>;
-const IcoPlus = p => <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
-const IcoTrash = p => <Svg {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></Svg>;
-const IcoX = p => <Svg {...p}><path d="M6 6l12 12M18 6L6 18"/></Svg>;
+const IcoPlus   = p => <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
+const IcoTrash  = p => <Svg {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></Svg>;
+const IcoX      = p => <Svg {...p}><path d="M6 6l12 12M18 6L6 18"/></Svg>;
 const IcoPencil = p => <Svg {...p}><path d="M16 3l5 5L8 21H3v-5L16 3z"/></Svg>;
-const IcoUp = p => <Svg {...p}><path d="M7 17L17 7M7 7h10v10"/></Svg>;
-const IcoDown = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
+const IcoUp     = p => <Svg {...p}><path d="M7 17L17 7M7 7h10v10"/></Svg>;
+const IcoDown   = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
+const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
 
 /* ---------- componentes base ---------- */
 const Card = ({children,style}) => <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
@@ -152,12 +150,27 @@ function Bars({data}){
     </div>
   </div>;
 }
-function Row({left,right,onDelete}){
-  return <div style={{display:'flex',alignItems:'center',gap:12,padding:'13px 4px',borderBottom:`1px solid ${C.border}`}}>
-    <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>{left}</div>{right}
-    <button onClick={onDelete} aria-label="Remover" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoTrash s={17}/></button>
-  </div>;
+
+/* ---------- Row com confirmação de exclusão inline ---------- */
+function Row({left,right,onDelete,onEdit}){
+  const [confirming,setConfirming]=useState(false);
+  if(confirming) return (
+    <div style={{display:'flex',alignItems:'center',gap:8,padding:'13px 4px',borderBottom:`1px solid ${C.border}`}}>
+      <div style={{flex:1,fontSize:14,fontWeight:600,color:C.ink}}>Remover este item?</div>
+      <button onClick={()=>{setConfirming(false);onDelete();}} style={{padding:'7px 18px',borderRadius:10,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Sim</button>
+      <button onClick={()=>setConfirming(false)} style={{padding:'7px 18px',borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}>Não</button>
+    </div>
+  );
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:8,padding:'13px 4px',borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>{left}</div>
+      {right}
+      {onEdit&&<button onClick={onEdit} aria-label="Editar" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={16}/></button>}
+      <button onClick={()=>setConfirming(true)} aria-label="Remover" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoTrash s={17}/></button>
+    </div>
+  );
 }
+
 function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
   return <Card style={{padding:20}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:12}}>
@@ -168,48 +181,96 @@ function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
   </Card>;
 }
 
-/* ---------- modal de adicionar ---------- */
+/* ---------- estilos de input ---------- */
 const inputStyle={width:'100%',padding:'13px 14px',borderRadius:13,border:`1.5px solid ${C.border}`,background:C.warm,color:C.ink,fontSize:16,outline:'none',fontWeight:600};
 const labelStyle={fontSize:11.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:C.gold,marginBottom:7,display:'block'};
+
 function Select({value,onChange,opts}){
   return <div style={{position:'relative'}}>
     <select style={inputStyle} value={value} onChange={onChange}>{opts.map(o=><option key={o}>{o}</option>)}</select>
     <span style={{position:'absolute',right:14,top:16,pointerEvents:'none',color:C.inkSoft}}>▾</span>
   </div>;
 }
-function AddModal({type,onClose,onSave,accounts}){
-  const isTx=type==='tx', isCard=type==='card', isInv=type==='inv';
-  const [kind,setKind]=useState('saida');
-  const [f,setF]=useState({date:todayISO(),desc:'',value:'',cat:SAIDA_CATS[0],acc:accounts[0],name:'',inst:accounts[0]});
-  const set=(k,v)=>setF(p=>({...p,[k]:v}));
-  const cats = isTx && kind==='entrada' ? ENTRADA_CATS : SAIDA_CATS;
-  const title = isTx?'Novo lançamento':isCard?'Nova compra no cartão':'Nova aplicação';
-  const save=()=>{
-    const value=parseValor(f.value);
-    if(isInv){ if(!f.name||value<=0) return; onSave({name:f.name,institution:f.inst,value}); }
-    else if(isCard){ if(!f.desc||value<=0) return; onSave({date:f.date,description:f.desc,category:f.cat,value}); }
-    else { if(!f.desc||value<=0) return; onSave({date:f.date,description:f.desc,category:f.cat,account:f.acc,type:kind,value}); }
-  };
-  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-    <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
-        <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
-        <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        {isTx&&<div style={{display:'flex',gap:8}}>{['entrada','saida'].map(k=>
-          <button key={k} onClick={()=>{setKind(k);set('cat',(k==='entrada'?ENTRADA_CATS:SAIDA_CATS)[0]);}} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',cursor:'pointer',fontWeight:700,fontSize:15,background:kind===k?(k==='entrada'?C.greenMid:C.red):C.bg,color:kind===k?'#fff':C.inkSoft}}>{k==='entrada'?'Entrou':'Saiu'}</button>)}</div>}
-        {isInv
-          ? <div><label style={labelStyle}>Nome da aplicação</label><input style={inputStyle} value={f.name} placeholder="Ex: Tesouro Selic" onChange={e=>set('name',e.target.value)}/></div>
-          : <div><label style={labelStyle}>Descrição</label><input style={inputStyle} value={f.desc} placeholder="Ex: Mercado, Salário..." onChange={e=>set('desc',e.target.value)}/></div>}
-        <div><label style={labelStyle}>Valor (R$)</label><input style={{...inputStyle,fontSize:22,fontFamily:"'Fraunces',serif"}} inputMode="decimal" value={f.value} placeholder="0,00" onChange={e=>set('value',e.target.value)}/></div>
-        {!isInv&&<div><label style={labelStyle}>Categoria</label><Select value={f.cat} onChange={e=>set('cat',e.target.value)} opts={cats}/></div>}
-        {(isTx||isInv)&&<div><label style={labelStyle}>{isInv?'Onde está guardado':'Conta'}</label><Select value={isInv?f.inst:f.acc} onChange={e=>set(isInv?'inst':'acc',e.target.value)} opts={accounts}/></div>}
-        {!isInv&&<div><label style={labelStyle}>Data</label><input type="date" style={inputStyle} value={f.date} onChange={e=>set('date',e.target.value)}/></div>}
-        <button onClick={save} style={{marginTop:4,padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
+
+/* ---------- modal rápido: saldo e limite ---------- */
+function QuickEditModal({label,hint,currentValue,onClose,onSave}){
+  const [val,setVal]=useState(String(currentValue||0).replace('.',','));
+  const save=()=>{ const n=parseValor(val); if(n>=0) onSave(n); };
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
+          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
+        <input style={{...inputStyle,fontSize:24,fontFamily:"'Fraunces',serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>
+        <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
       </div>
     </div>
-  </div>;
+  );
+}
+
+/* ---------- modal adicionar / editar ---------- */
+function AddModal({type,onClose,onSave,onEdit,accounts,editing}){
+  const isTx=type==='tx', isCard=type==='card', isInv=type==='inv';
+  const isEditing=!!editing;
+  const [kind,setKind]=useState(editing?.type||'saida');
+  const initCat=editing?.category||(editing?.type==='entrada'?ENTRADA_CATS[0]:SAIDA_CATS[0]);
+  const [f,setF]=useState({
+    date:editing?.date||todayISO(),
+    desc:editing?.description||'',
+    value:editing?.value!=null?String(editing.value).replace('.',','):'',
+    cat:initCat,
+    acc:editing?.account||(accounts[0]||'Nubank'),
+    name:editing?.name||'',
+    inst:editing?.institution||(accounts[0]||'Nubank'),
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const cats = isTx && kind==='entrada' ? ENTRADA_CATS : SAIDA_CATS;
+  const title = isEditing
+    ? (isTx?'Editar lançamento':isCard?'Editar compra':'Editar aplicação')
+    : (isTx?'Novo lançamento':isCard?'Nova compra no cartão':'Nova aplicação');
+
+  const save=()=>{
+    const value=parseValor(f.value);
+    if(isInv){
+      if(!f.name||value<=0) return;
+      const d={name:f.name,institution:f.inst,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    } else if(isCard){
+      if(!f.desc||value<=0) return;
+      const d={date:f.date,description:f.desc,category:f.cat,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    } else {
+      if(!f.desc||value<=0) return;
+      const d={date:f.date,description:f.desc,category:f.cat,account:f.acc,type:kind,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
+          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {isTx&&<div style={{display:'flex',gap:8}}>{['entrada','saida'].map(k=>
+            <button key={k} onClick={()=>{setKind(k);set('cat',(k==='entrada'?ENTRADA_CATS:SAIDA_CATS)[0]);}} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',cursor:'pointer',fontWeight:700,fontSize:15,background:kind===k?(k==='entrada'?C.greenMid:C.red):C.bg,color:kind===k?'#fff':C.inkSoft}}>{k==='entrada'?'Entrou':'Saiu'}</button>)}</div>}
+          {isInv
+            ? <div><label style={labelStyle}>Nome da aplicação</label><input style={inputStyle} value={f.name} placeholder="Ex: Tesouro Selic" onChange={e=>set('name',e.target.value)}/></div>
+            : <div><label style={labelStyle}>Descrição</label><input style={inputStyle} value={f.desc} placeholder="Ex: Mercado, Salário..." onChange={e=>set('desc',e.target.value)}/></div>}
+          <div><label style={labelStyle}>Valor (R$)</label><input style={{...inputStyle,fontSize:22,fontFamily:"'Fraunces',serif"}} inputMode="decimal" value={f.value} placeholder="0,00" onChange={e=>set('value',e.target.value)}/></div>
+          {!isInv&&<div><label style={labelStyle}>Categoria</label><Select value={f.cat} onChange={e=>set('cat',e.target.value)} opts={cats}/></div>}
+          {(isTx||isInv)&&<div><label style={labelStyle}>{isInv?'Onde está guardado':'Conta'}</label><Select value={isInv?f.inst:f.acc} onChange={e=>set(isInv?'inst':'acc',e.target.value)} opts={accounts.length?accounts:['Nubank','Santander','Mercado Pago']}/></div>}
+          {!isInv&&<div><label style={labelStyle}>Data</label><input type="date" style={inputStyle} value={f.date} onChange={e=>set('date',e.target.value)}/></div>}
+          <button onClick={save} style={{marginTop:4,padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>{isEditing?'Salvar alterações':'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ---------- tela de login ---------- */
@@ -241,14 +302,14 @@ function NotConfigured(){
     <Card style={{padding:30,maxWidth:460}}>
       <div style={{display:'flex',justifyContent:'center',marginBottom:16}}><Brand/></div>
       <h3 style={{fontFamily:"'Fraunces',serif",margin:'0 0 8px'}}>Falta conectar o banco de dados</h3>
-      <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra este arquivo e cole a <b>URL</b> e a <b>chave anon</b> do seu projeto Supabase no topo (bloco de configuração). Depois é só recarregar. O passo a passo está no arquivo <b>COMO-SUBIR.md</b>.</p>
+      <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra este arquivo e cole a <b>URL</b> e a <b>chave anon</b> do seu projeto Supabase no topo (bloco de configuração). Depois é só recarregar.</p>
     </Card>
   </div>;
 }
 
-/* ---------- app principal ---------- */
+/* ---------- dashboard ---------- */
 function Dashboard({session}){
-  const [accounts,setAccounts]=useState([]);   // [{id,name,opening_balance,sort}]
+  const [accounts,setAccounts]=useState([]);
   const [tx,setTx]=useState([]);
   const [card,setCard]=useState([]);
   const [inv,setInv]=useState([]);
@@ -256,6 +317,8 @@ function Dashboard({session}){
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState('painel');
   const [modal,setModal]=useState(null);
+  const [editing,setEditing]=useState(null);
+  const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
 
   useEffect(()=>{(async()=>{
@@ -285,50 +348,67 @@ function Dashboard({session}){
     return m;
   },[accounts,tx]);
   const totalBalance = Object.values(balances).reduce((s,v)=>s+v,0);
-  const monthTx = tx.filter(t=>mKey(t.date)===month);
-  const entrou = monthTx.filter(t=>t.type==='entrada').reduce((s,t)=>s+Number(t.value),0);
-  const saiu = monthTx.filter(t=>t.type==='saida').reduce((s,t)=>s+Number(t.value),0);
+  const monthTx   = tx.filter(t=>mKey(t.date)===month);
+  const entrou    = monthTx.filter(t=>t.type==='entrada').reduce((s,t)=>s+Number(t.value),0);
+  const saiu      = monthTx.filter(t=>t.type==='saida').reduce((s,t)=>s+Number(t.value),0);
   const monthCard = card.filter(c=>mKey(c.date)===month);
-  const cardUsed = monthCard.reduce((s,c)=>s+Number(c.value),0);
-  const cardPct = Math.min(100,Math.round((cardUsed/(limit||1))*100));
+  const cardUsed  = monthCard.reduce((s,c)=>s+Number(c.value),0);
+  const cardPct   = Math.min(100,Math.round((cardUsed/(limit||1))*100));
   const cardColor = cardPct>=80?C.red:cardPct>=50?C.gold:C.greenMid;
-  const invTotal = inv.reduce((s,i)=>s+Number(i.value),0);
+  const invTotal  = inv.reduce((s,i)=>s+Number(i.value),0);
   const byCat = useMemo(()=>{
     const m={}; monthTx.filter(t=>t.type==='saida').forEach(t=>{m[t.category]=(m[t.category]||0)+Number(t.value);});
     return Object.entries(m).map(([name,value])=>({name,value,color:CAT_COLORS[name]||'#9A8E78'})).sort((a,b)=>b.value-a.value);
   },[monthTx]);
   const months = useMemo(()=>{ const s=new Set([...tx,...card].map(r=>mKey(r.date))); s.add(todayISO().slice(0,7)); return [...s].sort(); },[tx,card]);
-  const trend = useMemo(()=>months.slice(-6).map(k=>({
+  const trend  = useMemo(()=>months.slice(-6).map(k=>({
     mes:mShort(k),
     Entrou:tx.filter(t=>mKey(t.date)===k&&t.type==='entrada').reduce((s,t)=>s+Number(t.value),0),
     Saiu:tx.filter(t=>mKey(t.date)===k&&t.type==='saida').reduce((s,t)=>s+Number(t.value),0),
   })),[tx,months]);
   const monthIdx = months.indexOf(month);
-  const goMonth = d=>{const i=monthIdx+d; if(i>=0&&i<months.length)setMonth(months[i]);};
+  const goMonth  = d=>{const i=monthIdx+d; if(i>=0&&i<months.length)setMonth(months[i]);};
 
   /* CRUD */
   const add = async (table,data,setter,list)=>{
     const {data:row,error}=await sb.from(table).insert(data).select().single();
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
-    setter([row,...list]);
-    setModal(null);
+    setter([row,...list]); setModal(null);
   };
   const del = async (table,id,setter,list)=>{
-    if(!confirm('Remover este item?'))return;
     const {error}=await sb.from(table).delete().eq('id',id);
     if(error){alert('Não consegui remover.');console.error(error);return;}
     setter(list.filter(x=>x.id!==id));
   };
-  const editLimit = async ()=>{
-    const v=prompt('Novo limite do cartão (R$):',limit); if(v===null)return;
-    const nv=Math.max(0,parseValor(v)); setLimit(nv);
-    await sb.from('settings').upsert({user_id:session.user.id,card_limit:nv});
+  const update = async (table,newData,setter,list)=>{
+    const {id,user_id,created_at,...payload}=newData;
+    const {data:updated,error}=await sb.from(table).update(payload).eq('id',id).select().single();
+    if(error){alert('Não consegui atualizar. Tente de novo.');console.error(error);return;}
+    setter(list.map(x=>x.id===id?updated:x)); setEditing(null);
   };
-  const editOpening = async (acc)=>{
-    const v=prompt(`Saldo atual de ${acc.name} (R$):`, acc.opening_balance); if(v===null)return;
-    const nv=parseValor(v);
-    setAccounts(accounts.map(a=>a.id===acc.id?{...a,opening_balance:nv}:a));
-    await sb.from('accounts').update({opening_balance:nv}).eq('id',acc.id);
+
+  const editLimit = ()=>{
+    setQuickEdit({
+      label:'Limite do cartão',
+      hint:'Digite o limite total do seu cartão de crédito.',
+      current:limit,
+      onSave:async nv=>{
+        setLimit(nv); setQuickEdit(null);
+        await sb.from('settings').upsert({user_id:session.user.id,card_limit:nv});
+      }
+    });
+  };
+  const editOpening = acc=>{
+    setQuickEdit({
+      label:`Saldo de ${acc.name}`,
+      hint:'Informe o saldo inicial da conta. Os lançamentos cadastrados serão somados a este valor.',
+      current:acc.opening_balance,
+      onSave:async nv=>{
+        setAccounts(accounts.map(a=>a.id===acc.id?{...a,opening_balance:nv}:a));
+        setQuickEdit(null);
+        await sb.from('accounts').update({opening_balance:nv}).eq('id',acc.id);
+      }
+    });
   };
 
   const nav=[{id:'painel',label:'Painel',Icon:IcoPanel},{id:'lancamentos',label:'Lançamentos',Icon:IcoSwap},{id:'cartao',label:'Cartão',Icon:IcoCard},{id:'investimentos',label:'Investir',Icon:IcoTrend}];
@@ -336,6 +416,7 @@ function Dashboard({session}){
   if(loading) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
   return <div className="wrap">
+    {/* sidebar desktop */}
     <aside className="side" style={{flexDirection:'column',width:250,padding:22,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:8}}>
       <Brand/><div style={{height:8}}/>
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)}/>)}
@@ -349,15 +430,21 @@ function Dashboard({session}){
     </aside>
 
     <main style={{flex:1,padding:'22px 18px 110px',maxWidth:'100%'}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}} className="side-hide">
-        <div className="bottomnav" style={{display:'flex'}}><Brand small/></div>
+      {/* cabeçalho mobile */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+        <div className="bottomnav"><Brand small/></div>
+        <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}>
+          <IcoLogout s={16}/>Sair
+        </button>
       </div>
 
+      {/* navegação de mês */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:22,gap:12}}>
         <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Você está vendo</div><div style={{fontFamily:"'Fraunces',serif",fontSize:27,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
         <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=months.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
       </div>
 
+      {/* painel */}
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:C.green,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoWallet s={17}/>Saldo total nas contas</div>
@@ -406,12 +493,18 @@ function Dashboard({session}){
         </div>
       </div>}
 
-      {view==='lancamentos'&&<div className="ftfade"><ListView title="Lançamentos do mês" subtitle="Tudo que entrou e saiu das contas" onAdd={()=>setModal('tx')} rows={monthTx} empty="Nenhum lançamento neste mês. Toque em Adicionar."
-        renderRow={t=><Row key={t.id} onDelete={()=>del('transactions',t.id,setTx,tx)}
-          left={<><span style={{width:40,height:40,borderRadius:12,background:t.type==='entrada'?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:t.type==='entrada'?C.greenMid:C.red}}>{t.type==='entrada'?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
-            <div><div style={{fontWeight:700,fontSize:15.5}}>{t.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(t.date)} · {t.category} · <span style={{color:BANKS[t.account]||C.inkSoft,fontWeight:700}}>{t.account}</span></div></div></>}
-          right={<span style={{fontWeight:800,fontSize:16,color:t.type==='entrada'?C.greenMid:C.red}}>{t.type==='entrada'?'+':'-'}{fmt(t.value)}</span>}/>}/></div>}
+      {/* lançamentos */}
+      {view==='lancamentos'&&<div className="ftfade">
+        <ListView title="Lançamentos do mês" subtitle="Tudo que entrou e saiu das contas" onAdd={()=>setModal('tx')} rows={monthTx} empty="Nenhum lançamento neste mês. Toque em Adicionar."
+          renderRow={t=><Row key={t.id}
+            onDelete={()=>del('transactions',t.id,setTx,tx)}
+            onEdit={()=>setEditing({type:'tx',item:t})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:t.type==='entrada'?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:t.type==='entrada'?C.greenMid:C.red}}>{t.type==='entrada'?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
+              <div><div style={{fontWeight:700,fontSize:15.5}}>{t.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(t.date)} · {t.category} · <span style={{color:BANKS[t.account]||C.inkSoft,fontWeight:700}}>{t.account}</span></div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:t.type==='entrada'?C.greenMid:C.red,flexShrink:0}}>{t.type==='entrada'?'+':'-'}{fmt(t.value)}</span>}/>}/>
+      </div>}
 
+      {/* cartão */}
       {view==='cartao'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:`linear-gradient(135deg,${C.green},#0E3A2C)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -423,26 +516,50 @@ function Dashboard({session}){
           <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}><span>{cardPct}% do limite</span><span>{fmt(Math.max(0,limit-cardUsed))} disponível</span></div>
         </Card>
         <ListView title="Compras no cartão" onAdd={()=>setModal('card')} rows={monthCard} empty="Nenhuma compra no cartão neste mês."
-          renderRow={c=><Row key={c.id} onDelete={()=>del('card_purchases',c.id,setCard,card)}
+          renderRow={c=><Row key={c.id}
+            onDelete={()=>del('card_purchases',c.id,setCard,card)}
+            onEdit={()=>setEditing({type:'card',item:c})}
             left={<><span style={{width:40,height:40,borderRadius:12,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoCard s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{c.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(c.date)} · {c.category}</div></div></>}
-            right={<span style={{fontWeight:800,fontSize:16,color:C.ink}}>{fmt(c.value)}</span>}/>}/>
+            right={<span style={{fontWeight:800,fontSize:16,color:C.ink,flexShrink:0}}>{fmt(c.value)}</span>}/>}/>
       </div>}
 
+      {/* investimentos */}
       {view==='investimentos'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-        <Card style={{padding:22}}><div style={{fontWeight:700,color:C.inkSoft,fontSize:14}}>Total guardado e investido</div><div style={{fontFamily:"'Fraunces',serif",fontSize:38,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div></Card>
+        <Card style={{padding:22}}>
+          <div style={{fontWeight:700,color:C.inkSoft,fontSize:14}}>Total guardado e investido</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:38,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div>
+        </Card>
         <ListView title="Suas aplicações" onAdd={()=>setModal('inv')} rows={inv} empty="Nenhuma aplicação cadastrada."
-          renderRow={i=><Row key={i.id} onDelete={()=>del('investments',i.id,setInv,inv)}
+          renderRow={i=><Row key={i.id}
+            onDelete={()=>del('investments',i.id,setInv,inv)}
+            onEdit={()=>setEditing({type:'inv',item:i})}
             left={<><span style={{width:40,height:40,borderRadius:12,background:C.greenSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.greenMid}}><IcoTrend s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{i.name}</div><div style={{fontSize:12.5,color:C.inkSoft}}>em <span style={{color:BANKS[i.institution]||C.inkSoft,fontWeight:700}}>{i.institution}</span></div></div></>}
-            right={<span style={{fontWeight:800,fontSize:16,color:C.green}}>{fmt(i.value)}</span>}/>}/>
+            right={<span style={{fontWeight:800,fontSize:16,color:C.green,flexShrink:0}}>{fmt(i.value)}</span>}/>}/>
       </div>}
     </main>
 
+    {/* navegação mobile */}
     <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 10px calc(6px + env(safe-area-inset-bottom))',gap:4,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)} mobile/>)}
     </nav>
 
-    {modal&&<AddModal type={modal} onClose={()=>setModal(null)} accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
+    {/* modal novo item */}
+    {modal&&<AddModal type={modal} onClose={()=>setModal(null)}
+      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
       onSave={d=>{ if(modal==='tx')add('transactions',d,setTx,tx); if(modal==='card')add('card_purchases',d,setCard,card); if(modal==='inv')add('investments',d,setInv,inv); }}/>}
+
+    {/* modal editar item */}
+    {editing&&<AddModal type={editing.type} editing={editing.item} onClose={()=>setEditing(null)}
+      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
+      onEdit={d=>{ if(editing.type==='tx')update('transactions',d,setTx,tx); if(editing.type==='card')update('card_purchases',d,setCard,card); if(editing.type==='inv')update('investments',d,setInv,inv); }}/>}
+
+    {/* modal saldo / limite */}
+    {quickEdit&&<QuickEditModal
+      label={quickEdit.label}
+      hint={quickEdit.hint}
+      currentValue={quickEdit.current}
+      onClose={()=>setQuickEdit(null)}
+      onSave={quickEdit.onSave}/>}
   </div>;
 }
 
