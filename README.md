@@ -12,7 +12,8 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 
 ## Como funciona a regra da pool (resumo)
 
-- **Diário** é a fonte da verdade: você digita o saldo inicial e o saldo final que vê no site; o resultado do dia é calculado (`saldo_final + saque − saldo_inicial − depósito`).
+- **Torneio é a fonte da verdade**: você lança cada torneio (com o jogador, buy-in, re-entries e premiação) e o app monta sozinho o resultado de cada jogador por dia — `resultado = Σ (prêmio − buy-in×(1+re-entries))`. O **Diário** é um resumo automático por jogador/dia (dá pra abrir e corrigir editando os torneios).
+- Na aba **Torneios**, em cima fica **"Hoje"** (lançamento do dia + placar por jogador) e embaixo os **dias anteriores** como relatórios recolhidos — nada é apagado, só sai da lista de trabalho quando o dia vira.
 - A semana **fecha no domingo**. Para cada jogador, o resultado da semana abate o **make-up** acumulado; só o que sobra vira **lucro divisível**, dividido pelo `player_pct` (padrão 50/50) entre jogador e pool.
 - Só há **saque autorizado** quando o make-up zera **e** a banca continua acima do **piso mínimo**.
 - **ABI/grade**: um dia fica "FORA DA GRADE" se o maior buy-in passou do `abi_max`; "ATENÇÃO" se o ABI médio chegou perto do máximo.
