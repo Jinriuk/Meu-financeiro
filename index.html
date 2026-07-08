@@ -98,6 +98,20 @@ function weekEnding(dateStr){
 /* ---------- regras de negócio (seção 4) ---------- */
 // saque pago precisa casar com a semana do cálculo: qualquer data vira o domingo que fecha aquela semana
 const normalizeRow = (type,d) => type==='wd' && d.week_ending_date ? {...d, week_ending_date: weekEnding(d.week_ending_date)} : d;
+
+/* ---------- backup CSV (separador ; e BOM pra abrir certo no Excel pt-BR) ---------- */
+function toCSV(rows){
+  if(!rows.length) return '';
+  const cols=Object.keys(rows[0]);
+  const esc=v=>{ if(v==null) v=''; if(Array.isArray(v)) v=v.join(', '); v=String(v); return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  return [cols.join(';'), ...rows.map(r=>cols.map(c=>esc(r[c])).join(';'))].join('\n');
+}
+function downloadCSV(name,rows){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+toCSV(rows)],{type:'text/csv;charset=utf-8'}));
+  a.download=`${name}-${todayISO()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
 const resultadoDia = e => num(e.saldo_final)+num(e.saque)-num(e.saldo_inicial)-num(e.deposito);
 const abiMedioDia  = e => num(e.qtd_torneios)>0 ? num(e.total_buyins)/num(e.qtd_torneios) : 0;
 function gradeStatus(e, abiMax){
@@ -441,6 +455,25 @@ function Dashboard({session}){
     }catch(e){ console.error(e); }
     setLoading(false);
   })();},[]);
+
+  /* tempo real: o lançamento de um jogador aparece na hora pro outro */
+  useEffect(()=>{
+    if(!sb.channel) return;
+    const apply=setter=>p=>setter(list=>{
+      if(p.eventType==='INSERT') return list.some(x=>x.id===p.new.id)?list:[p.new,...list];
+      if(p.eventType==='UPDATE') return list.map(x=>x.id===p.new.id?p.new:x);
+      if(p.eventType==='DELETE') return list.filter(x=>x.id!==p.old.id);
+      return list;
+    });
+    const ch=sb.channel('pool-sync')
+      .on('postgres_changes',{event:'*',schema:'public',table:'daily_entries'},apply(setDaily))
+      .on('postgres_changes',{event:'*',schema:'public',table:'tournaments'},apply(setTours))
+      .on('postgres_changes',{event:'*',schema:'public',table:'bankroll_ledger'},apply(setLedger))
+      .on('postgres_changes',{event:'*',schema:'public',table:'withdrawals'},apply(setWds))
+      .on('postgres_changes',{event:'*',schema:'public',table:'pool_config'},p=>{ if(p.new&&p.new.id) setConfig(prev=>prev&&prev.id===p.new.id?p.new:prev); })
+      .subscribe();
+    return ()=>{ sb.removeChannel(ch); };
+  },[]);
 
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table,data,setter,list)=>{
@@ -804,6 +837,14 @@ function Dashboard({session}){
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
             <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>saveConfig({[row.key]:nv})})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
           </div>)}
+        </Card>
+        <Card style={{padding:20,marginTop:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Backup (CSV)</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Baixa os dados brutos pra guardar. Abre direto no Excel/Planilhas.</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {[['Diário',daily,'diario'],['Torneios',tours,'torneios'],['Banca',ledger,'banca'],['Saques',wds,'saques'],['Configurações',config?[config]:[],'config']].map(([label,rows,file])=>
+              <button key={file} disabled={!rows.length} onClick={()=>downloadCSV(`pool-${file}`,rows)} style={{padding:'10px 16px',borderRadius:12,border:`1px solid ${C.border}`,background:rows.length?C.surface:C.bg,color:rows.length?P:'#C3BBA9',fontWeight:700,fontSize:13.5,cursor:rows.length?'pointer':'default'}}>{label} ({rows.length})</button>)}
+          </div>
         </Card>
       </div>}
     </main>

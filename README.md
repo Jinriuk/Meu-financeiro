@@ -17,6 +17,8 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 - Só há **saque autorizado** quando o make-up zera **e** a banca continua acima do **piso mínimo**.
 - **ABI/grade**: um dia fica "FORA DA GRADE" se o maior buy-in passou do `abi_max`; "ATENÇÃO" se o ABI médio chegou perto do máximo.
 - Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
+- **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
+- **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.
 
 ## Telas
 
