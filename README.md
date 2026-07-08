@@ -19,6 +19,7 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 - Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
 - **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
 - **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.
+- **Login flexível**: entra com **e-mail, nickname ou CPF**. No primeiro acesso o app força a troca da senha padrão e completa o cadastro (nickname/CPF) — tabela `player_profiles` + função `email_for_login`.
 
 ## Telas
 
