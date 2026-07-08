@@ -566,7 +566,12 @@ function Dashboard({session}){
   const modalidades=(config.modalidades_permitidas&&config.modalidades_permitidas.length)?config.modalidades_permitidas:['MTT','Spin','Cash','Sit & Go'];
   const CURWK=weekEnding(todayISO());
 
-  const bancaAtual = num(config.banca_inicial)+ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
+  /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
+     (atualiza sozinha a cada lançamento do Diário; saque de jogador entra pela aba Saques) */
+  const resultadosTotal = daily.reduce((s,e)=>s+resultadoDia(e),0);
+  const movimentosTotal = ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
+  const sacadoTotal = wds.reduce((s,w)=>s+num(w.valor_sacado),0);
+  const bancaAtual = num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal;
   const curMakeUp={}, curWeek={};
   players.forEach(p=>{const arr=weeksByPlayer[p]||[]; curMakeUp[p]=arr.length?arr[arr.length-1].makeFinal:(makeInit[p]||0); curWeek[p]=arr.find(w=>w.week===CURWK)||null;});
   const valorSacadoFor=(week,player)=>wds.filter(w=>w.week_ending_date===week&&w.player===player).reduce((s,w)=>s+num(w.valor_sacado),0);
@@ -574,7 +579,14 @@ function Dashboard({session}){
   const allWeeks=[...new Set(players.flatMap(p=>(weeksByPlayer[p]||[]).map(w=>w.week)))].sort();
 
   const lucroPoolAcum = players.reduce((s,p)=>s+(weeksByPlayer[p]||[]).reduce((a,w)=>a+w.partePool,0),0);
-  const totalPago = wds.reduce((s,w)=>s+num(w.valor_sacado),0);
+  const totalPago = sacadoTotal;
+  /* a receber por jogador = tudo que já foi autorizado nas semanas − o que já foi pago */
+  const aReceber={};
+  players.forEach(p=>{
+    const aut=(weeksByPlayer[p]||[]).reduce((s,w)=>s+w.saqueAut,0);
+    const pago=wds.filter(w=>w.player===p).reduce((s,w)=>s+num(w.valor_sacado),0);
+    aReceber[p]=Math.max(0,aut-pago);
+  });
   const resSemanaAtual = players.reduce((s,p)=>s+(curWeek[p]?curWeek[p].resultado:0),0);
   const makeUpTotal = players.reduce((s,p)=>s+curMakeUp[p],0);
   const saqueAutTotal = players.reduce((s,p)=>{ const w=curWeek[p]; if(!w||w.saqueAut===0||w.makeFinal>0) return s; if(bancaAtual-w.saqueAut<piso) return s; return s+w.saqueAut; },0);
@@ -595,9 +607,18 @@ function Dashboard({session}){
   const makeChart=chartWeeks.map(wk=>({label:dLabel(wk),vals:players.map(p=>makeUpAt(p,wk))}));
   const volWeeks=[...new Set(daily.map(e=>weekEnding(e.entry_date)))].sort().slice(-8);
   const volChart=volWeeks.map(wk=>({label:dLabel(wk),vals:[daily.filter(e=>weekEnding(e.entry_date)===wk).reduce((s,e)=>s+num(e.qtd_torneios),0)]}));
-  const bankWeeks=[...new Set(ledger.map(l=>weekEnding(l.entry_date)))].sort();
+  const bankWeeks=[...new Set([
+    ...daily.map(e=>weekEnding(e.entry_date)),
+    ...ledger.map(l=>weekEnding(l.entry_date)),
+    ...wds.map(w=>weekEnding(w.week_ending_date)),
+  ])].sort();
   let runBanca=num(config.banca_inicial);
-  const bancaChart=[{label:'Início',value:runBanca}].concat(bankWeeks.map(wk=>{ runBanca+=ledger.filter(l=>weekEnding(l.entry_date)===wk).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return {label:dLabel(wk),value:runBanca}; })).slice(-9);
+  const bancaChart=[{label:'Início',value:runBanca}].concat(bankWeeks.map(wk=>{
+    runBanca+=daily.filter(e=>weekEnding(e.entry_date)===wk).reduce((s,e)=>s+resultadoDia(e),0);
+    runBanca+=ledger.filter(l=>weekEnding(l.entry_date)===wk).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
+    runBanca-=wds.filter(w=>weekEnding(w.week_ending_date)===wk).reduce((s,w)=>s+num(w.valor_sacado),0);
+    return {label:dLabel(wk),value:runBanca};
+  })).slice(-9);
 
   /* schemas de campos p/ AddModal */
   const FIELDS={
@@ -705,7 +726,13 @@ function Dashboard({session}){
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca central da pool</div>
           <div style={{fontFamily:"'Fraunces',serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
-          <div style={{marginTop:14}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
+          <div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
+            <span>Inicial {fmt(config.banca_inicial)}</span>
+            <span>Jogos {resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</span>
+            {movimentosTotal!==0&&<span>Aportes {movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</span>}
+            {sacadoTotal>0&&<span>Saques −{fmt(sacadoTotal)}</span>}
+          </div>
+          <div style={{marginTop:12}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
           <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}>
             <span>Piso mínimo {fmt(piso)}</span>
             <span>{bancaAtual>=piso?`${fmt(bancaAtual-piso)} acima do piso`:'abaixo do piso!'}</span>
@@ -725,6 +752,21 @@ function Dashboard({session}){
           <Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro da pool (acum.)" value={fmt(lucroPoolAcum)} sub={`pago em saques: ${fmt(totalPago)}`}/>
         </div>
+
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool.</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+            {players.map((p,i)=><div key={p} style={{padding:14,borderRadius:14,background:C.plumSoft}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12.5,color:P,fontWeight:700}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>A receber · {p}</div>
+              <div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:P,marginTop:4}}>{fmt(aReceber[p])}</div>
+            </div>)}
+            <div style={{padding:14,borderRadius:14,background:C.greenSoft}}>
+              <div style={{fontSize:12.5,color:C.green,fontWeight:700}}>Fica na banca (pool)</div>
+              <div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
+            </div>
+          </div>
+        </Card>
 
         <div className="grid2">
           <Card style={{padding:20}}>
@@ -831,7 +873,10 @@ function Dashboard({session}){
       {view==='saques'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Saques por semana</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:8}}>O valor autorizado vem do cálculo semanal. Registre aqui só o que foi <b>realmente pago</b>.</div>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>O valor autorizado vem do cálculo semanal. Registre aqui só o que foi <b>realmente pago</b> — o valor sai da banca sozinho.</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+            {players.map((p,i)=><span key={p} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:700,fontSize:12.5}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>{p} tem {fmt(aReceber[p])} a receber</span>)}
+          </div>
           {(()=>{ const rows=players.flatMap(p=>(weeksByPlayer[p]||[]).map(w=>({w,p,vs:valorSacadoFor(w.week,p)}))).filter(x=>x.w.saqueAut>0||x.vs>0).sort((a,b)=>a.w.week<b.w.week?1:-1);
             return rows.length?rows.map(({w,p,vs})=>{const st=saqueStatus(w,bancaAtual,piso,vs); const podePagar=st==='Autorizado'||st==='Parcialmente autorizado'; return <div key={w.week+p} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(p),flexShrink:0}}/>
@@ -856,11 +901,16 @@ function Dashboard({session}){
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca atual</div>
           <div style={{fontFamily:"'Fraunces',serif",fontSize:40,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
           <div style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
-            {WALLETS.map(wl=>{const net=ledger.filter(l=>l.wallet===wl).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return <div key={wl}><div style={{fontSize:12.5,opacity:.85}}>{wl}</div><div style={{fontWeight:700,fontSize:15}}>{fmt(net)}</div></div>;})}
             <div><div style={{fontSize:12.5,opacity:.85}}>Banca inicial</div><div style={{fontWeight:700,fontSize:15}}>{fmt(config.banca_inicial)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Aportes/movimentos</div><div style={{fontWeight:700,fontSize:15}}>{movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(sacadoTotal)}</div></div>
           </div>
+          {ledger.length>0&&<div style={{display:'flex',gap:18,marginTop:12,flexWrap:'wrap',paddingTop:12,borderTop:'1px solid rgba(255,255,255,.18)'}}>
+            {WALLETS.map(wl=>{const net=ledger.filter(l=>l.wallet===wl).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return net!==0&&<div key={wl}><div style={{fontSize:12,opacity:.75}}>{wl} (manual)</div><div style={{fontWeight:700,fontSize:14}}>{net>=0?'+':'−'}{fmt(Math.abs(net))}</div></div>;})}
+          </div>}
         </Card>
-        <ListView title="Movimentos da banca" subtitle="Entradas e saídas por carteira. O saldo é calculado somando tudo à banca inicial." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
+        <ListView title="Movimentos da banca" subtitle="Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
             onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
             onEdit={()=>setEditing({type:'bank',item:l})}
