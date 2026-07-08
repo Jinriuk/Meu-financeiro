@@ -96,6 +96,8 @@ function weekEnding(dateStr){
 }
 
 /* ---------- regras de negócio (seção 4) ---------- */
+// saque pago precisa casar com a semana do cálculo: qualquer data vira o domingo que fecha aquela semana
+const normalizeRow = (type,d) => type==='wd' && d.week_ending_date ? {...d, week_ending_date: weekEnding(d.week_ending_date)} : d;
 const resultadoDia = e => num(e.saldo_final)+num(e.saque)-num(e.saldo_inicial)-num(e.deposito);
 const abiMedioDia  = e => num(e.qtd_torneios)>0 ? num(e.total_buyins)/num(e.qtd_torneios) : 0;
 function gradeStatus(e, abiMax){
@@ -814,12 +816,12 @@ function Dashboard({session}){
     {/* modal adicionar */}
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null; const [list,setter]=MODAL_STATE[type]; return (
       <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)}
-        onSave={d=>add(MODAL_TABLE[type],d,setter,list)}/>);})()}
+        onSave={d=>add(MODAL_TABLE[type],normalizeRow(type,d),setter,list)}/>);})()}
 
     {/* modal editar */}
     {editing&&(()=>{const [list,setter]=MODAL_STATE[editing.type]; return (
       <AddModal title={`Editar ${MODAL_TITLE[editing.type]}`} fields={FIELDS[editing.type]} editing={editing.item} onClose={()=>setEditing(null)}
-        onEdit={d=>update(MODAL_TABLE[editing.type],d,setter,list)}/>);})()}
+        onEdit={d=>update(MODAL_TABLE[editing.type],normalizeRow(editing.type,d),setter,list)}/>);})()}
 
     {/* modal quick edit (config) */}
     {quickEdit&&<QuickEditModal label={quickEdit.label} hint={quickEdit.hint} kind={quickEdit.kind} currentValue={quickEdit.current} onClose={()=>setQuickEdit(null)} onSave={quickEdit.onSave}/>}
