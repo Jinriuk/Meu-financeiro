@@ -396,22 +396,69 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
 
 /* ---------- login / não configurado ---------- */
 function Login(){
-  const [email,setEmail]=useState(''); const [pass,setPass]=useState('');
+  const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   const entrar=async()=>{
     setErr(''); setBusy(true);
-    const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pass});
+    let mail=ident.trim();
+    if(mail && !mail.includes('@')){
+      // nickname ou CPF -> resolve o e-mail no banco antes de autenticar
+      const {data,error}=await sb.rpc('email_for_login',{identifier:mail});
+      if(error||!data){ setBusy(false); setErr('Não encontrei esse usuário. Tenta com o e-mail.'); return; }
+      mail=data;
+    }
+    const {error}=await sb.auth.signInWithPassword({email:mail,password:pass});
     setBusy(false);
-    if(error) setErr('E-mail ou senha incorretos.');
+    if(error) setErr('Usuário ou senha incorretos.');
   };
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
-        <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
+      </div>
+    </Card>
+  </div>;
+}
+
+/* ---------- primeiro acesso: troca de senha + cadastro ---------- */
+function Onboarding({session,profile,onDone}){
+  const [nick,setNick]=useState(profile?.nickname||'');
+  const [cpf,setCpf]=useState(profile?.cpf||'');
+  const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
+  const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
+  const save=async()=>{
+    setErr('');
+    const nickname=nick.trim();
+    const cpfDigits=cpf.replace(/\D/g,'');
+    if(nickname.length<2) return setErr('Escolhe um nickname com pelo menos 2 letras.');
+    if(cpfDigits && cpfDigits.length!==11) return setErr('CPF precisa ter 11 números (ou deixa em branco).');
+    if(p1.length<8) return setErr('A senha nova precisa de pelo menos 8 caracteres.');
+    if(p1!==p2) return setErr('As duas senhas não conferem.');
+    setBusy(true);
+    const {error:e1}=await sb.auth.updateUser({password:p1});
+    if(e1){ setBusy(false); return setErr('Não consegui trocar a senha. Tenta de novo.'); }
+    const row={user_id:session.user.id,email:session.user.email,nickname,cpf:cpfDigits||null,password_changed:true};
+    const {data,error:e2}=await sb.from('player_profiles').upsert(row).select().single();
+    setBusy(false);
+    if(e2) return setErr(e2.code==='23505'?'Esse nickname ou CPF já é do outro jogador.':'Não consegui salvar o cadastro. Tenta de novo.');
+    onDone(data);
+  };
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
+      <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 6px',textAlign:'center'}}>Primeiro acesso</h3>
+      <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail, nickname ou CPF</b>.</p>
+      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
+        <div><label style={labelStyle}>CPF (opcional, só números)</label><input style={inputStyle} inputMode="numeric" value={cpf} placeholder="00000000000" onChange={e=>setCpf(e.target.value)}/></div>
+        <div><label style={labelStyle}>Nova senha</label><input style={inputStyle} type="password" value={p1} onChange={e=>setP1(e.target.value)}/></div>
+        <div><label style={labelStyle}>Confirmar nova senha</label><input style={inputStyle} type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()}/></div>
+        {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar e entrar'}</button>
       </div>
     </Card>
   </div>;
@@ -872,15 +919,31 @@ function Dashboard({session}){
 /* ---------- raiz ---------- */
 function App(){
   const [session,setSession]=useState(undefined);
+  const [profile,setProfile]=useState(undefined);
   useEffect(()=>{
     if(!sb) return;
     sb.auth.getSession().then(({data})=>setSession(data.session));
     const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s));
     return ()=>sub.subscription.unsubscribe();
   },[]);
+  // primeiro acesso: carrega o perfil do jogador; sem senha trocada, cai no cadastro
+  useEffect(()=>{
+    if(!session){ setProfile(undefined); return; }
+    let on=true;
+    (async()=>{
+      const {data}=await sb.from('player_profiles').select('*').eq('user_id',session.user.id).maybeSingle();
+      if(!on) return;
+      // se o e-mail foi trocado no painel do Supabase, atualiza o espelho usado pelo login
+      if(data && data.email!==session.user.email) sb.from('player_profiles').update({email:session.user.email}).eq('user_id',session.user.id).then(()=>{});
+      setProfile(data||null);
+    })();
+    return ()=>{on=false;};
+  },[session]);
   if(!CONFIGURED) return <NotConfigured/>;
   if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!session) return <Login/>;
+  if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
   return <Dashboard session={session}/>;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
