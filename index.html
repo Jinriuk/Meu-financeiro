@@ -193,12 +193,13 @@ const IcoUp     = p => <Svg {...p}><path d="M7 17L17 7M7 7h10v10"/></Svg>;
 const IcoDown   = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
 const IcoAlert  = p => <Svg {...p}><path d="M12 3l9 16H3l9-16z"/><path d="M12 10v4M12 17.5v.5"/></Svg>;
 const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
+const IcoMenu   = p => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16"/></Svg>;
 
 /* ---------- componentes base ---------- */
 const Card = ({children,style,className}) => <div className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
 
 function NavBtn({Icon,label,active,onClick,mobile}){
-  return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:mobile?58:0,flex:mobile?'0 0 auto':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 6px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
+  return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:0,flex:mobile?'1 1 0':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 4px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
     <Icon s={mobile?21:20} w={active?2.4:2}/>{label}
   </button>;
 }
@@ -492,6 +493,7 @@ function Dashboard({session}){
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState('painel');
   const [modal,setModal]=useState(null);       // string type | {type, initial}
+  const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
@@ -667,6 +669,8 @@ function Dashboard({session}){
   const MODAL_TABLE={daily:'daily_entries',tour:'tournaments',bank:'bankroll_ledger',wd:'withdrawals'};
   const MODAL_STATE={daily:[daily,setDaily],tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
+  /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
+  const MAIN_TABS=['painel','diario','semanal','saques'];
   const nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'diario',label:'Diário',Icon:IcoDaily},
@@ -955,10 +959,24 @@ function Dashboard({session}){
       </div>}
     </main>
 
-    {/* nav mobile (rolagem horizontal) */}
-    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20,overflowX:'auto'}}>
-      {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)} mobile/>)}
+    {/* nav mobile: só o essencial + "Mais" */}
+    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
+      {nav.filter(n=>MAIN_TABS.includes(n.id)).map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
+      <NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!MAIN_TABS.includes(view)} onClick={()=>setMenuOpen(true)} mobile/>
     </nav>
+
+    {/* gaveta "Mais" (demais telas) */}
+    {menuOpen&&<div onClick={()=>setMenuOpen(false)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(26px + env(safe-area-inset-bottom))'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>Todas as telas</h3>
+          <button onClick={()=>setMenuOpen(false)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {nav.filter(n=>!MAIN_TABS.includes(n.id)).map(n=><button key={n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'16px 14px',borderRadius:14,border:`1.5px solid ${view===n.id?P:C.border}`,background:view===n.id?C.plumSoft:C.warm,color:view===n.id?P:C.ink,fontWeight:700,fontSize:15,cursor:'pointer'}}><n.Icon s={20}/>{n.label}</button>)}
+        </div>
+      </div>
+    </div>}
 
     {/* modal adicionar */}
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null; const [list,setter]=MODAL_STATE[type]; return (
