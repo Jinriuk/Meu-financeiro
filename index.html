@@ -7,8 +7,8 @@
 <meta name="theme-color" content="#5B4B8A" />
 
 <script>
-  window.SUPABASE_URL = "COLE_AQUI_A_URL_DO_PROJETO";
-  window.SUPABASE_ANON_KEY = "COLE_AQUI_A_CHAVE_ANON_PUBLIC";
+  window.SUPABASE_URL = "https://pegrfpsyddzdvvuliugr.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZ3JmcHN5ZGR6ZHZ2dWxpdWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0ODg1MDcsImV4cCI6MjA5OTA2NDUwN30.mOf0sFLmpQZ4I4Idi4xUg1bUuwwGSjZ3UPG_ag2Tneg";
 </script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -78,7 +78,8 @@ const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
 const mKey = d => (d||'').slice(0,7);
 const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
 const dLabel = d => { if(!d) return ''; const [,m,day]=d.split('-'); return `${day}/${m}`; };
-const todayISO = () => new Date().toISOString().slice(0,10);
+// data LOCAL (não UTC): no Brasil, depois das 21h o toISOString() já viraria "amanhã"
+const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 function parseValor(s){
   if(typeof s==='number') return s;
   s=String(s||'').trim().replace(/[R$US\s]/g,'');
@@ -494,6 +495,8 @@ function Dashboard({session}){
   const foraGrade=daily.filter(e=>weekEnding(e.entry_date)===CURWK && gradeStatus(e,abiMax)==='FORA DA GRADE');
   if(foraGrade.length) alerts.push({tone:C.gold,text:`${foraGrade.length} lançamento(s) fora da grade nesta semana (buy-in acima de ${fmt(abiMax)}).`});
   players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; if(r<0 && r<=-num(config.stoploss_weekly_pct)*bancaAtual) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-num(config.stoploss_weekly_pct)*bancaAtual)}).`}); });
+  const slDiario=num(config.stoploss_daily_buyins)*abiMax;
+  if(slDiario>0) daily.filter(e=>weekEnding(e.entry_date)===CURWK && resultadoDia(e)<=-slDiario).forEach(e=>alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-slDiario)}).`}));
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
