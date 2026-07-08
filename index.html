@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<title>Minhas Finanças</title>
-<meta name="theme-color" content="#16513F" />
+<title>Pool de Poker · Gabriel & Guedes</title>
+<meta name="theme-color" content="#5B4B8A" />
 
 <script>
-  window.SUPABASE_URL = "https://omulvrxwuudfmbsuvcqo.supabase.co";
-  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tdWx2cnh3dXVkZm1ic3V2Y3FvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU4ODEsImV4cCI6MjA5NjY3MTg4MX0.nKPZcF06hlg28snrwtNJw05ObDuIUgbENuGVqwYUDDQ";
+  window.SUPABASE_URL = "https://pegrfpsyddzdvvuliugr.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZ3JmcHN5ZGR6ZHZ2dWxpdWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0ODg1MDcsImV4cCI6MjA5OTA2NDUwN30.mOf0sFLmpQZ4I4Idi4xUg1bUuwwGSjZ3UPG_ag2Tneg";
 </script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
 <style>
@@ -22,10 +22,11 @@
     --bg:#F5F0E6; --surface:#fff; --warm:#FCFAF3; --ink:#1E2A24; --inkSoft:#5E6B61;
     --green:#16513F; --greenMid:#1F7355; --greenSoft:#E5EDE6; --gold:#B0823A;
     --goldSoft:#F1E6CD; --red:#AE472E; --redSoft:#F5E3DC; --border:#EAE3D4;
+    --plum:#5B4B8A; --plumSoft:#ECE7F4;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Hanken Grotesk',sans-serif}
-  input,select,button{font-family:'Hanken Grotesk',sans-serif}
+  input,select,button,textarea{font-family:'Hanken Grotesk',sans-serif}
   select{-webkit-appearance:none;appearance:none}
   .ftfade{animation:ftf .5s cubic-bezier(.2,.7,.3,1) both}
   @keyframes ftf{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -35,8 +36,11 @@
   .side{display:none}
   .bottomnav{display:flex}
   .grid2{display:grid;grid-template-columns:1fr;gap:14px}
-  .spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:sp 1s linear infinite}
+  .modalgrid{display:grid;grid-template-columns:1fr;gap:14px}
+  .full{grid-column:1/-1}
+  .spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--plum);border-radius:50%;animation:sp 1s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+  @media(min-width:520px){ .modalgrid{grid-template-columns:1fr 1fr} }
   @media(min-width:860px){
     .side{display:flex}
     .bottomnav{display:none}
@@ -61,92 +65,190 @@ const C = {
   bg:'#F5F0E6', surface:'#fff', warm:'#FCFAF3', ink:'#1E2A24', inkSoft:'#5E6B61',
   green:'#16513F', greenMid:'#1F7355', greenSoft:'#E5EDE6', gold:'#B0823A',
   goldSoft:'#F1E6CD', red:'#AE472E', redSoft:'#F5E3DC', border:'#EAE3D4',
+  plum:'#5B4B8A', plumSoft:'#ECE7F4',
 };
-const BANKS = { 'Nubank':'#820AD1', 'Santander':'#EC0000', 'Mercado Pago':'#009EE3' };
-const SAIDA_CATS = ['Alimentação','Casa','Transporte','Saúde','Lazer','Vestuário','Educação','Outros'];
-const ENTRADA_CATS = ['Salário','Renda Extra','Presente','Outros'];
-const CAT_COLORS = {
-  'Alimentação':'#AE472E','Casa':'#16513F','Transporte':'#B0823A','Saúde':'#1F7355',
-  'Lazer':'#C97B3B','Vestuário':'#8A6BBF','Educação':'#3B7FB8','Outros':'#9A8E78',
-  'Salário':'#1F7355','Renda Extra':'#B0823A','Presente':'#C97B3B',
-};
+const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
+const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
+const PLAYER_COLORS = [P, C.gold]; // jogador 1 / jogador 2
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+const num = v => Number(v)||0;
+const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'USD'});
+const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
 const mKey = d => (d||'').slice(0,7);
 const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
-const mShort = k => { const [,m]=k.split('-'); return MONTHS[+m-1].slice(0,3); };
-const dLabel = d => { const [,m,day]=d.split('-'); return `${day}/${m}`; };
-const todayISO = () => new Date().toISOString().slice(0,10);
+const dLabel = d => { if(!d) return ''; const [,m,day]=d.split('-'); return `${day}/${m}`; };
+// data LOCAL (não UTC): no Brasil, depois das 21h o toISOString() já viraria "amanhã"
+const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 function parseValor(s){
   if(typeof s==='number') return s;
-  s=String(s||'').trim().replace(/[R$\s]/g,'');
+  s=String(s||'').trim().replace(/[R$US\s]/g,'');
   if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
   const n=parseFloat(s); return isNaN(n)?0:n;
 }
+// domingo que FECHA a semana (semana = seg..dom). Usa UTC pra não escorregar fuso.
+function weekEnding(dateStr){
+  const [y,m,d]=(dateStr||todayISO()).split('-').map(Number);
+  const dt=new Date(Date.UTC(y,m-1,d));
+  const day=dt.getUTCDay();           // 0 domingo ... 6 sábado
+  dt.setUTCDate(dt.getUTCDate()+((7-day)%7));
+  return dt.toISOString().slice(0,10);
+}
+
+/* ---------- regras de negócio (seção 4) ---------- */
+const resultadoDia = e => num(e.saldo_final)+num(e.saque)-num(e.saldo_inicial)-num(e.deposito);
+const abiMedioDia  = e => num(e.qtd_torneios)>0 ? num(e.total_buyins)/num(e.qtd_torneios) : 0;
+function gradeStatus(e, abiMax){
+  if(num(e.maior_buyin) > abiMax) return 'FORA DA GRADE';
+  if(num(e.qtd_torneios)>0 && abiMedioDia(e) >= abiMax*0.9) return 'ATENÇÃO';
+  return 'OK';
+}
+const totalInvestido = t => num(t.buyin)*(1+num(t.reentries));
+const lucroTorneio   = t => num(t.prize)-totalInvestido(t);
+function tourStatus(t, abiMax){
+  if(num(t.buyin) > abiMax) return 'FORA DA GRADE';
+  if(num(t.reentries)>0 || num(t.field_size)>200) return 'ATENÇÃO';
+  return 'OK';
+}
+// Processa as semanas em ordem cronológica, carregando o make-up de uma pra outra.
+function computeWeeks(daily, config){
+  const players=[config.player1_name, config.player2_name];
+  const makeInit={[config.player1_name]:num(config.makeup_inicial_player1),[config.player2_name]:num(config.makeup_inicial_player2)};
+  const out={};
+  players.forEach(p=>{
+    const entries=daily.filter(e=>e.player===p);
+    const weeks=[...new Set(entries.map(e=>weekEnding(e.entry_date)))].sort();
+    let makeUp=makeInit[p]||0;
+    out[p]=weeks.map(wk=>{
+      const wkEntries=entries.filter(e=>weekEnding(e.entry_date)===wk);
+      const resultado=wkEntries.reduce((s,e)=>s+resultadoDia(e),0);
+      const makeAnterior=makeUp;
+      const makeFinal=Math.max(0, makeAnterior-resultado);
+      const lucroDiv=Math.max(0, resultado-makeAnterior);
+      const parteJog=lucroDiv*num(config.player_pct);
+      const partePool=lucroDiv*(1-num(config.player_pct));
+      const saqueAut=makeFinal===0 ? parteJog : 0;
+      makeUp=makeFinal;
+      return {week:wk, player:p, resultado, makeAnterior, makeFinal, lucroDiv, parteJog, partePool, saqueAut, entries:wkEntries};
+    });
+  });
+  return out;
+}
+function saqueStatus(w, bancaAtual, piso, valorSacado){
+  if(w.makeFinal>0) return 'Bloqueado por make-up';
+  if(w.saqueAut===0) return 'Sem valor a sacar';
+  if(bancaAtual - w.saqueAut < piso) return 'Bloqueado por banca abaixo do piso';
+  if(valorSacado===0) return 'Autorizado';
+  if(valorSacado < w.saqueAut) return 'Parcialmente autorizado';
+  return 'Pago';
+}
+const STATUS_TONE = {
+  'OK':{tone:C.greenMid,bg:C.greenSoft}, 'ATENÇÃO':{tone:C.gold,bg:C.goldSoft}, 'FORA DA GRADE':{tone:C.red,bg:C.redSoft},
+  'Pago':{tone:C.greenMid,bg:C.greenSoft}, 'Autorizado':{tone:P,bg:C.plumSoft},
+  'Parcialmente autorizado':{tone:C.gold,bg:C.goldSoft}, 'Sem valor a sacar':{tone:C.inkSoft,bg:C.bg},
+  'Bloqueado por make-up':{tone:C.red,bg:C.redSoft}, 'Bloqueado por banca abaixo do piso':{tone:C.red,bg:C.redSoft},
+};
 
 /* ---------- ícones ---------- */
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
-const IcoSwap   = p => <Svg {...p}><path d="M7 10l-3-3 3-3"/><path d="M4 7h13"/><path d="M17 14l3 3-3 3"/><path d="M20 17H7"/></Svg>;
-const IcoCard   = p => <Svg {...p}><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></Svg>;
-const IcoTrend  = p => <Svg {...p}><path d="M3 17l6-6 4 4 7-7"/><path d="M17 8h4v4"/></Svg>;
-const IcoWallet = p => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v10a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H5"/><circle cx="17" cy="13" r="1.3" fill="currentColor" stroke="none"/></Svg>;
+const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
+const IcoTrophy = p => <Svg {...p}><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/><path d="M9 15h6l1 5H8l1-5z"/></Svg>;
+const IcoWeek   = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M7 14h10"/></Svg>;
+const IcoMonth  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4M7 13h3v3H7z"/></Svg>;
+const IcoCashOut= p => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2"/><path d="M12 15V7m0 0l-3 3m3-3l3 3"/></Svg>;
+const IcoStack  = p => <Svg {...p}><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></Svg>;
+const IcoGear   = p => <Svg {...p}><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></Svg>;
+const IcoChip   = p => <Svg {...p}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2" strokeDasharray="1.5 2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></Svg>;
 const IcoPlus   = p => <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
 const IcoTrash  = p => <Svg {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></Svg>;
 const IcoX      = p => <Svg {...p}><path d="M6 6l12 12M18 6L6 18"/></Svg>;
 const IcoPencil = p => <Svg {...p}><path d="M16 3l5 5L8 21H3v-5L16 3z"/></Svg>;
 const IcoUp     = p => <Svg {...p}><path d="M7 17L17 7M7 7h10v10"/></Svg>;
 const IcoDown   = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
+const IcoAlert  = p => <Svg {...p}><path d="M12 3l9 16H3l9-16z"/><path d="M12 10v4M12 17.5v.5"/></Svg>;
 const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
 
 /* ---------- componentes base ---------- */
-const Card = ({children,style}) => <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
+const Card = ({children,style,className}) => <div className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
 
 function NavBtn({Icon,label,active,onClick,mobile}){
-  return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:'100%',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 0':'13px 16px',borderRadius:14,border:'none',cursor:'pointer',background:active?C.green:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?11:15.5,transition:'all .18s'}}>
-    <Icon s={mobile?22:20} w={active?2.4:2}/>{label}
+  return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:mobile?58:0,flex:mobile?'0 0 auto':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 6px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
+    <Icon s={mobile?21:20} w={active?2.4:2}/>{label}
   </button>;
 }
-const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':C.green,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
+const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
 const Brand = ({small}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
-  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:C.green,display:'grid',placeItems:'center',color:'#fff'}}><IcoWallet s={small?18:20}/></div>
-  <div><div style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:small?18:20,lineHeight:1}}>Minhas Finanças</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600}}>simples e no controle</div></div>
+  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:P,display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
+  <div><div style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:small?17:19,lineHeight:1}}>Pool de Poker</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600}}>staking · make-up · saques</div></div>
 </div>;
-
-function Bar2({pct,color,track}){
-  return <div style={{height:13,borderRadius:99,background:track||C.bg,overflow:'hidden'}}><div style={{width:`${pct}%`,height:'100%',borderRadius:99,background:color,transition:'width .5s cubic-bezier(.2,.7,.3,1)'}}/></div>;
+function Badge({text}){
+  const t=STATUS_TONE[text]||{tone:C.inkSoft,bg:C.bg};
+  return <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:t.tone,background:t.bg,whiteSpace:'nowrap'}}>{text}</span>;
 }
-function Stat({Icon,tone,bg,label,value}){
+function Bar2({pct,color,track}){
+  return <div style={{height:13,borderRadius:99,background:track||C.bg,overflow:'hidden'}}><div style={{width:`${Math.max(0,Math.min(100,pct))}%`,height:'100%',borderRadius:99,background:color,transition:'width .5s cubic-bezier(.2,.7,.3,1)'}}/></div>;
+}
+function Stat({Icon,tone,bg,label,value,sub}){
   return <Card style={{padding:18}}>
     <span style={{width:36,height:36,borderRadius:11,background:bg,display:'grid',placeItems:'center',color:tone}}><Icon s={19}/></span>
     <div style={{fontSize:13,color:C.inkSoft,fontWeight:600,marginTop:12}}>{label}</div>
-    <div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,color:tone}}>{fmt(value)}</div>
+    <div style={{fontFamily:"'Fraunces',serif",fontSize:23,fontWeight:600,color:tone}}>{value}</div>
+    {sub&&<div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{sub}</div>}
   </Card>;
 }
-function Donut({data,size=148}){
-  const total=data.reduce((s,d)=>s+d.value,0)||1;
-  const r=size/2-10, cx=size/2, cy=size/2, circ=2*Math.PI*r; let off=0;
-  return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{transform:'rotate(-90deg)'}}>
-    <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.bg} strokeWidth={15}/>
-    {data.map((d,i)=>{const len=(d.value/total)*circ; const e=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color} strokeWidth={15} strokeDasharray={`${len} ${circ-len}`} strokeDashoffset={-off}/>; off+=len; return e;})}
-  </svg>;
-}
-function Bars({data}){
-  const max=Math.max(1,...data.flatMap(d=>[d.Entrou,d.Saiu]));
+
+/* barras multi-série (positivas ou divergentes se houver negativo) */
+function MultiBars({data, series}){
+  const flat=data.flatMap(d=>d.vals);
+  const hasNeg=flat.some(v=>num(v)<0);
+  const max=Math.max(1,...flat.map(v=>Math.abs(num(v))));
+  const H=150, half=(H-24)/2;
+  if(!data.length) return <Empty>Ainda sem dados.</Empty>;
   return <div>
-    <div style={{display:'flex',alignItems:'flex-end',gap:14,height:150,padding:'0 4px'}}>
-      {data.map((d,i)=><div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
-        <div style={{display:'flex',gap:5,alignItems:'flex-end',height:120,width:'100%',justifyContent:'center'}}>
-          <div title={fmt(d.Entrou)} style={{width:'40%',maxWidth:18,height:`${(d.Entrou/max)*100}%`,background:C.greenMid,borderRadius:'5px 5px 0 0',minHeight:2}}/>
-          <div title={fmt(d.Saiu)} style={{width:'40%',maxWidth:18,height:`${(d.Saiu/max)*100}%`,background:C.red,borderRadius:'5px 5px 0 0',minHeight:2}}/>
-        </div>
-        <span style={{fontSize:12,color:C.inkSoft,fontWeight:600}}>{d.mes}</span>
+    <div style={{display:'flex',alignItems:'flex-end',gap:12,height:H,padding:'0 2px'}}>
+      {data.map((d,i)=><div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,minWidth:0}}>
+        {hasNeg
+          ? <div style={{display:'flex',gap:4,alignItems:'stretch',justifyContent:'center',width:'100%',height:H-24}}>
+              {d.vals.map((v,j)=>{const h=(Math.abs(num(v))/max)*half; return <div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,display:'flex',flexDirection:'column'}}>
+                <div style={{height:half,display:'flex',alignItems:'flex-end'}}><div style={{width:'100%',height:num(v)>0?h:0,background:series[j].color,borderRadius:'4px 4px 0 0',minHeight:num(v)>0?2:0}}/></div>
+                <div style={{borderTop:`1px dashed ${C.border}`}}/>
+                <div style={{height:half,display:'flex',alignItems:'flex-start'}}><div style={{width:'100%',height:num(v)<0?h:0,background:series[j].color,opacity:.55,borderRadius:'0 0 4px 4px',minHeight:num(v)<0?2:0}}/></div>
+              </div>;})}
+            </div>
+          : <div style={{display:'flex',gap:4,alignItems:'flex-end',justifyContent:'center',width:'100%',height:H-24}}>
+              {d.vals.map((v,j)=><div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,height:`${(Math.abs(num(v))/max)*100}%`,background:series[j].color,borderRadius:'5px 5px 0 0',minHeight:2}}/>)}
+            </div>}
+        <span style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,whiteSpace:'nowrap'}}>{d.label}</span>
       </div>)}
     </div>
-    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:8,fontSize:12.5,color:C.inkSoft,fontWeight:600}}>
-      <span style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:C.greenMid}}/>Entrou</span>
-      <span style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:C.red}}/>Saiu</span>
+    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:10,fontSize:12.5,color:C.inkSoft,fontWeight:600,flexWrap:'wrap'}}>
+      {series.map((s,i)=><span key={i} style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:s.color}}/>{s.name}</span>)}
+    </div>
+  </div>;
+}
+/* linha simples (evolução da banca) */
+function LineChart({data, color=P, ref_}){
+  if(!data.length) return <Empty>Ainda sem movimentos na banca.</Empty>;
+  const vals=data.map(d=>num(d.value));
+  const lo=Math.min(...vals, ref_!=null?ref_:Math.min(...vals));
+  const hi=Math.max(...vals, ref_!=null?ref_:Math.max(...vals));
+  const range=(hi-lo)||1;
+  const n=data.length;
+  const xAt=i=> n===1?50:(i/(n-1))*100;
+  const yAt=v=> 38-((v-lo)/range)*34;
+  const line=data.map((d,i)=>`${xAt(i).toFixed(2)},${yAt(num(d.value)).toFixed(2)}`).join(' ');
+  const area=`0,42 ${data.map((d,i)=>`${xAt(i).toFixed(2)},${yAt(num(d.value)).toFixed(2)}`).join(' ')} 100,42`;
+  return <div>
+    <svg viewBox="0 0 100 44" preserveAspectRatio="none" style={{width:'100%',height:150}}>
+      {ref_!=null&&<line x1="0" x2="100" y1={yAt(ref_)} y2={yAt(ref_)} stroke={C.red} strokeWidth="0.4" strokeDasharray="1.5 1.5"/>}
+      <polygon points={area} fill={color} opacity="0.12"/>
+      <polyline points={line} fill="none" stroke={color} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/>
+      {data.map((d,i)=><circle key={i} cx={xAt(i)} cy={yAt(num(d.value))} r="0.9" fill={color}/>)}
+    </svg>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11.5,color:C.inkSoft,fontWeight:600}}>
+      <span>{data[0].label}</span><span>{data[data.length-1].label}</span>
     </div>
   </div>;
 }
@@ -166,16 +268,15 @@ function Row({left,right,onDelete,onEdit}){
       <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>{left}</div>
       {right}
       {onEdit&&<button onClick={onEdit} aria-label="Editar" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={16}/></button>}
-      <button onClick={()=>setConfirming(true)} aria-label="Remover" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoTrash s={17}/></button>
+      {onDelete&&<button onClick={()=>setConfirming(true)} aria-label="Remover" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoTrash s={17}/></button>}
     </div>
   );
 }
-
 function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
   return <Card style={{padding:20}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:12}}>
       <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:0}}>{title}</h3>{subtitle&&<div style={{fontSize:13,color:C.inkSoft,marginTop:2}}>{subtitle}</div>}</div>
-      <button onClick={onAdd} style={{display:'flex',alignItems:'center',gap:6,background:C.green,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(22,81,63,.7)'}}><IcoPlus s={18}/>Adicionar</button>
+      {onAdd&&<button onClick={onAdd} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>}
     </div>
     {rows.length?rows.map(renderRow):<Empty>{empty}</Empty>}
   </Card>;
@@ -183,8 +284,7 @@ function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
 
 /* ---------- estilos de input ---------- */
 const inputStyle={width:'100%',padding:'13px 14px',borderRadius:13,border:`1.5px solid ${C.border}`,background:C.warm,color:C.ink,fontSize:16,outline:'none',fontWeight:600};
-const labelStyle={fontSize:11.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:C.gold,marginBottom:7,display:'block'};
-
+const labelStyle={fontSize:11,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:C.gold,marginBottom:6,display:'block'};
 function Select({value,onChange,opts}){
   return <div style={{position:'relative'}}>
     <select style={inputStyle} value={value} onChange={onChange}>{opts.map(o=><option key={o}>{o}</option>)}</select>
@@ -192,88 +292,93 @@ function Select({value,onChange,opts}){
   </div>;
 }
 
-/* ---------- modal rápido: saldo e limite ---------- */
-function QuickEditModal({label,hint,currentValue,onClose,onSave}){
-  const [val,setVal]=useState(String(currentValue||0).replace('.',','));
-  const save=()=>{ const n=parseValor(val); if(n>=0) onSave(n); };
+/* ---------- modal rápido (config: texto, número, %, data, lista) ---------- */
+function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSave}){
+  const init = kind==='percent' ? String(((num(currentValue))*100)).replace('.',',')
+    : kind==='list' ? (Array.isArray(currentValue)?currentValue.join(', '):String(currentValue||''))
+    : kind==='text'||kind==='date' ? String(currentValue??'')
+    : String(currentValue??0).replace('.',',');
+  const [val,setVal]=useState(init);
+  const save=()=>{
+    if(kind==='text') return onSave(val.trim());
+    if(kind==='date') return onSave(val);
+    if(kind==='list') return onSave(val.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean));
+    if(kind==='select') return onSave(val);
+    let n=parseValor(val); if(kind==='percent') n=n/100;
+    onSave(n);
+  };
   return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
-        <input style={{...inputStyle,fontSize:24,fontFamily:"'Fraunces',serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>
-        <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
+        {kind==='select'
+          ? <div style={{marginBottom:16}}><Select value={val} onChange={e=>setVal(e.target.value)} opts={opts||[]}/></div>
+          : kind==='date'
+          ? <input type="date" style={{...inputStyle,marginBottom:16}} value={val} onChange={e=>setVal(e.target.value)}/>
+          : kind==='text'||kind==='list'
+          ? <input style={{...inputStyle,marginBottom:16}} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus placeholder={kind==='list'?'Separe por vírgula':''}/>
+          : <input style={{...inputStyle,fontSize:24,fontFamily:"'Fraunces',serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>}
+        <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
       </div>
     </div>
   );
 }
 
-/* ---------- modal adicionar / editar ---------- */
-function AddModal({type,onClose,onSave,onEdit,accounts,editing}){
-  const isTx=type==='tx', isCard=type==='card', isInv=type==='inv';
-  const isEditing=!!editing;
-  const [kind,setKind]=useState(editing?.type||'saida');
-  const initCat=editing?.category||(editing?.type==='entrada'?ENTRADA_CATS[0]:SAIDA_CATS[0]);
-  const [f,setF]=useState({
-    date:editing?.date||todayISO(),
-    desc:editing?.description||'',
-    value:editing?.value!=null?String(editing.value).replace('.',','):'',
-    cat:initCat,
-    acc:editing?.account||(accounts[0]||'Nubank'),
-    name:editing?.name||'',
-    inst:editing?.institution||(accounts[0]||'Nubank'),
+/* ---------- modal adicionar / editar (genérico por schema de campos) ---------- */
+function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
+  const [f,setF]=useState(()=>{
+    const o={};
+    fields.forEach(fd=>{
+      let v = editing ? editing[fd.k] : (initial && initial[fd.k]!=null ? initial[fd.k] : fd.def);
+      if(v==null) v = fd.type==='select' ? (fd.opts[0]||'') : '';
+      if((fd.type==='money'||fd.type==='int') && typeof v==='number') v=String(v).replace('.',',');
+      o[fd.k]=v;
+    });
+    return o;
   });
   const set=(k,v)=>setF(p=>({...p,[k]:v}));
-  const cats = isTx && kind==='entrada' ? ENTRADA_CATS : SAIDA_CATS;
-  const title = isEditing
-    ? (isTx?'Editar lançamento':isCard?'Editar compra':'Editar aplicação')
-    : (isTx?'Novo lançamento':isCard?'Nova compra no cartão':'Nova aplicação');
-
   const save=()=>{
-    const value=parseValor(f.value);
-    if(isInv){
-      if(!f.name||value<=0) return;
-      const d={name:f.name,institution:f.inst,value};
-      isEditing ? onEdit({...editing,...d}) : onSave(d);
-    } else if(isCard){
-      if(!f.desc||value<=0) return;
-      const d={date:f.date,description:f.desc,category:f.cat,value};
-      isEditing ? onEdit({...editing,...d}) : onSave(d);
-    } else {
-      if(!f.desc||value<=0) return;
-      const d={date:f.date,description:f.desc,category:f.cat,account:f.acc,type:kind,value};
-      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    const out={};
+    for(const fd of fields){
+      let v=f[fd.k];
+      if(fd.type==='money') v=parseValor(v);
+      else if(fd.type==='int') v=Math.round(parseValor(v));
+      else if(typeof v==='string') v=v.trim();
+      out[fd.k]=v===''?null:v;
     }
+    // validação mínima: selects e datas obrigatórios
+    for(const fd of fields){ if((fd.type==='select'||fd.type==='date') && !out[fd.k]) return; }
+    editing ? onEdit({...editing,...out}) : onSave(out);
   };
-
   return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
-        <div style={{display:'flex',flexDirection:'column',gap:16}}>
-          {isTx&&<div style={{display:'flex',gap:8}}>{['entrada','saida'].map(k=>
-            <button key={k} onClick={()=>{setKind(k);set('cat',(k==='entrada'?ENTRADA_CATS:SAIDA_CATS)[0]);}} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',cursor:'pointer',fontWeight:700,fontSize:15,background:kind===k?(k==='entrada'?C.greenMid:C.red):C.bg,color:kind===k?'#fff':C.inkSoft}}>{k==='entrada'?'Entrou':'Saiu'}</button>)}</div>}
-          {isInv
-            ? <div><label style={labelStyle}>Nome da aplicação</label><input style={inputStyle} value={f.name} placeholder="Ex: Tesouro Selic" onChange={e=>set('name',e.target.value)}/></div>
-            : <div><label style={labelStyle}>Descrição</label><input style={inputStyle} value={f.desc} placeholder="Ex: Mercado, Salário..." onChange={e=>set('desc',e.target.value)}/></div>}
-          <div><label style={labelStyle}>Valor (R$)</label><input style={{...inputStyle,fontSize:22,fontFamily:"'Fraunces',serif"}} inputMode="decimal" value={f.value} placeholder="0,00" onChange={e=>set('value',e.target.value)}/></div>
-          {!isInv&&<div><label style={labelStyle}>Categoria</label><Select value={f.cat} onChange={e=>set('cat',e.target.value)} opts={cats}/></div>}
-          {(isTx||isInv)&&<div><label style={labelStyle}>{isInv?'Onde está guardado':'Conta'}</label><Select value={isInv?f.inst:f.acc} onChange={e=>set(isInv?'inst':'acc',e.target.value)} opts={accounts.length?accounts:['Nubank','Santander','Mercado Pago']}/></div>}
-          {!isInv&&<div><label style={labelStyle}>Data</label><input type="date" style={inputStyle} value={f.date} onChange={e=>set('date',e.target.value)}/></div>}
-          <button onClick={save} style={{marginTop:4,padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>{isEditing?'Salvar alterações':'Salvar'}</button>
+        <div className="modalgrid">
+          {fields.map(fd=><div key={fd.k} className={fd.full?'full':''}>
+            <label style={labelStyle}>{fd.label}</label>
+            {fd.type==='select' ? <Select value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)} opts={fd.opts}/>
+              : fd.type==='date' ? <input type="date" style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
+              : fd.type==='textarea' ? <textarea rows={2} style={{...inputStyle,resize:'vertical'}} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
+              : fd.type==='money' ? <input inputMode="decimal" placeholder="0,00" style={{...inputStyle,fontFamily:"'Fraunces',serif"}} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
+              : fd.type==='int' ? <input inputMode="numeric" placeholder="0" style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
+              : <input style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>}
+          </div>)}
+          <button className="full" onClick={save} style={{marginTop:4,padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>{editing?'Salvar alterações':'Salvar'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------- tela de login ---------- */
+/* ---------- login / não configurado ---------- */
 function Login(){
   const [email,setEmail]=useState(''); const [pass,setPass]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
@@ -290,86 +395,52 @@ function Login(){
         <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
-        <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
+        <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
       </div>
     </Card>
   </div>;
 }
-
-/* ---------- tela "falta configurar" ---------- */
 function NotConfigured(){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:24}}>
     <Card style={{padding:30,maxWidth:460}}>
       <div style={{display:'flex',justifyContent:'center',marginBottom:16}}><Brand/></div>
       <h3 style={{fontFamily:"'Fraunces',serif",margin:'0 0 8px'}}>Falta conectar o banco de dados</h3>
-      <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra este arquivo e cole a <b>URL</b> e a <b>chave anon</b> do seu projeto Supabase no topo (bloco de configuração). Depois é só recarregar.</p>
+      <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra o <b>index.html</b> e cole a <b>URL</b> e a <b>chave anon</b> do projeto Supabase da pool no topo do arquivo. Depois recarregue.</p>
     </Card>
   </div>;
 }
 
-/* ---------- dashboard ---------- */
+/* ---------- app ---------- */
 function Dashboard({session}){
-  const [accounts,setAccounts]=useState([]);
-  const [tx,setTx]=useState([]);
-  const [card,setCard]=useState([]);
-  const [inv,setInv]=useState([]);
-  const [limit,setLimit]=useState(3000);
+  const [config,setConfig]=useState(null);
+  const [daily,setDaily]=useState([]);
+  const [tours,setTours]=useState([]);
+  const [ledger,setLedger]=useState([]);
+  const [wds,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState('painel');
-  const [modal,setModal]=useState(null);
-  const [editing,setEditing]=useState(null);
+  const [modal,setModal]=useState(null);       // string type | {type, initial}
+  const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
 
   useEffect(()=>{(async()=>{
     try{
-      const [a,t,c,i,s]=await Promise.all([
-        sb.from('accounts').select('*').order('sort'),
-        sb.from('transactions').select('*').order('date',{ascending:false}),
-        sb.from('card_purchases').select('*').order('date',{ascending:false}),
-        sb.from('investments').select('*').order('created_at'),
-        sb.from('settings').select('*').maybeSingle(),
+      const [cfg,d,t,l,w]=await Promise.all([
+        sb.from('pool_config').select('*').maybeSingle(),
+        sb.from('daily_entries').select('*').order('entry_date',{ascending:false}),
+        sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
+        sb.from('bankroll_ledger').select('*').order('entry_date'),
+        sb.from('withdrawals').select('*').order('week_ending_date',{ascending:false}),
       ]);
-      let accs=a.data||[];
-      if(accs.length===0){
-        const def=[{name:'Nubank',opening_balance:0,sort:1},{name:'Santander',opening_balance:0,sort:2},{name:'Mercado Pago',opening_balance:0,sort:3}];
-        const r=await sb.from('accounts').insert(def).select(); accs=r.data||[];
-      }
-      setAccounts(accs); setTx(t.data||[]); setCard(c.data||[]); setInv(i.data||[]);
-      if(s.data) setLimit(Number(s.data.card_limit)); else await sb.from('settings').insert({card_limit:3000});
+      let c=cfg.data;
+      if(!c){ const r=await sb.from('pool_config').insert({}).select().single(); c=r.data; }
+      setConfig(c); setDaily(d.data||[]); setTours(t.data||[]); setLedger(l.data||[]); setWds(w.data||[]);
     }catch(e){ console.error(e); }
     setLoading(false);
   })();},[]);
 
-  const accNames = accounts.map(a=>a.name);
-  const balances = useMemo(()=>{
-    const m={}; accounts.forEach(a=>{m[a.name]=Number(a.opening_balance)||0;});
-    tx.forEach(t=>{ if(m[t.account]===undefined)m[t.account]=0; m[t.account]+=(t.type==='entrada'?1:-1)*Number(t.value); });
-    return m;
-  },[accounts,tx]);
-  const totalBalance = Object.values(balances).reduce((s,v)=>s+v,0);
-  const monthTx   = tx.filter(t=>mKey(t.date)===month);
-  const entrou    = monthTx.filter(t=>t.type==='entrada').reduce((s,t)=>s+Number(t.value),0);
-  const saiu      = monthTx.filter(t=>t.type==='saida').reduce((s,t)=>s+Number(t.value),0);
-  const monthCard = card.filter(c=>mKey(c.date)===month);
-  const cardUsed  = monthCard.reduce((s,c)=>s+Number(c.value),0);
-  const cardPct   = Math.min(100,Math.round((cardUsed/(limit||1))*100));
-  const cardColor = cardPct>=80?C.red:cardPct>=50?C.gold:C.greenMid;
-  const invTotal  = inv.reduce((s,i)=>s+Number(i.value),0);
-  const byCat = useMemo(()=>{
-    const m={}; monthTx.filter(t=>t.type==='saida').forEach(t=>{m[t.category]=(m[t.category]||0)+Number(t.value);});
-    return Object.entries(m).map(([name,value])=>({name,value,color:CAT_COLORS[name]||'#9A8E78'})).sort((a,b)=>b.value-a.value);
-  },[monthTx]);
-  const months = useMemo(()=>{ const s=new Set([...tx,...card].map(r=>mKey(r.date))); s.add(todayISO().slice(0,7)); return [...s].sort(); },[tx,card]);
-  const trend  = useMemo(()=>months.slice(-6).map(k=>({
-    mes:mShort(k),
-    Entrou:tx.filter(t=>mKey(t.date)===k&&t.type==='entrada').reduce((s,t)=>s+Number(t.value),0),
-    Saiu:tx.filter(t=>mKey(t.date)===k&&t.type==='saida').reduce((s,t)=>s+Number(t.value),0),
-  })),[tx,months]);
-  const monthIdx = months.indexOf(month);
-  const goMonth  = d=>{const i=monthIdx+d; if(i>=0&&i<months.length)setMonth(months[i]);};
-
-  /* CRUD */
+  /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table,data,setter,list)=>{
     const {data:row,error}=await sb.from(table).insert(data).select().single();
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
@@ -381,185 +452,377 @@ function Dashboard({session}){
     setter(list.filter(x=>x.id!==id));
   };
   const update = async (table,newData,setter,list)=>{
-    const {id,user_id,created_at,...payload}=newData;
+    const {id,created_by,created_at,...payload}=newData;
     const {data:updated,error}=await sb.from(table).update(payload).eq('id',id).select().single();
     if(error){alert('Não consegui atualizar. Tente de novo.');console.error(error);return;}
     setter(list.map(x=>x.id===id?updated:x)); setEditing(null);
   };
-
-  const editLimit = ()=>{
-    setQuickEdit({
-      label:'Limite do cartão',
-      hint:'Digite o limite total do seu cartão de crédito.',
-      current:limit,
-      onSave:async nv=>{
-        setLimit(nv); setQuickEdit(null);
-        await sb.from('settings').upsert({user_id:session.user.id,card_limit:nv});
-      }
-    });
-  };
-  const editOpening = acc=>{
-    setQuickEdit({
-      label:`Saldo de ${acc.name}`,
-      hint:'Informe o saldo inicial da conta. Os lançamentos cadastrados serão somados a este valor.',
-      current:acc.opening_balance,
-      onSave:async nv=>{
-        setAccounts(accounts.map(a=>a.id===acc.id?{...a,opening_balance:nv}:a));
-        setQuickEdit(null);
-        await sb.from('accounts').update({opening_balance:nv}).eq('id',acc.id);
-      }
-    });
+  const saveConfig = async patch=>{
+    const next={...config,...patch}; setConfig(next); setQuickEdit(null);
+    const {error}=await sb.from('pool_config').update(patch).eq('id',config.id);
+    if(error){alert('Não consegui salvar a configuração.');console.error(error);}
   };
 
-  const nav=[{id:'painel',label:'Painel',Icon:IcoPanel},{id:'lancamentos',label:'Lançamentos',Icon:IcoSwap},{id:'cartao',label:'Cartão',Icon:IcoCard},{id:'investimentos',label:'Investir',Icon:IcoTrend}];
+  const weeksByPlayer = useMemo(()=>config?computeWeeks(daily,config):{},[daily,config]);
 
-  if(loading) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+
+  /* ---- derivados ---- */
+  const players=[config.player1_name, config.player2_name];
+  const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
+  const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
+  const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
+  const modalidades=(config.modalidades_permitidas&&config.modalidades_permitidas.length)?config.modalidades_permitidas:['MTT','Spin','Cash','Sit & Go'];
+  const CURWK=weekEnding(todayISO());
+
+  const bancaAtual = num(config.banca_inicial)+ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
+  const curMakeUp={}, curWeek={};
+  players.forEach(p=>{const arr=weeksByPlayer[p]||[]; curMakeUp[p]=arr.length?arr[arr.length-1].makeFinal:(makeInit[p]||0); curWeek[p]=arr.find(w=>w.week===CURWK)||null;});
+  const valorSacadoFor=(week,player)=>wds.filter(w=>w.week_ending_date===week&&w.player===player).reduce((s,w)=>s+num(w.valor_sacado),0);
+  const makeUpAt=(p,wk)=>{let mk=makeInit[p]||0; for(const w of (weeksByPlayer[p]||[])){ if(w.week<=wk) mk=w.makeFinal; else break;} return mk;};
+  const allWeeks=[...new Set(players.flatMap(p=>(weeksByPlayer[p]||[]).map(w=>w.week)))].sort();
+
+  const lucroPoolAcum = players.reduce((s,p)=>s+(weeksByPlayer[p]||[]).reduce((a,w)=>a+w.partePool,0),0);
+  const totalPago = wds.reduce((s,w)=>s+num(w.valor_sacado),0);
+  const resSemanaAtual = players.reduce((s,p)=>s+(curWeek[p]?curWeek[p].resultado:0),0);
+  const makeUpTotal = players.reduce((s,p)=>s+curMakeUp[p],0);
+  const saqueAutTotal = players.reduce((s,p)=>{ const w=curWeek[p]; if(!w||w.saqueAut===0||w.makeFinal>0) return s; if(bancaAtual-w.saqueAut<piso) return s; return s+w.saqueAut; },0);
+
+  /* alertas */
+  const alerts=[];
+  players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
+  if(bancaAtual<piso) alerts.push({tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
+  const foraGrade=daily.filter(e=>weekEnding(e.entry_date)===CURWK && gradeStatus(e,abiMax)==='FORA DA GRADE');
+  if(foraGrade.length) alerts.push({tone:C.gold,text:`${foraGrade.length} lançamento(s) fora da grade nesta semana (buy-in acima de ${fmt(abiMax)}).`});
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; if(r<0 && r<=-num(config.stoploss_weekly_pct)*bancaAtual) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-num(config.stoploss_weekly_pct)*bancaAtual)}).`}); });
+  const slDiario=num(config.stoploss_daily_buyins)*abiMax;
+  if(slDiario>0) daily.filter(e=>weekEnding(e.entry_date)===CURWK && resultadoDia(e)<=-slDiario).forEach(e=>alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-slDiario)}).`}));
+
+  /* dados dos gráficos */
+  const chartWeeks=allWeeks.slice(-8);
+  const resChart=chartWeeks.map(wk=>({label:dLabel(wk),vals:players.map(p=>{const w=(weeksByPlayer[p]||[]).find(x=>x.week===wk); return w?w.resultado:0;})}));
+  const makeChart=chartWeeks.map(wk=>({label:dLabel(wk),vals:players.map(p=>makeUpAt(p,wk))}));
+  const volWeeks=[...new Set(daily.map(e=>weekEnding(e.entry_date)))].sort().slice(-8);
+  const volChart=volWeeks.map(wk=>({label:dLabel(wk),vals:[daily.filter(e=>weekEnding(e.entry_date)===wk).reduce((s,e)=>s+num(e.qtd_torneios),0)]}));
+  const bankWeeks=[...new Set(ledger.map(l=>weekEnding(l.entry_date)))].sort();
+  let runBanca=num(config.banca_inicial);
+  const bancaChart=[{label:'Início',value:runBanca}].concat(bankWeeks.map(wk=>{ runBanca+=ledger.filter(l=>weekEnding(l.entry_date)===wk).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return {label:dLabel(wk),value:runBanca}; })).slice(-9);
+
+  /* schemas de campos p/ AddModal */
+  const FIELDS={
+    daily:[
+      {k:'entry_date',label:'Data',type:'date',def:todayISO()},
+      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'site',label:'Site',type:'select',opts:sites},
+      {k:'qtd_torneios',label:'Qtd. torneios',type:'int',def:'0'},
+      {k:'saldo_inicial',label:'Saldo inicial (US$)',type:'money'},
+      {k:'saldo_final',label:'Saldo final (US$)',type:'money'},
+      {k:'deposito',label:'Depósito (US$)',type:'money',def:'0'},
+      {k:'saque',label:'Saque (US$)',type:'money',def:'0'},
+      {k:'total_buyins',label:'Total em buy-ins (US$)',type:'money',def:'0'},
+      {k:'maior_buyin',label:'Maior buy-in (US$)',type:'money',def:'0'},
+      {k:'maior_premiacao',label:'Maior premiação (US$)',type:'money',def:'0'},
+      {k:'observacoes',label:'Observações',type:'textarea',full:true},
+    ],
+    tour:[
+      {k:'entry_date',label:'Data',type:'date',def:todayISO()},
+      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'tournament_name',label:'Torneio',type:'text',full:true},
+      {k:'site',label:'Site',type:'select',opts:sites},
+      {k:'modality',label:'Modalidade',type:'select',opts:modalidades},
+      {k:'buyin',label:'Buy-in (US$)',type:'money',def:'0'},
+      {k:'reentries',label:'Re-entries',type:'int',def:'0'},
+      {k:'field_size',label:'Field (jogadores)',type:'int',def:'0'},
+      {k:'final_position',label:'Posição final',type:'int'},
+      {k:'prize',label:'Premiação (US$)',type:'money',def:'0'},
+      {k:'observacoes',label:'Observações',type:'textarea',full:true},
+    ],
+    bank:[
+      {k:'entry_date',label:'Data',type:'date',def:todayISO()},
+      {k:'wallet',label:'Carteira',type:'select',opts:WALLETS},
+      {k:'entrada',label:'Entrada (US$)',type:'money',def:'0'},
+      {k:'saida',label:'Saída (US$)',type:'money',def:'0'},
+      {k:'observacao',label:'Observação',type:'text',full:true},
+    ],
+    wd:[
+      {k:'week_ending_date',label:'Semana (domingo de fechamento)',type:'date',def:CURWK,full:true},
+      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'valor_sacado',label:'Valor sacado (US$)',type:'money',def:'0'},
+      {k:'observacoes',label:'Observações',type:'textarea',full:true},
+    ],
+  };
+  const MODAL_TITLE={daily:'lançamento diário',tour:'torneio',bank:'movimento na banca',wd:'saque pago'};
+  const MODAL_TABLE={daily:'daily_entries',tour:'tournaments',bank:'bankroll_ledger',wd:'withdrawals'};
+  const MODAL_STATE={daily:[daily,setDaily],tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
+
+  const nav=[
+    {id:'painel',label:'Painel',Icon:IcoPanel},
+    {id:'diario',label:'Diário',Icon:IcoDaily},
+    {id:'torneios',label:'Torneios',Icon:IcoTrophy},
+    {id:'semanal',label:'Semanal',Icon:IcoWeek},
+    {id:'mensal',label:'Mensal',Icon:IcoMonth},
+    {id:'saques',label:'Saques',Icon:IcoCashOut},
+    {id:'banca',label:'Banca',Icon:IcoStack},
+    {id:'config',label:'Ajustes',Icon:IcoGear},
+  ];
+
+  /* ---------- mensal ---------- */
+  const monthList=[...new Set(allWeeks.map(w=>w.slice(0,7)).concat([todayISO().slice(0,7)]))].sort();
+  const monthIdx=monthList.indexOf(month);
+  const goMonth=d=>{const i=monthIdx+d; if(i>=0&&i<monthList.length)setMonth(monthList[i]);};
+  const monthWeeks=players.flatMap(p=>(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month));
+  const monthDaily=daily.filter(e=>weekEnding(e.entry_date).slice(0,7)===month);
+  const mRes=monthWeeks.reduce((s,w)=>s+w.resultado,0);
+  const mLucroDiv=monthWeeks.reduce((s,w)=>s+w.lucroDiv,0);
+  const mPool=monthWeeks.reduce((s,w)=>s+w.partePool,0);
+  const mTorneios=monthDaily.reduce((s,e)=>s+num(e.qtd_torneios),0);
+  const mBuyins=monthDaily.reduce((s,e)=>s+num(e.total_buyins),0);
+  const mAbi=mTorneios>0?mBuyins/mTorneios:0;
+  const mRoi=mBuyins>0?(mRes/mBuyins)*100:0;
+  const dayResults=monthDaily.map(e=>({d:e.entry_date,r:resultadoDia(e),p:e.player}));
+  const melhorDia=dayResults.length?dayResults.reduce((a,b)=>b.r>a.r?b:a):null;
+  const piorDia=dayResults.length?dayResults.reduce((a,b)=>b.r<a.r?b:a):null;
+  const perPlayerMonth=players.map(p=>({p, res:monthWeeks.filter(w=>w.player===p).reduce((s,w)=>s+w.resultado,0), vol:monthDaily.filter(e=>e.player===p).reduce((s,e)=>s+num(e.total_buyins),0), makeAberto:(()=>{const ws=(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month); return ws.length?ws[ws.length-1].makeFinal:makeUpAt(p,month+'-31');})()}));
+  const maisLucrativo=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.res>a.res?b:a):null;
+  const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
+
+  const pcolor=p=>PLAYER_COLORS[players.indexOf(p)]||C.inkSoft;
 
   return <div className="wrap">
     {/* sidebar desktop */}
-    <aside className="side" style={{flexDirection:'column',width:250,padding:22,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:8}}>
-      <Brand/><div style={{height:8}}/>
+    <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
+      <Brand/><div style={{height:6}}/>
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)}/>)}
       <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
-        <div style={{padding:16,borderRadius:16,background:C.greenSoft}}>
-          <div style={{fontSize:12.5,color:C.green,fontWeight:700}}>Saldo de todas as contas</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,color:C.green,marginTop:4}}>{fmt(totalBalance)}</div>
+        <div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
+          <div style={{fontSize:12.5,color:P,fontWeight:700}}>Banca atual</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
         </div>
         <button onClick={()=>sb.auth.signOut()} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
       </div>
     </aside>
 
-    <main style={{flex:1,padding:'22px 18px 110px',maxWidth:'100%'}}>
-      {/* cabeçalho mobile */}
+    <main style={{flex:1,padding:'22px 16px 120px',maxWidth:'100%',minWidth:0}}>
+      {/* header mobile */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
         <div className="bottomnav"><Brand small/></div>
-        <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}>
-          <IcoLogout s={16}/>Sair
-        </button>
+        <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
       </div>
 
-      {/* navegação de mês */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:22,gap:12}}>
-        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Você está vendo</div><div style={{fontFamily:"'Fraunces',serif",fontSize:27,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
-        <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=months.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
-      </div>
-
-      {/* painel */}
+      {/* ---------------- PAINEL ---------------- */}
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-        <Card style={{padding:22,background:C.green,border:'none',color:'#fff'}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoWallet s={17}/>Saldo total nas contas</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(totalBalance)}</div>
-          <div style={{display:'flex',gap:20,marginTop:16,flexWrap:'wrap'}}>
-            {accounts.map(a=><button key={a.id} onClick={()=>editOpening(a)} title="Tocar para ajustar o saldo" style={{display:'flex',alignItems:'center',gap:8,background:'transparent',border:'none',color:'#fff',cursor:'pointer',padding:0}}>
-              <span style={{width:10,height:10,borderRadius:99,background:BANKS[a.name]||'#fff'}}/>
-              <span style={{fontSize:13.5,opacity:.9}}>{a.name}</span>
-              <span style={{fontWeight:700,fontSize:13.5}}>{fmt(balances[a.name])}</span>
-              <IcoPencil s={12} style={{opacity:.6}}/>
-            </button>)}
+        <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca central da pool</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
+          <div style={{marginTop:14}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}>
+            <span>Piso mínimo {fmt(piso)}</span>
+            <span>{bancaAtual>=piso?`${fmt(bancaAtual-piso)} acima do piso`:'abaixo do piso!'}</span>
           </div>
         </Card>
+
+        {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {alerts.map((a,i)=><Card key={i} style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:11,borderLeft:`4px solid ${a.tone}`}}>
+            <span style={{color:a.tone,flexShrink:0}}><IcoAlert s={20}/></span>
+            <span style={{fontSize:13.5,fontWeight:600,color:C.ink}}>{a.text}</span>
+          </Card>)}
+        </div>}
+
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-          <Stat Icon={IcoUp} tone={C.greenMid} bg={C.greenSoft} label="Entrou no mês" value={entrou}/>
-          <Stat Icon={IcoDown} tone={C.red} bg={C.redSoft} label="Saiu no mês" value={saiu}/>
+          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={`semana até ${dLabel(CURWK)}`}/>
+          <Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>
+          <Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>
+          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro da pool (acum.)" value={fmt(lucroPoolAcum)} sub={`pago em saques: ${fmt(totalPago)}`}/>
         </div>
+
         <div className="grid2">
           <Card style={{padding:20}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-              <div style={{display:'flex',alignItems:'center',gap:8,fontWeight:700,color:C.ink}}><span style={{color:C.gold}}><IcoCard s={18}/></span>Cartão de crédito</div>
-              <div style={{fontSize:13,color:C.inkSoft}}>Limite {fmt(limit)}</div>
-            </div>
-            <Bar2 pct={cardPct} color={cardColor}/>
-            <div style={{display:'flex',justifyContent:'space-between',marginTop:10}}><span style={{fontWeight:700,color:cardColor}}>{fmt(cardUsed)} usados</span><span style={{color:C.inkSoft,fontWeight:600}}>{fmt(Math.max(0,limit-cardUsed))} livres</span></div>
-            {cardPct>=80&&<div style={{marginTop:10,fontSize:13,color:C.red,fontWeight:700}}>⚠ Perto do limite, cuidado!</div>}
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Evolução da banca</h3>
+            <LineChart data={bancaChart} ref_={piso}/>
           </Card>
           <Card style={{padding:20}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,fontWeight:700,marginBottom:8}}><span style={{color:C.greenMid}}><IcoTrend s={18}/></span>Total investido</div>
-            <div style={{fontFamily:"'Fraunces',serif",fontSize:32,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div>
-            <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>{inv.length} aplicações</div>
-          </Card>
-        </div>
-        <div className="grid2">
-          <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Para onde foi o dinheiro</h3>
-            {byCat.length?<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-              <Donut data={byCat}/>
-              <div style={{flex:1,minWidth:130}}>{byCat.slice(0,6).map(e=><div key={e.name} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,fontSize:13.5}}><span style={{width:9,height:9,borderRadius:99,background:e.color}}/><span style={{flex:1,color:C.inkSoft}}>{e.name}</span><span style={{fontWeight:700}}>{fmt(e.value)}</span></div>)}</div>
-            </div>:<Empty>Nenhum gasto neste mês.</Empty>}
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Resultado semanal por jogador</h3>
+            <MultiBars data={resChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
           </Card>
           <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Entrou x Saiu por mês</h3>
-            <Bars data={trend}/>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Make-up por jogador</h3>
+            <MultiBars data={makeChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
+          </Card>
+          <Card style={{padding:20}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Volume de torneios por semana</h3>
+            <MultiBars data={volChart} series={[{name:'Torneios',color:C.greenMid}]}/>
           </Card>
         </div>
       </div>}
 
-      {/* lançamentos */}
-      {view==='lancamentos'&&<div className="ftfade">
-        <ListView title="Lançamentos do mês" subtitle="Tudo que entrou e saiu das contas" onAdd={()=>setModal('tx')} rows={monthTx} empty="Nenhum lançamento neste mês. Toque em Adicionar."
-          renderRow={t=><Row key={t.id}
-            onDelete={()=>del('transactions',t.id,setTx,tx)}
-            onEdit={()=>setEditing({type:'tx',item:t})}
-            left={<><span style={{width:40,height:40,borderRadius:12,background:t.type==='entrada'?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:t.type==='entrada'?C.greenMid:C.red}}>{t.type==='entrada'?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
-              <div><div style={{fontWeight:700,fontSize:15.5}}>{t.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(t.date)} · {t.category} · <span style={{color:BANKS[t.account]||C.inkSoft,fontWeight:700}}>{t.account}</span></div></div></>}
-            right={<span style={{fontWeight:800,fontSize:16,color:t.type==='entrada'?C.greenMid:C.red,flexShrink:0}}>{t.type==='entrada'?'+':'-'}{fmt(t.value)}</span>}/>}/>
+      {/* ---------------- DIÁRIO ---------------- */}
+      {view==='diario'&&<div className="ftfade">
+        <ListView title="Lançamento diário" subtitle="A fonte da verdade: saldo inicial e final são sempre o que você vê no site." onAdd={()=>setModal('daily')} rows={daily} empty="Nenhum lançamento ainda. Toque em Adicionar."
+          renderRow={e=>{const st=gradeStatus(e,abiMax); const r=resultadoDia(e); return <Row key={e.id}
+            onDelete={()=>del('daily_entries',e.id,setDaily,daily)}
+            onEdit={()=>setEditing({type:'daily',item:e})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:C.plumSoft,display:'grid',placeItems:'center',flexShrink:0,color:pcolor(e.player)}}><IcoDaily s={20}/></span>
+              <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:15}}>{e.player} <span style={{color:C.inkSoft,fontWeight:600}}>· {e.site||'—'}</span></div>
+              <div style={{fontSize:12.5,color:C.inkSoft,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:2}}>{dLabel(e.entry_date)} · {num(e.qtd_torneios)} torneios{num(e.qtd_torneios)>0?` · ABI ${fmt(abiMedioDia(e))}`:''} <Badge text={st}/></div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:r>=0?C.greenMid:C.red,flexShrink:0}}>{r>=0?'+':'−'}{fmt(Math.abs(r))}</span>}/>;}}/>
       </div>}
 
-      {/* cartão */}
-      {view==='cartao'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-        <Card style={{padding:22,background:`linear-gradient(135deg,${C.green},#0E3A2C)`,border:'none',color:'#fff'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontWeight:700,opacity:.9}}>Fatura de {MONTHS[+month.split('-')[1]-1]}</span>
-            <button onClick={editLimit} style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'7px 12px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer'}}><IcoPencil s={14}/>Limite {fmt(limit)}</button>
+      {/* ---------------- TORNEIOS ---------------- */}
+      {view==='torneios'&&<div className="ftfade">
+        <ListView title="Torneios" subtitle="Complementar ao Diário — o controle oficial é o lançamento diário." onAdd={()=>setModal('tour')} rows={tours} empty="Nenhum torneio registrado."
+          renderRow={t=>{const st=tourStatus(t,abiMax); const lp=lucroTorneio(t); return <Row key={t.id}
+            onDelete={()=>del('tournaments',t.id,setTours,tours)}
+            onEdit={()=>setEditing({type:'tour',item:t})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={19}/></span>
+              <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:15}}>{t.tournament_name||'Torneio'} <span style={{color:C.inkSoft,fontWeight:600}}>· {t.player}</span></div>
+              <div style={{fontSize:12.5,color:C.inkSoft,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} <Badge text={st}/></div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;}}/>
+      </div>}
+
+      {/* ---------------- SEMANAL ---------------- */}
+      {view==='semanal'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Geral da pool</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Split {pctFmt(num(config.player_pct)*100)} pro jogador · {pctFmt((1-num(config.player_pct))*100)} pra pool</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Lucro acumulado da pool</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:C.green}}>{fmt(lucroPoolAcum)}</div></div>
+            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
           </div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:40,fontWeight:600,margin:'8px 0 14px'}}>{fmt(cardUsed)}</div>
-          <Bar2 pct={cardPct} color="#fff" track="rgba(255,255,255,.2)"/>
-          <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}><span>{cardPct}% do limite</span><span>{fmt(Math.max(0,limit-cardUsed))} disponível</span></div>
         </Card>
-        <ListView title="Compras no cartão" onAdd={()=>setModal('card')} rows={monthCard} empty="Nenhuma compra no cartão neste mês."
-          renderRow={c=><Row key={c.id}
-            onDelete={()=>del('card_purchases',c.id,setCard,card)}
-            onEdit={()=>setEditing({type:'card',item:c})}
-            left={<><span style={{width:40,height:40,borderRadius:12,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoCard s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{c.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(c.date)} · {c.category}</div></div></>}
-            right={<span style={{fontWeight:800,fontSize:16,color:C.ink,flexShrink:0}}>{fmt(c.value)}</span>}/>}/>
+        {players.map(p=>{const arr=[...(weeksByPlayer[p]||[])].reverse(); return <Card key={p} style={{padding:20}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{width:12,height:12,borderRadius:99,background:pcolor(p)}}/><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>{p}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(curMakeUp[p])}</span></div>
+          {arr.length?arr.map(w=>{const vs=valorSacadoFor(w.week,p); const st=saqueStatus(w,bancaAtual,piso,vs); const wkAbiEntries=w.entries; const wkBuyins=wkAbiEntries.reduce((s,e)=>s+num(e.total_buyins),0); const wkTorn=wkAbiEntries.reduce((s,e)=>s+num(e.qtd_torneios),0); const wkAbi=wkTorn>0?wkBuyins/wkTorn:0; return <div key={w.week} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+              <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontWeight:800,fontSize:15,color:w.resultado>=0?C.greenMid:C.red}}>{w.resultado>=0?'+':'−'}{fmt(Math.abs(w.resultado))}</span><Badge text={st}/></div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
+              <div style={{color:C.inkSoft}}>Make-up: <b style={{color:C.ink}}>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</b></div>
+              <div style={{color:C.inkSoft}}>Lucro divisível: <b style={{color:C.ink}}>{fmt(w.lucroDiv)}</b></div>
+              <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
+              <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
+            </div>
+            {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(abiMax)}</div><Bar2 pct={abiMax>0?(wkAbi/abiMax)*100:0} color={wkAbi>=abiMax*0.9?C.red:wkAbi>=abiMax*0.7?C.gold:C.greenMid}/></div>}
+          </div>;}):<Empty>Sem semanas fechadas ainda.</Empty>}
+        </Card>;})}
       </div>}
 
-      {/* investimentos */}
-      {view==='investimentos'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-        <Card style={{padding:22}}>
-          <div style={{fontWeight:700,color:C.inkSoft,fontSize:14}}>Total guardado e investido</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:38,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div>
+      {/* ---------------- MENSAL ---------------- */}
+      {view==='mensal'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
+          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
+          <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+          <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
+          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
+          <Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios no mês" value={String(mTorneios)} sub={`ABI médio ${fmt(mAbi)}`}/>
+          <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
+        </div>
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
+          {perPlayerMonth.map(pm=><div key={pm.p} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:`1px solid ${C.border}`}}>
+            <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
+            <span style={{fontWeight:700,flex:1}}>{pm.p}</span>
+            <span style={{fontSize:13,color:C.inkSoft}}>make-up <b style={{color:C.ink}}>{fmt(pm.makeAberto)}</b></span>
+            <span style={{fontWeight:800,color:pm.res>=0?C.greenMid:C.red,minWidth:90,textAlign:'right'}}>{pm.res>=0?'+':'−'}{fmt(Math.abs(pm.res))}</span>
+          </div>)}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
+            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?`${dLabel(melhorDia.d)} · ${fmt(melhorDia.r)}`:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?`${dLabel(piorDia.d)} · ${fmt(piorDia.r)}`:'—'}</div></div>
+          </div>
         </Card>
-        <ListView title="Suas aplicações" onAdd={()=>setModal('inv')} rows={inv} empty="Nenhuma aplicação cadastrada."
-          renderRow={i=><Row key={i.id}
-            onDelete={()=>del('investments',i.id,setInv,inv)}
-            onEdit={()=>setEditing({type:'inv',item:i})}
-            left={<><span style={{width:40,height:40,borderRadius:12,background:C.greenSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.greenMid}}><IcoTrend s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{i.name}</div><div style={{fontSize:12.5,color:C.inkSoft}}>em <span style={{color:BANKS[i.institution]||C.inkSoft,fontWeight:700}}>{i.institution}</span></div></div></>}
-            right={<span style={{fontWeight:800,fontSize:16,color:C.green,flexShrink:0}}>{fmt(i.value)}</span>}/>}/>
+      </div>}
+
+      {/* ---------------- SAQUES ---------------- */}
+      {view==='saques'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Saques por semana</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:8}}>O valor autorizado vem do cálculo semanal. Registre aqui só o que foi <b>realmente pago</b>.</div>
+          {(()=>{ const rows=players.flatMap(p=>(weeksByPlayer[p]||[]).map(w=>({w,p,vs:valorSacadoFor(w.week,p)}))).filter(x=>x.w.saqueAut>0||x.vs>0).sort((a,b)=>a.w.week<b.w.week?1:-1);
+            return rows.length?rows.map(({w,p,vs})=>{const st=saqueStatus(w,bancaAtual,piso,vs); const podePagar=st==='Autorizado'||st==='Parcialmente autorizado'; return <div key={w.week+p} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+              <span style={{width:10,height:10,borderRadius:99,background:pcolor(p),flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{p} · semana até {dLabel(w.week)}</div>
+                <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>autorizado {fmt(w.saqueAut)} · pago {fmt(vs)} <Badge text={st}/></div></div>
+              {podePagar&&<button onClick={()=>setModal({type:'wd',initial:{week_ending_date:w.week,player:p,valor_sacado:String(Math.max(0,w.saqueAut-vs)).replace('.',',')}})} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>Registrar</button>}
+            </div>;}):<Empty>Nenhuma semana com saque autorizado ainda.</Empty>;
+          })()}
+        </Card>
+        <ListView title="Pagamentos registrados" onAdd={()=>setModal('wd')} rows={wds} empty="Nenhum pagamento registrado."
+          renderRow={w=><Row key={w.id}
+            onDelete={()=>del('withdrawals',w.id,setWds,wds)}
+            onEdit={()=>setEditing({type:'wd',item:w})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:C.plumSoft,display:'grid',placeItems:'center',flexShrink:0,color:pcolor(w.player)}}><IcoCashOut s={19}/></span>
+              <div><div style={{fontWeight:700,fontSize:15}}>{w.player}</div><div style={{fontSize:12.5,color:C.inkSoft}}>semana até {dLabel(w.week_ending_date)}{w.observacoes?` · ${w.observacoes}`:''}</div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:P,flexShrink:0}}>{fmt(w.valor_sacado)}</span>}/>}/>
+      </div>}
+
+      {/* ---------------- BANCA ---------------- */}
+      {view==='banca'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca atual</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:40,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
+          <div style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
+            {WALLETS.map(wl=>{const net=ledger.filter(l=>l.wallet===wl).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return <div key={wl}><div style={{fontSize:12.5,opacity:.85}}>{wl}</div><div style={{fontWeight:700,fontSize:15}}>{fmt(net)}</div></div>;})}
+            <div><div style={{fontSize:12.5,opacity:.85}}>Banca inicial</div><div style={{fontWeight:700,fontSize:15}}>{fmt(config.banca_inicial)}</div></div>
+          </div>
+        </Card>
+        <ListView title="Movimentos da banca" subtitle="Entradas e saídas por carteira. O saldo é calculado somando tudo à banca inicial." onAdd={()=>setModal('bank')} rows={ledger.slice().reverse()} empty="Nenhum movimento na banca."
+          renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
+            onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
+            onEdit={()=>setEditing({type:'bank',item:l})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:net>=0?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:net>=0?C.greenMid:C.red}}>{net>=0?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
+              <div><div style={{fontWeight:700,fontSize:15}}>{l.wallet}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(l.entry_date)}{l.observacao?` · ${l.observacao}`:''}</div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:net>=0?C.greenMid:C.red,flexShrink:0}}>{net>=0?'+':'−'}{fmt(Math.abs(net))}</span>}/>;}}/>
+      </div>}
+
+      {/* ---------------- CONFIG ---------------- */}
+      {view==='config'&&<div className="ftfade">
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>Configurações da pool</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
+          {[
+            {label:'Jogador 1',val:config.player1_name,kind:'text',key:'player1_name'},
+            {label:'Jogador 2',val:config.player2_name,kind:'text',key:'player2_name'},
+            {label:'Fatia do jogador no lucro',val:config.player_pct,kind:'percent',key:'player_pct',show:pctFmt(num(config.player_pct)*100)},
+            {label:'ABI máximo (grade)',val:config.abi_max,kind:'money',key:'abi_max',show:fmt(config.abi_max)},
+            {label:'Piso mínimo da banca',val:config.piso_minimo,kind:'money',key:'piso_minimo',show:fmt(config.piso_minimo)},
+            {label:'Make-up máx. recomendado',val:config.makeup_max_recomendado,kind:'money',key:'makeup_max_recomendado',show:fmt(config.makeup_max_recomendado)},
+            {label:`Make-up inicial · ${config.player1_name}`,val:config.makeup_inicial_player1,kind:'money',key:'makeup_inicial_player1',show:fmt(config.makeup_inicial_player1)},
+            {label:`Make-up inicial · ${config.player2_name}`,val:config.makeup_inicial_player2,kind:'money',key:'makeup_inicial_player2',show:fmt(config.makeup_inicial_player2)},
+            {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
+            {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
+            {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
+            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
+          ].map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
+            <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>saveConfig({[row.key]:nv})})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
+          </div>)}
+        </Card>
       </div>}
     </main>
 
-    {/* navegação mobile */}
-    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 10px calc(6px + env(safe-area-inset-bottom))',gap:4,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
+    {/* nav mobile (rolagem horizontal) */}
+    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20,overflowX:'auto'}}>
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)} mobile/>)}
     </nav>
 
-    {/* modal novo item */}
-    {modal&&<AddModal type={modal} onClose={()=>setModal(null)}
-      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
-      onSave={d=>{ if(modal==='tx')add('transactions',d,setTx,tx); if(modal==='card')add('card_purchases',d,setCard,card); if(modal==='inv')add('investments',d,setInv,inv); }}/>}
+    {/* modal adicionar */}
+    {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null; const [list,setter]=MODAL_STATE[type]; return (
+      <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)}
+        onSave={d=>add(MODAL_TABLE[type],d,setter,list)}/>);})()}
 
-    {/* modal editar item */}
-    {editing&&<AddModal type={editing.type} editing={editing.item} onClose={()=>setEditing(null)}
-      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
-      onEdit={d=>{ if(editing.type==='tx')update('transactions',d,setTx,tx); if(editing.type==='card')update('card_purchases',d,setCard,card); if(editing.type==='inv')update('investments',d,setInv,inv); }}/>}
+    {/* modal editar */}
+    {editing&&(()=>{const [list,setter]=MODAL_STATE[editing.type]; return (
+      <AddModal title={`Editar ${MODAL_TITLE[editing.type]}`} fields={FIELDS[editing.type]} editing={editing.item} onClose={()=>setEditing(null)}
+        onEdit={d=>update(MODAL_TABLE[editing.type],d,setter,list)}/>);})()}
 
-    {/* modal saldo / limite */}
-    {quickEdit&&<QuickEditModal
-      label={quickEdit.label}
-      hint={quickEdit.hint}
-      currentValue={quickEdit.current}
-      onClose={()=>setQuickEdit(null)}
-      onSave={quickEdit.onSave}/>}
+    {/* modal quick edit (config) */}
+    {quickEdit&&<QuickEditModal label={quickEdit.label} hint={quickEdit.hint} kind={quickEdit.kind} currentValue={quickEdit.current} onClose={()=>setQuickEdit(null)} onSave={quickEdit.onSave}/>}
   </div>;
 }
 
