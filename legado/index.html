@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Minhas Finanças</title>
+<meta name="theme-color" content="#16513F" />
+
+<script>
+  window.SUPABASE_URL = "https://omulvrxwuudfmbsuvcqo.supabase.co";
+  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9tdWx2cnh3dXVkZm1ic3V2Y3FvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwOTU4ODEsImV4cCI6MjA5NjY3MTg4MX0.nKPZcF06hlg28snrwtNJw05ObDuIUgbENuGVqwYUDDQ";
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap');
+  :root{
+    --bg:#F5F0E6; --surface:#fff; --warm:#FCFAF3; --ink:#1E2A24; --inkSoft:#5E6B61;
+    --green:#16513F; --greenMid:#1F7355; --greenSoft:#E5EDE6; --gold:#B0823A;
+    --goldSoft:#F1E6CD; --red:#AE472E; --redSoft:#F5E3DC; --border:#EAE3D4;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Hanken Grotesk',sans-serif}
+  input,select,button{font-family:'Hanken Grotesk',sans-serif}
+  select{-webkit-appearance:none;appearance:none}
+  .ftfade{animation:ftf .5s cubic-bezier(.2,.7,.3,1) both}
+  @keyframes ftf{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#D8CFBC;border-radius:8px}
+  .wrap{display:flex;max-width:1280px;margin:0 auto;min-height:100vh}
+  .side{display:none}
+  .bottomnav{display:flex}
+  .grid2{display:grid;grid-template-columns:1fr;gap:14px}
+  .spin{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(min-width:860px){
+    .side{display:flex}
+    .bottomnav{display:none}
+    .grid2{grid-template-columns:1fr 1fr}
+    main{padding-bottom:30px !important}
+    .mobile-only{display:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+/* ---------- config / cliente ---------- */
+const CONFIGURED = window.SUPABASE_URL && !window.SUPABASE_URL.startsWith("COLE_AQUI");
+const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
+
+/* ---------- constantes ---------- */
+const C = {
+  bg:'#F5F0E6', surface:'#fff', warm:'#FCFAF3', ink:'#1E2A24', inkSoft:'#5E6B61',
+  green:'#16513F', greenMid:'#1F7355', greenSoft:'#E5EDE6', gold:'#B0823A',
+  goldSoft:'#F1E6CD', red:'#AE472E', redSoft:'#F5E3DC', border:'#EAE3D4',
+};
+const BANKS = { 'Nubank':'#820AD1', 'Santander':'#EC0000', 'Mercado Pago':'#009EE3' };
+const SAIDA_CATS = ['Alimentação','Casa','Transporte','Saúde','Lazer','Vestuário','Educação','Outros'];
+const ENTRADA_CATS = ['Salário','Renda Extra','Presente','Outros'];
+const CAT_COLORS = {
+  'Alimentação':'#AE472E','Casa':'#16513F','Transporte':'#B0823A','Saúde':'#1F7355',
+  'Lazer':'#C97B3B','Vestuário':'#8A6BBF','Educação':'#3B7FB8','Outros':'#9A8E78',
+  'Salário':'#1F7355','Renda Extra':'#B0823A','Presente':'#C97B3B',
+};
+const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const mKey = d => (d||'').slice(0,7);
+const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
+const mShort = k => { const [,m]=k.split('-'); return MONTHS[+m-1].slice(0,3); };
+const dLabel = d => { const [,m,day]=d.split('-'); return `${day}/${m}`; };
+const todayISO = () => new Date().toISOString().slice(0,10);
+function parseValor(s){
+  if(typeof s==='number') return s;
+  s=String(s||'').trim().replace(/[R$\s]/g,'');
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  const n=parseFloat(s); return isNaN(n)?0:n;
+}
+
+/* ---------- ícones ---------- */
+const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
+const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
+const IcoSwap   = p => <Svg {...p}><path d="M7 10l-3-3 3-3"/><path d="M4 7h13"/><path d="M17 14l3 3-3 3"/><path d="M20 17H7"/></Svg>;
+const IcoCard   = p => <Svg {...p}><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></Svg>;
+const IcoTrend  = p => <Svg {...p}><path d="M3 17l6-6 4 4 7-7"/><path d="M17 8h4v4"/></Svg>;
+const IcoWallet = p => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h13v4"/><path d="M3 7v10a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1H5"/><circle cx="17" cy="13" r="1.3" fill="currentColor" stroke="none"/></Svg>;
+const IcoPlus   = p => <Svg {...p}><path d="M12 5v14M5 12h14"/></Svg>;
+const IcoTrash  = p => <Svg {...p}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></Svg>;
+const IcoX      = p => <Svg {...p}><path d="M6 6l12 12M18 6L6 18"/></Svg>;
+const IcoPencil = p => <Svg {...p}><path d="M16 3l5 5L8 21H3v-5L16 3z"/></Svg>;
+const IcoUp     = p => <Svg {...p}><path d="M7 17L17 7M7 7h10v10"/></Svg>;
+const IcoDown   = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
+const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
+
+/* ---------- componentes base ---------- */
+const Card = ({children,style}) => <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
+
+function NavBtn({Icon,label,active,onClick,mobile}){
+  return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:'100%',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 0':'13px 16px',borderRadius:14,border:'none',cursor:'pointer',background:active?C.green:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?11:15.5,transition:'all .18s'}}>
+    <Icon s={mobile?22:20} w={active?2.4:2}/>{label}
+  </button>;
+}
+const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':C.green,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
+const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
+const Brand = ({small}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
+  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:C.green,display:'grid',placeItems:'center',color:'#fff'}}><IcoWallet s={small?18:20}/></div>
+  <div><div style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:small?18:20,lineHeight:1}}>Minhas Finanças</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600}}>simples e no controle</div></div>
+</div>;
+
+function Bar2({pct,color,track}){
+  return <div style={{height:13,borderRadius:99,background:track||C.bg,overflow:'hidden'}}><div style={{width:`${pct}%`,height:'100%',borderRadius:99,background:color,transition:'width .5s cubic-bezier(.2,.7,.3,1)'}}/></div>;
+}
+function Stat({Icon,tone,bg,label,value}){
+  return <Card style={{padding:18}}>
+    <span style={{width:36,height:36,borderRadius:11,background:bg,display:'grid',placeItems:'center',color:tone}}><Icon s={19}/></span>
+    <div style={{fontSize:13,color:C.inkSoft,fontWeight:600,marginTop:12}}>{label}</div>
+    <div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,color:tone}}>{fmt(value)}</div>
+  </Card>;
+}
+function Donut({data,size=148}){
+  const total=data.reduce((s,d)=>s+d.value,0)||1;
+  const r=size/2-10, cx=size/2, cy=size/2, circ=2*Math.PI*r; let off=0;
+  return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{transform:'rotate(-90deg)'}}>
+    <circle cx={cx} cy={cy} r={r} fill="none" stroke={C.bg} strokeWidth={15}/>
+    {data.map((d,i)=>{const len=(d.value/total)*circ; const e=<circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={d.color} strokeWidth={15} strokeDasharray={`${len} ${circ-len}`} strokeDashoffset={-off}/>; off+=len; return e;})}
+  </svg>;
+}
+function Bars({data}){
+  const max=Math.max(1,...data.flatMap(d=>[d.Entrou,d.Saiu]));
+  return <div>
+    <div style={{display:'flex',alignItems:'flex-end',gap:14,height:150,padding:'0 4px'}}>
+      {data.map((d,i)=><div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+        <div style={{display:'flex',gap:5,alignItems:'flex-end',height:120,width:'100%',justifyContent:'center'}}>
+          <div title={fmt(d.Entrou)} style={{width:'40%',maxWidth:18,height:`${(d.Entrou/max)*100}%`,background:C.greenMid,borderRadius:'5px 5px 0 0',minHeight:2}}/>
+          <div title={fmt(d.Saiu)} style={{width:'40%',maxWidth:18,height:`${(d.Saiu/max)*100}%`,background:C.red,borderRadius:'5px 5px 0 0',minHeight:2}}/>
+        </div>
+        <span style={{fontSize:12,color:C.inkSoft,fontWeight:600}}>{d.mes}</span>
+      </div>)}
+    </div>
+    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:8,fontSize:12.5,color:C.inkSoft,fontWeight:600}}>
+      <span style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:C.greenMid}}/>Entrou</span>
+      <span style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:C.red}}/>Saiu</span>
+    </div>
+  </div>;
+}
+
+/* ---------- Row com confirmação de exclusão inline ---------- */
+function Row({left,right,onDelete,onEdit}){
+  const [confirming,setConfirming]=useState(false);
+  if(confirming) return (
+    <div style={{display:'flex',alignItems:'center',gap:8,padding:'13px 4px',borderBottom:`1px solid ${C.border}`}}>
+      <div style={{flex:1,fontSize:14,fontWeight:600,color:C.ink}}>Remover este item?</div>
+      <button onClick={()=>{setConfirming(false);onDelete();}} style={{padding:'7px 18px',borderRadius:10,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Sim</button>
+      <button onClick={()=>setConfirming(false)} style={{padding:'7px 18px',borderRadius:10,border:`1px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}>Não</button>
+    </div>
+  );
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:8,padding:'13px 4px',borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:0}}>{left}</div>
+      {right}
+      {onEdit&&<button onClick={onEdit} aria-label="Editar" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={16}/></button>}
+      <button onClick={()=>setConfirming(true)} aria-label="Remover" style={{width:34,height:34,borderRadius:10,border:'none',background:'transparent',color:'#C3BBA9',cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoTrash s={17}/></button>
+    </div>
+  );
+}
+
+function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
+  return <Card style={{padding:20}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:12}}>
+      <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:0}}>{title}</h3>{subtitle&&<div style={{fontSize:13,color:C.inkSoft,marginTop:2}}>{subtitle}</div>}</div>
+      <button onClick={onAdd} style={{display:'flex',alignItems:'center',gap:6,background:C.green,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(22,81,63,.7)'}}><IcoPlus s={18}/>Adicionar</button>
+    </div>
+    {rows.length?rows.map(renderRow):<Empty>{empty}</Empty>}
+  </Card>;
+}
+
+/* ---------- estilos de input ---------- */
+const inputStyle={width:'100%',padding:'13px 14px',borderRadius:13,border:`1.5px solid ${C.border}`,background:C.warm,color:C.ink,fontSize:16,outline:'none',fontWeight:600};
+const labelStyle={fontSize:11.5,fontWeight:700,letterSpacing:'.06em',textTransform:'uppercase',color:C.gold,marginBottom:7,display:'block'};
+
+function Select({value,onChange,opts}){
+  return <div style={{position:'relative'}}>
+    <select style={inputStyle} value={value} onChange={onChange}>{opts.map(o=><option key={o}>{o}</option>)}</select>
+    <span style={{position:'absolute',right:14,top:16,pointerEvents:'none',color:C.inkSoft}}>▾</span>
+  </div>;
+}
+
+/* ---------- modal rápido: saldo e limite ---------- */
+function QuickEditModal({label,hint,currentValue,onClose,onSave}){
+  const [val,setVal]=useState(String(currentValue||0).replace('.',','));
+  const save=()=>{ const n=parseValor(val); if(n>=0) onSave(n); };
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
+          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
+        <input style={{...inputStyle,fontSize:24,fontFamily:"'Fraunces',serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>
+        <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- modal adicionar / editar ---------- */
+function AddModal({type,onClose,onSave,onEdit,accounts,editing}){
+  const isTx=type==='tx', isCard=type==='card', isInv=type==='inv';
+  const isEditing=!!editing;
+  const [kind,setKind]=useState(editing?.type||'saida');
+  const initCat=editing?.category||(editing?.type==='entrada'?ENTRADA_CATS[0]:SAIDA_CATS[0]);
+  const [f,setF]=useState({
+    date:editing?.date||todayISO(),
+    desc:editing?.description||'',
+    value:editing?.value!=null?String(editing.value).replace('.',','):'',
+    cat:initCat,
+    acc:editing?.account||(accounts[0]||'Nubank'),
+    name:editing?.name||'',
+    inst:editing?.institution||(accounts[0]||'Nubank'),
+  });
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const cats = isTx && kind==='entrada' ? ENTRADA_CATS : SAIDA_CATS;
+  const title = isEditing
+    ? (isTx?'Editar lançamento':isCard?'Editar compra':'Editar aplicação')
+    : (isTx?'Novo lançamento':isCard?'Nova compra no cartão':'Nova aplicação');
+
+  const save=()=>{
+    const value=parseValor(f.value);
+    if(isInv){
+      if(!f.name||value<=0) return;
+      const d={name:f.name,institution:f.inst,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    } else if(isCard){
+      if(!f.desc||value<=0) return;
+      const d={date:f.date,description:f.desc,category:f.cat,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    } else {
+      if(!f.desc||value<=0) return;
+      const d={date:f.date,description:f.desc,category:f.cat,account:f.acc,type:kind,value};
+      isEditing ? onEdit({...editing,...d}) : onSave(d);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,30,25,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
+          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {isTx&&<div style={{display:'flex',gap:8}}>{['entrada','saida'].map(k=>
+            <button key={k} onClick={()=>{setKind(k);set('cat',(k==='entrada'?ENTRADA_CATS:SAIDA_CATS)[0]);}} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',cursor:'pointer',fontWeight:700,fontSize:15,background:kind===k?(k==='entrada'?C.greenMid:C.red):C.bg,color:kind===k?'#fff':C.inkSoft}}>{k==='entrada'?'Entrou':'Saiu'}</button>)}</div>}
+          {isInv
+            ? <div><label style={labelStyle}>Nome da aplicação</label><input style={inputStyle} value={f.name} placeholder="Ex: Tesouro Selic" onChange={e=>set('name',e.target.value)}/></div>
+            : <div><label style={labelStyle}>Descrição</label><input style={inputStyle} value={f.desc} placeholder="Ex: Mercado, Salário..." onChange={e=>set('desc',e.target.value)}/></div>}
+          <div><label style={labelStyle}>Valor (R$)</label><input style={{...inputStyle,fontSize:22,fontFamily:"'Fraunces',serif"}} inputMode="decimal" value={f.value} placeholder="0,00" onChange={e=>set('value',e.target.value)}/></div>
+          {!isInv&&<div><label style={labelStyle}>Categoria</label><Select value={f.cat} onChange={e=>set('cat',e.target.value)} opts={cats}/></div>}
+          {(isTx||isInv)&&<div><label style={labelStyle}>{isInv?'Onde está guardado':'Conta'}</label><Select value={isInv?f.inst:f.acc} onChange={e=>set(isInv?'inst':'acc',e.target.value)} opts={accounts.length?accounts:['Nubank','Santander','Mercado Pago']}/></div>}
+          {!isInv&&<div><label style={labelStyle}>Data</label><input type="date" style={inputStyle} value={f.date} onChange={e=>set('date',e.target.value)}/></div>}
+          <button onClick={save} style={{marginTop:4,padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>{isEditing?'Salvar alterações':'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- tela de login ---------- */
+function Login(){
+  const [email,setEmail]=useState(''); const [pass,setPass]=useState('');
+  const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
+  const entrar=async()=>{
+    setErr(''); setBusy(true);
+    const {error}=await sb.auth.signInWithPassword({email:email.trim(),password:pass});
+    setBusy(false);
+    if(error) setErr('E-mail ou senha incorretos.');
+  };
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
+      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:C.green,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
+      </div>
+    </Card>
+  </div>;
+}
+
+/* ---------- tela "falta configurar" ---------- */
+function NotConfigured(){
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:24}}>
+    <Card style={{padding:30,maxWidth:460}}>
+      <div style={{display:'flex',justifyContent:'center',marginBottom:16}}><Brand/></div>
+      <h3 style={{fontFamily:"'Fraunces',serif",margin:'0 0 8px'}}>Falta conectar o banco de dados</h3>
+      <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra este arquivo e cole a <b>URL</b> e a <b>chave anon</b> do seu projeto Supabase no topo (bloco de configuração). Depois é só recarregar.</p>
+    </Card>
+  </div>;
+}
+
+/* ---------- dashboard ---------- */
+function Dashboard({session}){
+  const [accounts,setAccounts]=useState([]);
+  const [tx,setTx]=useState([]);
+  const [card,setCard]=useState([]);
+  const [inv,setInv]=useState([]);
+  const [limit,setLimit]=useState(3000);
+  const [loading,setLoading]=useState(true);
+  const [view,setView]=useState('painel');
+  const [modal,setModal]=useState(null);
+  const [editing,setEditing]=useState(null);
+  const [quickEdit,setQuickEdit]=useState(null);
+  const [month,setMonth]=useState(todayISO().slice(0,7));
+
+  useEffect(()=>{(async()=>{
+    try{
+      const [a,t,c,i,s]=await Promise.all([
+        sb.from('accounts').select('*').order('sort'),
+        sb.from('transactions').select('*').order('date',{ascending:false}),
+        sb.from('card_purchases').select('*').order('date',{ascending:false}),
+        sb.from('investments').select('*').order('created_at'),
+        sb.from('settings').select('*').maybeSingle(),
+      ]);
+      let accs=a.data||[];
+      if(accs.length===0){
+        const def=[{name:'Nubank',opening_balance:0,sort:1},{name:'Santander',opening_balance:0,sort:2},{name:'Mercado Pago',opening_balance:0,sort:3}];
+        const r=await sb.from('accounts').insert(def).select(); accs=r.data||[];
+      }
+      setAccounts(accs); setTx(t.data||[]); setCard(c.data||[]); setInv(i.data||[]);
+      if(s.data) setLimit(Number(s.data.card_limit)); else await sb.from('settings').insert({card_limit:3000});
+    }catch(e){ console.error(e); }
+    setLoading(false);
+  })();},[]);
+
+  const accNames = accounts.map(a=>a.name);
+  const balances = useMemo(()=>{
+    const m={}; accounts.forEach(a=>{m[a.name]=Number(a.opening_balance)||0;});
+    tx.forEach(t=>{ if(m[t.account]===undefined)m[t.account]=0; m[t.account]+=(t.type==='entrada'?1:-1)*Number(t.value); });
+    return m;
+  },[accounts,tx]);
+  const totalBalance = Object.values(balances).reduce((s,v)=>s+v,0);
+  const monthTx   = tx.filter(t=>mKey(t.date)===month);
+  const entrou    = monthTx.filter(t=>t.type==='entrada').reduce((s,t)=>s+Number(t.value),0);
+  const saiu      = monthTx.filter(t=>t.type==='saida').reduce((s,t)=>s+Number(t.value),0);
+  const monthCard = card.filter(c=>mKey(c.date)===month);
+  const cardUsed  = monthCard.reduce((s,c)=>s+Number(c.value),0);
+  const cardPct   = Math.min(100,Math.round((cardUsed/(limit||1))*100));
+  const cardColor = cardPct>=80?C.red:cardPct>=50?C.gold:C.greenMid;
+  const invTotal  = inv.reduce((s,i)=>s+Number(i.value),0);
+  const byCat = useMemo(()=>{
+    const m={}; monthTx.filter(t=>t.type==='saida').forEach(t=>{m[t.category]=(m[t.category]||0)+Number(t.value);});
+    return Object.entries(m).map(([name,value])=>({name,value,color:CAT_COLORS[name]||'#9A8E78'})).sort((a,b)=>b.value-a.value);
+  },[monthTx]);
+  const months = useMemo(()=>{ const s=new Set([...tx,...card].map(r=>mKey(r.date))); s.add(todayISO().slice(0,7)); return [...s].sort(); },[tx,card]);
+  const trend  = useMemo(()=>months.slice(-6).map(k=>({
+    mes:mShort(k),
+    Entrou:tx.filter(t=>mKey(t.date)===k&&t.type==='entrada').reduce((s,t)=>s+Number(t.value),0),
+    Saiu:tx.filter(t=>mKey(t.date)===k&&t.type==='saida').reduce((s,t)=>s+Number(t.value),0),
+  })),[tx,months]);
+  const monthIdx = months.indexOf(month);
+  const goMonth  = d=>{const i=monthIdx+d; if(i>=0&&i<months.length)setMonth(months[i]);};
+
+  /* CRUD */
+  const add = async (table,data,setter,list)=>{
+    const {data:row,error}=await sb.from(table).insert(data).select().single();
+    if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
+    setter([row,...list]); setModal(null);
+  };
+  const del = async (table,id,setter,list)=>{
+    const {error}=await sb.from(table).delete().eq('id',id);
+    if(error){alert('Não consegui remover.');console.error(error);return;}
+    setter(list.filter(x=>x.id!==id));
+  };
+  const update = async (table,newData,setter,list)=>{
+    const {id,user_id,created_at,...payload}=newData;
+    const {data:updated,error}=await sb.from(table).update(payload).eq('id',id).select().single();
+    if(error){alert('Não consegui atualizar. Tente de novo.');console.error(error);return;}
+    setter(list.map(x=>x.id===id?updated:x)); setEditing(null);
+  };
+
+  const editLimit = ()=>{
+    setQuickEdit({
+      label:'Limite do cartão',
+      hint:'Digite o limite total do seu cartão de crédito.',
+      current:limit,
+      onSave:async nv=>{
+        setLimit(nv); setQuickEdit(null);
+        await sb.from('settings').upsert({user_id:session.user.id,card_limit:nv});
+      }
+    });
+  };
+  const editOpening = acc=>{
+    setQuickEdit({
+      label:`Saldo de ${acc.name}`,
+      hint:'Informe o saldo inicial da conta. Os lançamentos cadastrados serão somados a este valor.',
+      current:acc.opening_balance,
+      onSave:async nv=>{
+        setAccounts(accounts.map(a=>a.id===acc.id?{...a,opening_balance:nv}:a));
+        setQuickEdit(null);
+        await sb.from('accounts').update({opening_balance:nv}).eq('id',acc.id);
+      }
+    });
+  };
+
+  const nav=[{id:'painel',label:'Painel',Icon:IcoPanel},{id:'lancamentos',label:'Lançamentos',Icon:IcoSwap},{id:'cartao',label:'Cartão',Icon:IcoCard},{id:'investimentos',label:'Investir',Icon:IcoTrend}];
+
+  if(loading) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+
+  return <div className="wrap">
+    {/* sidebar desktop */}
+    <aside className="side" style={{flexDirection:'column',width:250,padding:22,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:8}}>
+      <Brand/><div style={{height:8}}/>
+      {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)}/>)}
+      <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{padding:16,borderRadius:16,background:C.greenSoft}}>
+          <div style={{fontSize:12.5,color:C.green,fontWeight:700}}>Saldo de todas as contas</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,color:C.green,marginTop:4}}>{fmt(totalBalance)}</div>
+        </div>
+        <button onClick={()=>sb.auth.signOut()} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
+      </div>
+    </aside>
+
+    <main style={{flex:1,padding:'22px 18px 110px',maxWidth:'100%'}}>
+      {/* cabeçalho mobile */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+        <div className="bottomnav"><Brand small/></div>
+        <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}>
+          <IcoLogout s={16}/>Sair
+        </button>
+      </div>
+
+      {/* navegação de mês */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:22,gap:12}}>
+        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Você está vendo</div><div style={{fontFamily:"'Fraunces',serif",fontSize:27,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
+        <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=months.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
+      </div>
+
+      {/* painel */}
+      {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:22,background:C.green,border:'none',color:'#fff'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoWallet s={17}/>Saldo total nas contas</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(totalBalance)}</div>
+          <div style={{display:'flex',gap:20,marginTop:16,flexWrap:'wrap'}}>
+            {accounts.map(a=><button key={a.id} onClick={()=>editOpening(a)} title="Tocar para ajustar o saldo" style={{display:'flex',alignItems:'center',gap:8,background:'transparent',border:'none',color:'#fff',cursor:'pointer',padding:0}}>
+              <span style={{width:10,height:10,borderRadius:99,background:BANKS[a.name]||'#fff'}}/>
+              <span style={{fontSize:13.5,opacity:.9}}>{a.name}</span>
+              <span style={{fontWeight:700,fontSize:13.5}}>{fmt(balances[a.name])}</span>
+              <IcoPencil s={12} style={{opacity:.6}}/>
+            </button>)}
+          </div>
+        </Card>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+          <Stat Icon={IcoUp} tone={C.greenMid} bg={C.greenSoft} label="Entrou no mês" value={entrou}/>
+          <Stat Icon={IcoDown} tone={C.red} bg={C.redSoft} label="Saiu no mês" value={saiu}/>
+        </div>
+        <div className="grid2">
+          <Card style={{padding:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,fontWeight:700,color:C.ink}}><span style={{color:C.gold}}><IcoCard s={18}/></span>Cartão de crédito</div>
+              <div style={{fontSize:13,color:C.inkSoft}}>Limite {fmt(limit)}</div>
+            </div>
+            <Bar2 pct={cardPct} color={cardColor}/>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:10}}><span style={{fontWeight:700,color:cardColor}}>{fmt(cardUsed)} usados</span><span style={{color:C.inkSoft,fontWeight:600}}>{fmt(Math.max(0,limit-cardUsed))} livres</span></div>
+            {cardPct>=80&&<div style={{marginTop:10,fontSize:13,color:C.red,fontWeight:700}}>⚠ Perto do limite, cuidado!</div>}
+          </Card>
+          <Card style={{padding:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,fontWeight:700,marginBottom:8}}><span style={{color:C.greenMid}}><IcoTrend s={18}/></span>Total investido</div>
+            <div style={{fontFamily:"'Fraunces',serif",fontSize:32,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div>
+            <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>{inv.length} aplicações</div>
+          </Card>
+        </div>
+        <div className="grid2">
+          <Card style={{padding:20}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Para onde foi o dinheiro</h3>
+            {byCat.length?<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <Donut data={byCat}/>
+              <div style={{flex:1,minWidth:130}}>{byCat.slice(0,6).map(e=><div key={e.name} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,fontSize:13.5}}><span style={{width:9,height:9,borderRadius:99,background:e.color}}/><span style={{flex:1,color:C.inkSoft}}>{e.name}</span><span style={{fontWeight:700}}>{fmt(e.value)}</span></div>)}</div>
+            </div>:<Empty>Nenhum gasto neste mês.</Empty>}
+          </Card>
+          <Card style={{padding:20}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Entrou x Saiu por mês</h3>
+            <Bars data={trend}/>
+          </Card>
+        </div>
+      </div>}
+
+      {/* lançamentos */}
+      {view==='lancamentos'&&<div className="ftfade">
+        <ListView title="Lançamentos do mês" subtitle="Tudo que entrou e saiu das contas" onAdd={()=>setModal('tx')} rows={monthTx} empty="Nenhum lançamento neste mês. Toque em Adicionar."
+          renderRow={t=><Row key={t.id}
+            onDelete={()=>del('transactions',t.id,setTx,tx)}
+            onEdit={()=>setEditing({type:'tx',item:t})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:t.type==='entrada'?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:t.type==='entrada'?C.greenMid:C.red}}>{t.type==='entrada'?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
+              <div><div style={{fontWeight:700,fontSize:15.5}}>{t.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(t.date)} · {t.category} · <span style={{color:BANKS[t.account]||C.inkSoft,fontWeight:700}}>{t.account}</span></div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:t.type==='entrada'?C.greenMid:C.red,flexShrink:0}}>{t.type==='entrada'?'+':'-'}{fmt(t.value)}</span>}/>}/>
+      </div>}
+
+      {/* cartão */}
+      {view==='cartao'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:22,background:`linear-gradient(135deg,${C.green},#0E3A2C)`,border:'none',color:'#fff'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontWeight:700,opacity:.9}}>Fatura de {MONTHS[+month.split('-')[1]-1]}</span>
+            <button onClick={editLimit} style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,.15)',border:'none',color:'#fff',padding:'7px 12px',borderRadius:10,fontWeight:700,fontSize:13,cursor:'pointer'}}><IcoPencil s={14}/>Limite {fmt(limit)}</button>
+          </div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:40,fontWeight:600,margin:'8px 0 14px'}}>{fmt(cardUsed)}</div>
+          <Bar2 pct={cardPct} color="#fff" track="rgba(255,255,255,.2)"/>
+          <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}><span>{cardPct}% do limite</span><span>{fmt(Math.max(0,limit-cardUsed))} disponível</span></div>
+        </Card>
+        <ListView title="Compras no cartão" onAdd={()=>setModal('card')} rows={monthCard} empty="Nenhuma compra no cartão neste mês."
+          renderRow={c=><Row key={c.id}
+            onDelete={()=>del('card_purchases',c.id,setCard,card)}
+            onEdit={()=>setEditing({type:'card',item:c})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoCard s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{c.description}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(c.date)} · {c.category}</div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:C.ink,flexShrink:0}}>{fmt(c.value)}</span>}/>}/>
+      </div>}
+
+      {/* investimentos */}
+      {view==='investimentos'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        <Card style={{padding:22}}>
+          <div style={{fontWeight:700,color:C.inkSoft,fontSize:14}}>Total guardado e investido</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:38,fontWeight:600,color:C.green}}>{fmt(invTotal)}</div>
+        </Card>
+        <ListView title="Suas aplicações" onAdd={()=>setModal('inv')} rows={inv} empty="Nenhuma aplicação cadastrada."
+          renderRow={i=><Row key={i.id}
+            onDelete={()=>del('investments',i.id,setInv,inv)}
+            onEdit={()=>setEditing({type:'inv',item:i})}
+            left={<><span style={{width:40,height:40,borderRadius:12,background:C.greenSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.greenMid}}><IcoTrend s={19}/></span><div><div style={{fontWeight:700,fontSize:15.5}}>{i.name}</div><div style={{fontSize:12.5,color:C.inkSoft}}>em <span style={{color:BANKS[i.institution]||C.inkSoft,fontWeight:700}}>{i.institution}</span></div></div></>}
+            right={<span style={{fontWeight:800,fontSize:16,color:C.green,flexShrink:0}}>{fmt(i.value)}</span>}/>}/>
+      </div>}
+    </main>
+
+    {/* navegação mobile */}
+    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 10px calc(6px + env(safe-area-inset-bottom))',gap:4,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
+      {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)} mobile/>)}
+    </nav>
+
+    {/* modal novo item */}
+    {modal&&<AddModal type={modal} onClose={()=>setModal(null)}
+      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
+      onSave={d=>{ if(modal==='tx')add('transactions',d,setTx,tx); if(modal==='card')add('card_purchases',d,setCard,card); if(modal==='inv')add('investments',d,setInv,inv); }}/>}
+
+    {/* modal editar item */}
+    {editing&&<AddModal type={editing.type} editing={editing.item} onClose={()=>setEditing(null)}
+      accounts={accNames.length?accNames:['Nubank','Santander','Mercado Pago']}
+      onEdit={d=>{ if(editing.type==='tx')update('transactions',d,setTx,tx); if(editing.type==='card')update('card_purchases',d,setCard,card); if(editing.type==='inv')update('investments',d,setInv,inv); }}/>}
+
+    {/* modal saldo / limite */}
+    {quickEdit&&<QuickEditModal
+      label={quickEdit.label}
+      hint={quickEdit.hint}
+      currentValue={quickEdit.current}
+      onClose={()=>setQuickEdit(null)}
+      onSave={quickEdit.onSave}/>}
+  </div>;
+}
+
+/* ---------- raiz ---------- */
+function App(){
+  const [session,setSession]=useState(undefined);
+  useEffect(()=>{
+    if(!sb) return;
+    sb.auth.getSession().then(({data})=>setSession(data.session));
+    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s));
+    return ()=>sub.subscription.unsubscribe();
+  },[]);
+  if(!CONFIGURED) return <NotConfigured/>;
+  if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  if(!session) return <Login/>;
+  return <Dashboard session={session}/>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
