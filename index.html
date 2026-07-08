@@ -194,6 +194,8 @@ const IcoDown   = p => <Svg {...p}><path d="M7 7l10 10M17 7v10H7"/></Svg>;
 const IcoAlert  = p => <Svg {...p}><path d="M12 3l9 16H3l9-16z"/><path d="M12 10v4M12 17.5v.5"/></Svg>;
 const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
 const IcoMenu   = p => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16"/></Svg>;
+const IcoEye    = p => <Svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></Svg>;
+const IcoEyeOff = p => <Svg {...p}><path d="M3 3l18 18"/><path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.1 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 4.2-1"/><path d="M9.5 9.6a3 3 0 0 0 4.2 4.2"/></Svg>;
 
 /* ---------- componentes base ---------- */
 const Card = ({children,style,className}) => <div className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
@@ -404,6 +406,54 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
   );
 }
 
+/* ---------- campo de senha com botão de mostrar (evita o "senha forte" fantasma do iPhone) ---------- */
+function PassInput({value,onChange,onEnter,autoComplete,placeholder}){
+  const [show,setShow]=useState(false);
+  return <div style={{position:'relative'}}>
+    <input style={{...inputStyle,paddingRight:46}} type={show?'text':'password'} autoComplete={autoComplete} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={placeholder} value={value} onChange={onChange} onKeyDown={e=>e.key==='Enter'&&onEnter&&onEnter()}/>
+    <button type="button" tabIndex={-1} onClick={()=>setShow(s=>!s)} aria-label={show?'Ocultar senha':'Mostrar senha'} style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',width:34,height:34,borderRadius:9,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}>{show?<IcoEyeOff s={19}/>:<IcoEye s={19}/>}</button>
+  </div>;
+}
+
+/* ---------- trocar senha (Ajustes) ---------- */
+function ChangePassModal({onClose}){
+  const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
+  const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
+  const save=async()=>{
+    setErr('');
+    if(p1.length<8) return setErr('A senha precisa de pelo menos 8 caracteres.');
+    if(p1!==p2) return setErr('As duas senhas não conferem.');
+    setBusy(true);
+    const {error}=await sb.auth.updateUser({password:p1});
+    setBusy(false);
+    if(error) return setErr('Não consegui trocar a senha. Tenta de novo.');
+    setOk(true);
+  };
+  return (
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>Trocar senha</h3>
+          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        {ok
+          ? <div style={{textAlign:'center',padding:'8px 0 4px'}}>
+              <div style={{fontSize:15,fontWeight:700,color:C.greenMid,marginBottom:10}}>Senha trocada! ✅</div>
+              <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6,marginBottom:16}}>Guarda ela num lugar seguro. Da próxima vez, entra com a senha nova.</div>
+              <button onClick={onClose} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Fechar</button>
+            </div>
+          : <div style={{display:'flex',flexDirection:'column',gap:14}}>
+              <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.6}}>Escolhe uma senha só sua (mínimo 8 caracteres). Toque no 👁 pra conferir antes de salvar.</div>
+              <div><label style={labelStyle}>Nova senha</label><PassInput autoComplete="off" value={p1} onChange={e=>setP1(e.target.value)}/></div>
+              <div><label style={labelStyle}>Confirmar nova senha</label><PassInput autoComplete="off" value={p2} onChange={e=>setP2(e.target.value)} onEnter={save}/></div>
+              {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+              <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar nova senha'}</button>
+            </div>}
+      </div>
+    </div>
+  );
+}
+
 /* ---------- login / não configurado ---------- */
 function Login(){
   const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
@@ -426,7 +476,7 @@ function Login(){
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
-        <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
       </div>
@@ -465,8 +515,9 @@ function Onboarding({session,profile,onDone}){
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
         <div><label style={labelStyle}>CPF (opcional, só números)</label><input style={inputStyle} inputMode="numeric" value={cpf} placeholder="00000000000" onChange={e=>setCpf(e.target.value)}/></div>
-        <div><label style={labelStyle}>Nova senha</label><input style={inputStyle} type="password" autoComplete="new-password" value={p1} onChange={e=>setP1(e.target.value)}/></div>
-        <div><label style={labelStyle}>Confirmar nova senha</label><input style={inputStyle} type="password" autoComplete="new-password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()}/></div>
+        <div><label style={labelStyle}>Nova senha</label><PassInput autoComplete="off" value={p1} onChange={e=>setP1(e.target.value)}/></div>
+        <div><label style={labelStyle}>Confirmar nova senha</label><PassInput autoComplete="off" value={p2} onChange={e=>setP2(e.target.value)} onEnter={save}/></div>
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:-6,lineHeight:1.5}}>Toque no 👁 pra conferir a senha antes de salvar. Anote ou salve num lugar seguro.</div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar e entrar'}</button>
       </div>
@@ -494,6 +545,7 @@ function Dashboard({session}){
   const [view,setView]=useState('painel');
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
+  const [changePass,setChangePass]=useState(false);
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
@@ -956,6 +1008,11 @@ function Dashboard({session}){
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
+          <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
+        </Card>
+        <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Backup (CSV)</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Baixa os dados brutos pra guardar. Abre direto no Excel/Planilhas.</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -997,6 +1054,9 @@ function Dashboard({session}){
 
     {/* modal quick edit (config) */}
     {quickEdit&&<QuickEditModal label={quickEdit.label} hint={quickEdit.hint} kind={quickEdit.kind} currentValue={quickEdit.current} onClose={()=>setQuickEdit(null)} onSave={quickEdit.onSave}/>}
+
+    {/* modal trocar senha */}
+    {changePass&&<ChangePassModal onClose={()=>setChangePass(false)}/>}
   </div>;
 }
 
