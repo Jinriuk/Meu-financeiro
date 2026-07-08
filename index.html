@@ -692,7 +692,7 @@ function Dashboard({session}){
 
       {/* ---------------- DIÁRIO ---------------- */}
       {view==='diario'&&<div className="ftfade">
-        <ListView title="Lançamento diário" subtitle="A fonte da verdade: saldo inicial e final são sempre o que você vê no site." onAdd={()=>setModal('daily')} rows={daily} empty="Nenhum lançamento ainda. Toque em Adicionar."
+        <ListView title="Lançamento diário" subtitle="A fonte da verdade: saldo inicial e final são sempre o que você vê no site." onAdd={()=>setModal('daily')} rows={[...daily].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum lançamento ainda. Toque em Adicionar."
           renderRow={e=>{const st=gradeStatus(e,abiMax); const r=resultadoDia(e); return <Row key={e.id}
             onDelete={()=>del('daily_entries',e.id,setDaily,daily)}
             onEdit={()=>setEditing({type:'daily',item:e})}
@@ -704,7 +704,7 @@ function Dashboard({session}){
 
       {/* ---------------- TORNEIOS ---------------- */}
       {view==='torneios'&&<div className="ftfade">
-        <ListView title="Torneios" subtitle="Complementar ao Diário — o controle oficial é o lançamento diário." onAdd={()=>setModal('tour')} rows={tours} empty="Nenhum torneio registrado."
+        <ListView title="Torneios" subtitle="Complementar ao Diário — o controle oficial é o lançamento diário." onAdd={()=>setModal('tour')} rows={[...tours].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum torneio registrado."
           renderRow={t=>{const st=tourStatus(t,abiMax); const lp=lucroTorneio(t); return <Row key={t.id}
             onDelete={()=>del('tournaments',t.id,setTours,tours)}
             onEdit={()=>setEditing({type:'tour',item:t})}
@@ -785,7 +785,7 @@ function Dashboard({session}){
             </div>;}):<Empty>Nenhuma semana com saque autorizado ainda.</Empty>;
           })()}
         </Card>
-        <ListView title="Pagamentos registrados" onAdd={()=>setModal('wd')} rows={wds} empty="Nenhum pagamento registrado."
+        <ListView title="Pagamentos registrados" onAdd={()=>setModal('wd')} rows={[...wds].sort((a,b)=>a.week_ending_date<b.week_ending_date?1:-1)} empty="Nenhum pagamento registrado."
           renderRow={w=><Row key={w.id}
             onDelete={()=>del('withdrawals',w.id,setWds,wds)}
             onEdit={()=>setEditing({type:'wd',item:w})}
@@ -804,7 +804,7 @@ function Dashboard({session}){
             <div><div style={{fontSize:12.5,opacity:.85}}>Banca inicial</div><div style={{fontWeight:700,fontSize:15}}>{fmt(config.banca_inicial)}</div></div>
           </div>
         </Card>
-        <ListView title="Movimentos da banca" subtitle="Entradas e saídas por carteira. O saldo é calculado somando tudo à banca inicial." onAdd={()=>setModal('bank')} rows={ledger.slice().reverse()} empty="Nenhum movimento na banca."
+        <ListView title="Movimentos da banca" subtitle="Entradas e saídas por carteira. O saldo é calculado somando tudo à banca inicial." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
             onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
             onEdit={()=>setEditing({type:'bank',item:l})}
