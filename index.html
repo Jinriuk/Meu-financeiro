@@ -335,7 +335,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
   };
   return (
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:22}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
@@ -382,7 +382,7 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
   };
   return (
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:22,maxHeight:'92vh',overflowY:'auto'}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'92vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
@@ -425,8 +425,8 @@ function Login(){
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
-        <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
-        <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>Senha</label><input style={inputStyle} type="password" autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
       </div>
@@ -465,8 +465,8 @@ function Onboarding({session,profile,onDone}){
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
         <div><label style={labelStyle}>CPF (opcional, só números)</label><input style={inputStyle} inputMode="numeric" value={cpf} placeholder="00000000000" onChange={e=>setCpf(e.target.value)}/></div>
-        <div><label style={labelStyle}>Nova senha</label><input style={inputStyle} type="password" value={p1} onChange={e=>setP1(e.target.value)}/></div>
-        <div><label style={labelStyle}>Confirmar nova senha</label><input style={inputStyle} type="password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()}/></div>
+        <div><label style={labelStyle}>Nova senha</label><input style={inputStyle} type="password" autoComplete="new-password" value={p1} onChange={e=>setP1(e.target.value)}/></div>
+        <div><label style={labelStyle}>Confirmar nova senha</label><input style={inputStyle} type="password" autoComplete="new-password" value={p2} onChange={e=>setP2(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar e entrar'}</button>
       </div>
@@ -498,7 +498,7 @@ function Dashboard({session}){
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
 
-  useEffect(()=>{(async()=>{
+  const loadAll=async()=>{
     try{
       const [cfg,d,t,l,w]=await Promise.all([
         sb.from('pool_config').select('*').maybeSingle(),
@@ -511,8 +511,15 @@ function Dashboard({session}){
       if(!c){ const r=await sb.from('pool_config').insert({}).select().single(); c=r.data; }
       setConfig(c); setDaily(d.data||[]); setTours(t.data||[]); setLedger(l.data||[]); setWds(w.data||[]);
     }catch(e){ console.error(e); }
-    setLoading(false);
-  })();},[]);
+  };
+  useEffect(()=>{(async()=>{ await loadAll(); setLoading(false); })();},[]);
+
+  /* PWA em segundo plano congela e o realtime cai; ao voltar pro app, recarrega tudo em silêncio */
+  useEffect(()=>{
+    const onVis=()=>{ if(document.visibilityState==='visible') loadAll(); };
+    document.addEventListener('visibilitychange',onVis);
+    return ()=>document.removeEventListener('visibilitychange',onVis);
+  },[]);
 
   /* tempo real: o lançamento de um jogador aparece na hora pro outro */
   useEffect(()=>{
@@ -718,7 +725,7 @@ function Dashboard({session}){
       </div>
     </aside>
 
-    <main style={{flex:1,padding:'22px 16px 120px',maxWidth:'100%',minWidth:0}}>
+    <main style={{flex:1,padding:'22px 16px calc(112px + env(safe-area-inset-bottom))',maxWidth:'100%',minWidth:0}}>
       {/* header mobile */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
         <div className="bottomnav"><Brand small/></div>
