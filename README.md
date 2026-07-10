@@ -16,7 +16,7 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 - Na aba **Torneios**, em cima fica **"Hoje"** (lançamento do dia + placar por jogador) e embaixo os **dias anteriores** como relatórios recolhidos — nada é apagado, só sai da lista de trabalho quando o dia vira.
 - A semana **fecha no domingo**. Para cada jogador, o resultado da semana abate o **make-up** acumulado; só o que sobra vira **lucro divisível**, dividido pelo `player_pct` (padrão 50/50) entre jogador e pool.
 - Só há **saque autorizado** quando o make-up zera **e** a banca continua acima do **piso mínimo**.
-- **ABI/grade**: um dia fica "FORA DA GRADE" se o maior buy-in passou do `abi_max`; "ATENÇÃO" se o ABI médio chegou perto do máximo.
+- **ABI/grade por jogador**: cada jogador tem seu próprio limite de ABI (em Ajustes). Um torneio fica "FORA DA GRADE" se o buy-in passou do máximo **daquele jogador**; "ATENÇÃO" se o ABI médio do dia chegou perto do limite. O alerta de fora-da-grade no Painel é clicável e mostra quais torneios e de quem.
 - Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
 - **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
 - **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.

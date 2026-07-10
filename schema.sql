@@ -19,7 +19,9 @@ create table if not exists public.pool_config (
   player1_name text not null default 'Gabriel',
   player2_name text not null default 'Guedes',
   player_pct numeric not null default 0.5,          -- fatia do jogador no lucro (0.5 = 50%)
-  abi_max numeric not null default 2,               -- buy-in máximo permitido na grade (US$)
+  abi_max numeric not null default 2,               -- ABI máximo padrão / fallback (US$)
+  abi_max_player1 numeric not null default 2,       -- ABI máximo do jogador 1 (US$)
+  abi_max_player2 numeric not null default 2,       -- ABI máximo do jogador 2 (US$)
   piso_minimo numeric not null default 300,         -- banca não pode ficar abaixo disso (US$)
   makeup_max_recomendado numeric not null default 100,
   makeup_inicial_player1 numeric not null default 0,

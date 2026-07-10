@@ -132,6 +132,11 @@ function gradeStatus(e, abiMax){
 }
 const totalInvestido = t => num(t.buyin)*(1+num(t.reentries));
 const lucroTorneio   = t => num(t.prize)-totalInvestido(t);
+// ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido
+const abiMaxFor = (config, player) => {
+  const v = player===config.player2_name ? num(config.abi_max_player2) : num(config.abi_max_player1);
+  return v>0 ? v : (num(config.abi_max)||2);
+};
 // monta o "Diário" a partir dos torneios: 1 linha por jogador por dia (fonte da verdade = torneios)
 function deriveDaily(tours){
   const map={};
@@ -216,7 +221,7 @@ const IcoEye    = p => <Svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 
 const IcoEyeOff = p => <Svg {...p}><path d="M3 3l18 18"/><path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.1 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 4.2-1"/><path d="M9.5 9.6a3 3 0 0 0 4.2 4.2"/></Svg>;
 
 /* ---------- componentes base ---------- */
-const Card = ({children,style,className}) => <div className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
+const Card = ({children,style,className,onClick}) => <div onClick={onClick} className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
 
 function NavBtn({Icon,label,active,onClick,mobile}){
   return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:0,flex:mobile?'1 1 0':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 4px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
@@ -275,26 +280,50 @@ function MultiBars({data, series}){
   </div>;
 }
 /* linha simples (evolução da banca) */
+// gráfico de linha interativo: eixos X/Y, linha do piso e valor ao passar o dedo/mouse
 function LineChart({data, color=P, ref_}){
+  const [act,setAct]=useState(null);
   if(!data.length) return <Empty>Ainda sem movimentos na banca.</Empty>;
   const vals=data.map(d=>num(d.value));
-  const lo=Math.min(...vals, ref_!=null?ref_:Math.min(...vals));
-  const hi=Math.max(...vals, ref_!=null?ref_:Math.max(...vals));
+  const lo=Math.min(...vals, ref_!=null?ref_:Infinity);
+  const hi=Math.max(...vals, ref_!=null?ref_:-Infinity);
   const range=(hi-lo)||1;
   const n=data.length;
-  const xAt=i=> n===1?50:(i/(n-1))*100;
-  const yAt=v=> 38-((v-lo)/range)*34;
-  const line=data.map((d,i)=>`${xAt(i).toFixed(2)},${yAt(num(d.value)).toFixed(2)}`).join(' ');
-  const area=`0,42 ${data.map((d,i)=>`${xAt(i).toFixed(2)},${yAt(num(d.value)).toFixed(2)}`).join(' ')} 100,42`;
-  return <div>
-    <svg viewBox="0 0 100 44" preserveAspectRatio="none" style={{width:'100%',height:150}}>
-      {ref_!=null&&<line x1="0" x2="100" y1={yAt(ref_)} y2={yAt(ref_)} stroke={C.red} strokeWidth="0.4" strokeDasharray="1.5 1.5"/>}
-      <polygon points={area} fill={color} opacity="0.12"/>
-      <polyline points={line} fill="none" stroke={color} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/>
-      {data.map((d,i)=><circle key={i} cx={xAt(i)} cy={yAt(num(d.value))} r="0.9" fill={color}/>)}
-    </svg>
-    <div style={{display:'flex',justifyContent:'space-between',marginTop:6,fontSize:11.5,color:C.inkSoft,fontWeight:600}}>
-      <span>{data[0].label}</span><span>{data[data.length-1].label}</span>
+  const PADT=8, PADB=8;
+  const xF=i=> n===1?0.5:i/(n-1);
+  const yF=v=> PADT + (1-((v-lo)/range))*(100-PADT-PADB);
+  const pts=data.map((d,i)=>`${(xF(i)*100).toFixed(2)},${yF(num(d.value)).toFixed(2)}`);
+  const area=`0,100 ${pts.join(' ')} 100,100`;
+  const ticks=[0,1,2,3].map(k=>lo+range*k/3);
+  const compact=v=>'$'+Math.round(v).toLocaleString('pt-BR');
+  const GUT=44;
+  const track=(cx,el)=>{ const r=el.getBoundingClientRect(); const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width)); setAct(Math.round(fr*(n-1))); };
+  return <div style={{userSelect:'none'}}>
+    <div style={{position:'relative',height:164,paddingLeft:GUT}}>
+      {ticks.map((tv,k)=><div key={k} style={{position:'absolute',left:0,right:0,top:`${yF(tv)}%`,transform:'translateY(-50%)',display:'flex',alignItems:'center',pointerEvents:'none'}}>
+        <span style={{width:GUT-6,textAlign:'right',fontSize:9.5,color:C.inkSoft,fontWeight:600,paddingRight:6}}>{compact(tv)}</span>
+        <div style={{flex:1,borderTop:`1px solid ${C.border}`,opacity:.6}}/>
+      </div>)}
+      <div style={{position:'absolute',left:GUT,right:0,top:0,bottom:0}}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{width:'100%',height:'100%',display:'block',overflow:'visible'}}>
+          {ref_!=null&&<line x1="0" x2="100" y1={yF(ref_)} y2={yF(ref_)} stroke={C.red} strokeWidth="0.5" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
+          <polygon points={area} fill={color} opacity="0.12"/>
+          <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+          {act!=null&&<line x1={xF(act)*100} x2={xF(act)*100} y1="0" y2="100" stroke={color} strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
+          {act!=null&&<circle cx={xF(act)*100} cy={yF(vals[act])} r="4" fill={color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
+        </svg>
+        {ref_!=null&&<span style={{position:'absolute',right:2,top:`${yF(ref_)}%`,transform:'translateY(-115%)',fontSize:9.5,color:C.red,fontWeight:700,pointerEvents:'none'}}>piso</span>}
+        {act!=null&&<div style={{position:'absolute',left:`${xF(act)*100}%`,top:`${yF(vals[act])}%`,transform:`translate(${xF(act)>0.65?'-108%':'8%'},-130%)`,background:C.ink,color:'#fff',padding:'5px 9px',borderRadius:9,fontSize:12,fontWeight:700,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 12px -4px rgba(0,0,0,.4)'}}>
+          {fmt(vals[act])}<div style={{fontSize:10,opacity:.8,fontWeight:600}}>{data[act].label}</div>
+        </div>}
+        <div style={{position:'absolute',inset:0,cursor:'crosshair',touchAction:'none'}}
+          onPointerDown={e=>{try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){} track(e.clientX,e.currentTarget);}}
+          onPointerMove={e=>track(e.clientX,e.currentTarget)}
+          onMouseLeave={()=>setAct(null)}/>
+      </div>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:6,paddingLeft:GUT,fontSize:10.5,color:C.inkSoft,fontWeight:600}}>
+      {(n<=1?[0]:[...new Set([0,Math.floor((n-1)/2),n-1])]).map(i=><span key={i}>{data[i].label}</span>)}
     </div>
   </div>;
 }
@@ -553,8 +582,8 @@ function NotConfigured(){
 }
 
 /* ---------- torneios: linha + card de dia (Torneios) + card por jogador (Diário) ---------- */
-function TourRow({t,abiMax,players,onEdit,onDelete}){
-  const st=tourStatus(t,abiMax), lp=lucroTorneio(t);
+function TourRow({t,config,players,onEdit,onDelete}){
+  const st=tourStatus(t,abiMaxFor(config,t.player)), lp=lucroTorneio(t);
   const col=PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft;
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
@@ -563,8 +592,10 @@ function TourRow({t,abiMax,players,onEdit,onDelete}){
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
+// mini-stat usado no Diário/Mensal
+const MiniStat = ({label,value,tone}) => <div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Fraunces',serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
 
-function DayCard({date,dayTours,players,abiMax,onAdd,onEdit,onDelete,today}){
+function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
   const per=players.map((p,i)=>{const ts=dayTours.filter(t=>t.player===p);return {p,i,n:ts.length,res:ts.reduce((s,t)=>s+lucroTorneio(t),0)};}).filter(x=>x.n>0);
   const res=per.reduce((s,x)=>s+x.res,0);
@@ -581,16 +612,20 @@ function DayCard({date,dayTours,players,abiMax,onAdd,onEdit,onDelete,today}){
       {per.length>0&&<div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'2px 0 6px'}}>
         {per.map(x=><span key={x.p} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:99,background:C.bg,fontSize:12,fontWeight:700,color:C.ink}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[x.i]}}/>{x.p.split(' ')[0]}: {x.res>=0?'+':'−'}{fmt(Math.abs(x.res))} <span style={{color:C.inkSoft,fontWeight:600}}>({x.n})</span></span>)}
       </div>}
-      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} abiMax={abiMax} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
+      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
       <button onClick={()=>onAdd(date)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio {today?'de hoje':`em ${dLabel(date)}`}</button>
     </div>}
   </Card>;
 }
 
-function DiaryCard({entry,dayTours,players,abiMax,onAdd,onEdit,onDelete}){
+function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   const [open,setOpen]=useState(false);
+  const abiMax=abiMaxFor(config,entry.player);
   const st=gradeStatus(entry,abiMax), r=resultadoDia(entry), i=players.indexOf(entry.player);
   const ent=num(entry.qtd_entradas)||num(entry.qtd_torneios);
+  const premios=dayTours.reduce((s,t)=>s+num(t.prize),0);
+  const cashes=dayTours.filter(t=>num(t.prize)>0).length;
+  const roi=num(entry.total_buyins)>0?(r/num(entry.total_buyins))*100:0;
   return <Card style={{padding:0,overflow:'hidden'}}>
     <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
       <span style={{width:10,height:10,borderRadius:99,background:PLAYER_COLORS[i]||C.inkSoft,flexShrink:0}}/>
@@ -602,8 +637,16 @@ function DiaryCard({entry,dayTours,players,abiMax,onAdd,onEdit,onDelete}){
       <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
     {open&&<div style={{padding:'0 18px 16px'}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(88px,1fr))',gap:8,marginBottom:12}}>
+        <MiniStat label="ABI médio" value={fmt(abiMedioDia(entry))}/>
+        <MiniStat label={`ABI máx (${entry.player.split(' ')[0]})`} value={fmt(abiMax)}/>
+        <MiniStat label="Investido" value={fmt(entry.total_buyins)}/>
+        <MiniStat label="Premiação" value={fmt(premios)} tone={C.greenMid}/>
+        <MiniStat label="Cashes (ITM)" value={`${cashes}/${num(entry.qtd_torneios)}`}/>
+        <MiniStat label="ROI do dia" value={pctFmt(roi)} tone={r>=0?C.greenMid:C.red}/>
+      </div>
       <div style={{fontSize:12,color:C.inkSoft,marginBottom:4}}>Corrija editando os torneios abaixo:</div>
-      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} abiMax={abiMax} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
+      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
       <button onClick={()=>onAdd(entry.entry_date,entry.player)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio de {entry.player.split(' ')[0]}</button>
     </div>}
   </Card>;
@@ -620,6 +663,7 @@ function Dashboard({session}){
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [changePass,setChangePass]=useState(false);
+  const [alertDetail,setAlertDetail]=useState(null);
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
@@ -730,11 +774,11 @@ function Dashboard({session}){
   const alerts=[];
   players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
   if(bancaAtual<piso) alerts.push({tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
-  const foraGrade=daily.filter(e=>weekEnding(e.entry_date)===CURWK && gradeStatus(e,abiMax)==='FORA DA GRADE');
-  if(foraGrade.length) alerts.push({tone:C.gold,text:`${foraGrade.length} lançamento(s) fora da grade nesta semana (buy-in acima de ${fmt(abiMax)}).`});
+  // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
+  const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player));
+  if(foraGradeTours.length) alerts.push({tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
   players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; if(r<0 && r<=-num(config.stoploss_weekly_pct)*bancaAtual) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-num(config.stoploss_weekly_pct)*bancaAtual)}).`}); });
-  const slDiario=num(config.stoploss_daily_buyins)*abiMax;
-  if(slDiario>0) daily.filter(e=>weekEnding(e.entry_date)===CURWK && resultadoDia(e)<=-slDiario).forEach(e=>alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-slDiario)}).`}));
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
@@ -823,7 +867,21 @@ function Dashboard({session}){
   const dayResults=monthDaily.map(e=>({d:e.entry_date,r:resultadoDia(e),p:e.player}));
   const melhorDia=dayResults.length?dayResults.reduce((a,b)=>b.r>a.r?b:a):null;
   const piorDia=dayResults.length?dayResults.reduce((a,b)=>b.r<a.r?b:a):null;
-  const perPlayerMonth=players.map(p=>({p, res:monthWeeks.filter(w=>w.player===p).reduce((s,w)=>s+w.resultado,0), vol:monthDaily.filter(e=>e.player===p).reduce((s,e)=>s+num(e.total_buyins),0), makeAberto:(()=>{const ws=(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month); return ws.length?ws[ws.length-1].makeFinal:makeUpAt(p,month+'-31');})()}));
+  const monthToursOf=p=>tours.filter(t=>t.player===p && weekEnding(t.entry_date).slice(0,7)===month);
+  const perPlayerMonth=players.map(p=>{
+    const ed=monthDaily.filter(e=>e.player===p);
+    const res=monthWeeks.filter(w=>w.player===p).reduce((s,w)=>s+w.resultado,0);
+    const vol=ed.reduce((s,e)=>s+num(e.total_buyins),0);
+    const torneios=ed.reduce((s,e)=>s+num(e.qtd_torneios),0);
+    const entradas=ed.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
+    const premios=monthToursOf(p).reduce((s,t)=>s+num(t.prize),0);
+    const cashes=monthToursOf(p).filter(t=>num(t.prize)>0).length;
+    const abi=entradas>0?vol/entradas:0;
+    const roi=vol>0?(res/vol)*100:0;
+    const itm=torneios>0?(cashes/torneios)*100:0;
+    const makeAberto=(()=>{const ws=(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month); return ws.length?ws[ws.length-1].makeFinal:makeUpAt(p,month+'-31');})();
+    return {p, res, vol, torneios, entradas, premios, cashes, abi, roi, itm, makeAberto};
+  });
   const maisLucrativo=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.res>a.res?b:a):null;
   const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
 
@@ -869,10 +927,11 @@ function Dashboard({session}){
         </Card>
 
         {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
-          {alerts.map((a,i)=><Card key={i} style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:11,borderLeft:`4px solid ${a.tone}`}}>
+          {alerts.map((a,i)=>{const clickable=a.items&&a.items.length; return <Card key={i} onClick={clickable?()=>setAlertDetail(a):undefined} style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:11,borderLeft:`4px solid ${a.tone}`,cursor:clickable?'pointer':'default'}}>
             <span style={{color:a.tone,flexShrink:0}}><IcoAlert s={20}/></span>
-            <span style={{fontSize:13.5,fontWeight:600,color:C.ink}}>{a.text}</span>
-          </Card>)}
+            <span style={{fontSize:13.5,fontWeight:600,color:C.ink,flex:1}}>{a.text}</span>
+            {clickable&&<span style={{color:C.inkSoft,fontSize:20,flexShrink:0}}>›</span>}
+          </Card>;})}
         </div>}
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
@@ -927,16 +986,16 @@ function Dashboard({session}){
             <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Lança torneio a torneio · o Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
             <button onClick={()=>addTourOn(today)} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>
           </div>
-          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} abiMax={abiMax} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
+          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
           {past.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.inkSoft,margin:'4px 2px 0'}}>Dias anteriores</div>}
-          {past.map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} abiMax={abiMax} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {past.map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
         </div>;
       })()}
 
       {/* ---------------- DIÁRIO (resumo por jogador/dia, editável pelos torneios) ---------------- */}
       {view==='diario'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:12}}>
         <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. Toque num dia pra conferir/corrigir.</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
-        {daily.length?daily.map(e=><DiaryCard key={e.id} entry={e} dayTours={tours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} abiMax={abiMax} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>):<Empty>Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.</Empty>}
+        {daily.length?daily.map(e=><DiaryCard key={e.id} entry={e} dayTours={tours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>):<Empty>Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.</Empty>}
       </div>}
 
       {/* ---------------- SEMANAL ---------------- */}
@@ -962,7 +1021,7 @@ function Dashboard({session}){
               <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
               <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
             </div>
-            {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(abiMax)}</div><Bar2 pct={abiMax>0?(wkAbi/abiMax)*100:0} color={wkAbi>=abiMax*0.9?C.red:wkAbi>=abiMax*0.7?C.gold:C.greenMid}/></div>}
+            {wkTorn>0&&(()=>{const pAbi=abiMaxFor(config,p); return <div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>;})()}
           </div>;}):<Empty>Sem semanas fechadas ainda.</Empty>}
         </Card>;})}
       </div>}
@@ -981,11 +1040,21 @@ function Dashboard({session}){
         </div>
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
-          {perPlayerMonth.map(pm=><div key={pm.p} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderBottom:`1px solid ${C.border}`}}>
-            <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
-            <span style={{fontWeight:700,flex:1}}>{pm.p}</span>
-            <span style={{fontSize:13,color:C.inkSoft}}>make-up <b style={{color:C.ink}}>{fmt(pm.makeAberto)}</b></span>
-            <span style={{fontWeight:800,color:pm.res>=0?C.greenMid:C.red,minWidth:90,textAlign:'right'}}>{pm.res>=0?'+':'−'}{fmt(Math.abs(pm.res))}</span>
+          {perPlayerMonth.map(pm=><div key={pm.p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
+              <span style={{fontWeight:700,flex:1}}>{pm.p}</span>
+              <span style={{fontSize:12.5,color:C.inkSoft}}>make-up <b style={{color:C.ink}}>{fmt(pm.makeAberto)}</b></span>
+              <span style={{fontWeight:800,color:pm.res>=0?C.greenMid:C.red,minWidth:88,textAlign:'right'}}>{pm.res>=0?'+':'−'}{fmt(Math.abs(pm.res))}</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(76px,1fr))',gap:6,marginTop:8}}>
+              <MiniStat label="Torneios" value={String(pm.torneios)}/>
+              <MiniStat label="ABI médio" value={fmt(pm.abi)}/>
+              <MiniStat label="ROI" value={pctFmt(pm.roi)} tone={pm.res>=0?C.greenMid:C.red}/>
+              <MiniStat label="Investido" value={fmt(pm.vol)}/>
+              <MiniStat label="Premiação" value={fmt(pm.premios)} tone={C.greenMid}/>
+              <MiniStat label="ITM" value={pctFmt(pm.itm)}/>
+            </div>
           </div>)}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
@@ -1055,7 +1124,8 @@ function Dashboard({session}){
             {label:'Jogador 1',val:config.player1_name,kind:'text',key:'player1_name'},
             {label:'Jogador 2',val:config.player2_name,kind:'text',key:'player2_name'},
             {label:'Fatia do jogador no lucro',val:config.player_pct,kind:'percent',key:'player_pct',show:pctFmt(num(config.player_pct)*100)},
-            {label:'ABI máximo (grade)',val:config.abi_max,kind:'money',key:'abi_max',show:fmt(config.abi_max)},
+            {label:`ABI máximo · ${config.player1_name}`,val:config.abi_max_player1,kind:'money',key:'abi_max_player1',show:fmt(config.abi_max_player1)},
+            {label:`ABI máximo · ${config.player2_name}`,val:config.abi_max_player2,kind:'money',key:'abi_max_player2',show:fmt(config.abi_max_player2)},
             {label:'Piso mínimo da banca',val:config.piso_minimo,kind:'money',key:'piso_minimo',show:fmt(config.piso_minimo)},
             {label:'Make-up máx. recomendado',val:config.makeup_max_recomendado,kind:'money',key:'makeup_max_recomendado',show:fmt(config.makeup_max_recomendado)},
             {label:`Make-up inicial · ${config.player1_name}`,val:config.makeup_inicial_player1,kind:'money',key:'makeup_inicial_player1',show:fmt(config.makeup_inicial_player1)},
@@ -1121,6 +1191,23 @@ function Dashboard({session}){
 
     {/* modal trocar senha */}
     {changePass&&<ChangePassModal onClose={()=>setChangePass(false)}/>}
+
+    {/* detalhe do alerta (fora da grade: quais torneios e de quem) */}
+    {alertDetail&&<div onClick={()=>setAlertDetail(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:480,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'80vh',overflowY:'auto'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
+          <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+        </div>
+        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana com buy-in acima do ABI máximo do jogador. Toque no lápis pra corrigir.</div>
+        {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={()=>{setAlertDetail(null);editTour(t);}} onDelete={()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
+          left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
+            <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>(máx {fmt(abiMaxFor(config,t.player))})</span></div></div></>}
+          right={<span style={{fontWeight:800,fontSize:15,color:lucroTorneio(t)>=0?C.greenMid:C.red,flexShrink:0}}>{lucroTorneio(t)>=0?'+':'−'}{fmt(Math.abs(lucroTorneio(t)))}</span>}/>)}
+        {(!alertDetail.items||!alertDetail.items.length)&&<Empty>Tudo certo agora — nenhum torneio fora da grade.</Empty>}
+      </div>
+    </div>}
   </div>;
 }
 
