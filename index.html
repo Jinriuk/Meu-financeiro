@@ -250,8 +250,9 @@ function Stat({Icon,tone,bg,label,value,sub}){
   </Card>;
 }
 
-/* barras multi-série (positivas ou divergentes se houver negativo) */
+/* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
 function MultiBars({data, series}){
+  const [act,setAct]=useState(null);
   const flat=data.flatMap(d=>d.vals);
   const hasNeg=flat.some(v=>num(v)<0);
   const max=Math.max(1,...flat.map(v=>Math.abs(num(v))));
@@ -259,22 +260,25 @@ function MultiBars({data, series}){
   if(!data.length) return <Empty>Ainda sem dados.</Empty>;
   return <div>
     <div style={{display:'flex',alignItems:'flex-end',gap:12,height:H,padding:'0 2px'}}>
-      {data.map((d,i)=><div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,minWidth:0}}>
+      {data.map((d,i)=><div key={i} onClick={()=>setAct(a=>a===i?null:i)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,minWidth:0,cursor:'pointer'}}>
+        <div style={{height:16,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',gap:1}}>
+          {act===i&&d.vals.map((v,j)=><span key={j} style={{fontSize:9.5,fontWeight:800,lineHeight:1,color:series[j].color,whiteSpace:'nowrap'}}>{num(v)>=0?'+':'−'}${Math.abs(num(v)).toFixed(2).replace('.',',')}</span>)}
+        </div>
         {hasNeg
-          ? <div style={{display:'flex',gap:4,alignItems:'stretch',justifyContent:'center',width:'100%',height:H-24}}>
-              {d.vals.map((v,j)=>{const h=(Math.abs(num(v))/max)*half; return <div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,display:'flex',flexDirection:'column'}}>
-                <div style={{height:half,display:'flex',alignItems:'flex-end'}}><div style={{width:'100%',height:num(v)>0?h:0,background:series[j].color,borderRadius:'4px 4px 0 0',minHeight:num(v)>0?2:0}}/></div>
+          ? <div style={{display:'flex',gap:4,alignItems:'stretch',justifyContent:'center',width:'100%',height:H-40}}>
+              {d.vals.map((v,j)=>{const h=(Math.abs(num(v))/max)*((H-40)/2); return <div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,display:'flex',flexDirection:'column',opacity:act==null||act===i?1:.4}}>
+                <div style={{height:(H-40)/2,display:'flex',alignItems:'flex-end'}}><div style={{width:'100%',height:num(v)>0?h:0,background:series[j].color,borderRadius:'4px 4px 0 0',minHeight:num(v)>0?2:0}}/></div>
                 <div style={{borderTop:`1px dashed ${C.border}`}}/>
-                <div style={{height:half,display:'flex',alignItems:'flex-start'}}><div style={{width:'100%',height:num(v)<0?h:0,background:series[j].color,opacity:.55,borderRadius:'0 0 4px 4px',minHeight:num(v)<0?2:0}}/></div>
+                <div style={{height:(H-40)/2,display:'flex',alignItems:'flex-start'}}><div style={{width:'100%',height:num(v)<0?h:0,background:series[j].color,opacity:.55,borderRadius:'0 0 4px 4px',minHeight:num(v)<0?2:0}}/></div>
               </div>;})}
             </div>
-          : <div style={{display:'flex',gap:4,alignItems:'flex-end',justifyContent:'center',width:'100%',height:H-24}}>
-              {d.vals.map((v,j)=><div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,height:`${(Math.abs(num(v))/max)*100}%`,background:series[j].color,borderRadius:'5px 5px 0 0',minHeight:2}}/>)}
+          : <div style={{display:'flex',gap:4,alignItems:'flex-end',justifyContent:'center',width:'100%',height:H-40}}>
+              {d.vals.map((v,j)=><div key={j} title={fmt(v)} style={{width:'42%',maxWidth:16,height:`${(Math.abs(num(v))/max)*100}%`,background:series[j].color,borderRadius:'5px 5px 0 0',minHeight:2,opacity:act==null||act===i?1:.4}}/>)}
             </div>}
-        <span style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,whiteSpace:'nowrap'}}>{d.label}</span>
+        <span style={{fontSize:11.5,color:act===i?C.ink:C.inkSoft,fontWeight:act===i?800:600,whiteSpace:'nowrap'}}>{d.label}</span>
       </div>)}
     </div>
-    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:10,fontSize:12.5,color:C.inkSoft,fontWeight:600,flexWrap:'wrap'}}>
+    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:8,fontSize:12.5,color:C.inkSoft,fontWeight:600,flexWrap:'wrap'}}>
       {series.map((s,i)=><span key={i} style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:s.color}}/>{s.name}</span>)}
     </div>
   </div>;
@@ -324,6 +328,53 @@ function LineChart({data, color=P, ref_}){
     </div>
     <div style={{display:'flex',justifyContent:'space-between',marginTop:6,paddingLeft:GUT,fontSize:10.5,color:C.inkSoft,fontWeight:600}}>
       {(n<=1?[0]:[...new Set([0,Math.floor((n-1)/2),n-1])]).map(i=><span key={i}>{data[i].label}</span>)}
+    </div>
+  </div>;
+}
+
+// linha multi-série (curva de lucro acumulado por jogador): eixos, linha do zero e valores ao passar o dedo
+function MultiLineChart({labels, series}){
+  const [act,setAct]=useState(null);
+  const n=labels.length;
+  if(n<2) return <Empty>Lança alguns torneios pra ver a curva.</Empty>;
+  const all=series.flatMap(s=>s.values.map(num));
+  let lo=Math.min(0,...all), hi=Math.max(0,...all); if(lo===hi){lo-=1;hi+=1;}
+  const range=hi-lo;
+  const PADT=8,PADB=8;
+  const xF=i=> n===1?0.5:i/(n-1);
+  const yF=v=> PADT+(1-((v-lo)/range))*(100-PADT-PADB);
+  const ticks=[0,1,2,3].map(k=>lo+range*k/3);
+  const compact=v=>(v>=0?'+':'−')+'$'+Math.round(Math.abs(v)).toLocaleString('pt-BR');
+  const GUT=46;
+  const track=(cx,el)=>{const r=el.getBoundingClientRect();const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width));setAct(Math.round(fr*(n-1)));};
+  return <div style={{userSelect:'none'}}>
+    <div style={{position:'relative',height:172,paddingLeft:GUT}}>
+      {ticks.map((tv,k)=><div key={k} style={{position:'absolute',left:0,right:0,top:`${yF(tv)}%`,transform:'translateY(-50%)',display:'flex',alignItems:'center',pointerEvents:'none'}}>
+        <span style={{width:GUT-6,textAlign:'right',fontSize:9.5,color:C.inkSoft,fontWeight:600,paddingRight:6}}>{compact(tv)}</span>
+        <div style={{flex:1,borderTop:`1px solid ${C.border}`,opacity:.6}}/>
+      </div>)}
+      <div style={{position:'absolute',left:GUT,right:0,top:0,bottom:0}}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{width:'100%',height:'100%',display:'block',overflow:'visible'}}>
+          <line x1="0" x2="100" y1={yF(0)} y2={yF(0)} stroke={C.inkSoft} strokeWidth="0.5" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>
+          {series.map((s,si)=><polyline key={si} points={s.values.map((v,i)=>`${(xF(i)*100).toFixed(2)},${yF(num(v)).toFixed(2)}`).join(' ')} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>)}
+          {act!=null&&<line x1={xF(act)*100} x2={xF(act)*100} y1="0" y2="100" stroke={C.inkSoft} strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
+          {act!=null&&series.map((s,si)=><circle key={si} cx={xF(act)*100} cy={yF(num(s.values[act]))} r="3.5" fill={s.color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>)}
+        </svg>
+        {act!=null&&<div style={{position:'absolute',left:`${xF(act)*100}%`,top:'6%',transform:`translate(${xF(act)>0.6?'-106%':'6%'},0)`,background:C.ink,color:'#fff',padding:'6px 10px',borderRadius:10,fontSize:11.5,fontWeight:700,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 12px -4px rgba(0,0,0,.4)'}}>
+          <div style={{fontSize:10,opacity:.8,fontWeight:600,marginBottom:2}}>{labels[act]}</div>
+          {series.map((s,si)=><div key={si} style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:8,height:8,borderRadius:99,background:s.color}}/>{s.name.split(' ')[0]}: {fmt(num(s.values[act]))}</div>)}
+        </div>}
+        <div style={{position:'absolute',inset:0,cursor:'crosshair',touchAction:'none'}}
+          onPointerDown={e=>{try{e.currentTarget.setPointerCapture(e.pointerId);}catch(_){} track(e.clientX,e.currentTarget);}}
+          onPointerMove={e=>track(e.clientX,e.currentTarget)}
+          onMouseLeave={()=>setAct(null)}/>
+      </div>
+    </div>
+    <div style={{display:'flex',justifyContent:'space-between',marginTop:4,paddingLeft:GUT,fontSize:10.5,color:C.inkSoft,fontWeight:600}}>
+      {(n<=1?[0]:[...new Set([0,Math.floor((n-1)/2),n-1])]).map(i=><span key={i}>{labels[i]}</span>)}
+    </div>
+    <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:8,fontSize:12.5,color:C.inkSoft,fontWeight:600,flexWrap:'wrap'}}>
+      {series.map((s,i)=><span key={i} style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:9,height:9,borderRadius:99,background:s.color}}/>{s.name}</span>)}
     </div>
   </div>;
 }
@@ -798,6 +849,10 @@ function Dashboard({session}){
     runBanca-=wds.filter(w=>weekEnding(w.week_ending_date)===wk).reduce((s,w)=>s+num(w.valor_sacado),0);
     return {label:dLabel(wk),value:runBanca};
   })).slice(-9);
+  // curva de lucro acumulado por jogador (o gráfico clássico de poker), por dia
+  const lucroDias=[...new Set(daily.map(e=>e.entry_date))].sort();
+  const lucroLabels=['Início',...lucroDias.map(dLabel)].slice(-13);
+  const lucroSeries=players.map((p,i)=>{ let run=0; const vals=[0,...lucroDias.map(d=>{ run+=daily.filter(e=>e.player===p&&e.entry_date===d).reduce((s,e)=>s+resultadoDia(e),0); return run; })]; return {name:p, color:PLAYER_COLORS[i], values:vals.slice(-13)}; });
 
   /* atalhos de torneio (lançar/editar/excluir a partir do Diário ou dos cards de dia) */
   const addTourOn=(date,player)=>setModal({type:'tour',initial:{entry_date:date||todayISO(),...(player?{player}:{})}});
@@ -884,6 +939,14 @@ function Dashboard({session}){
   });
   const maisLucrativo=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.res>a.res?b:a):null;
   const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
+  // desempenho por site e por modalidade (usa os campos que já são lançados em cada torneio)
+  const monthTours=tours.filter(t=>weekEnding(t.entry_date).slice(0,7)===month);
+  const breakdownBy=key=>{
+    const m={};
+    monthTours.forEach(t=>{ const k=t[key]||'—'; if(!m[k]) m[k]={k,n:0,inv:0,res:0,premios:0}; const g=m[k]; g.n+=1; g.inv+=totalInvestido(t); g.res+=lucroTorneio(t); g.premios+=num(t.prize); });
+    return Object.values(m).map(g=>({...g,roi:g.inv>0?(g.res/g.inv)*100:0})).sort((a,b)=>b.res-a.res);
+  };
+  const bySite=breakdownBy('site'), byModality=breakdownBy('modality');
 
   const pcolor=p=>PLAYER_COLORS[players.indexOf(p)]||C.inkSoft;
 
@@ -954,6 +1017,12 @@ function Dashboard({session}){
               <div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
             </div>
           </div>
+        </Card>
+
+        <Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>A curva de cada um ao longo do tempo. Passe o dedo pra ver os valores.</div>
+          <MultiLineChart labels={lucroLabels} series={lucroSeries}/>
         </Card>
 
         <div className="grid2">
@@ -1063,6 +1132,20 @@ function Dashboard({session}){
             <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?`${dLabel(piorDia.d)} · ${fmt(piorDia.r)}`:'—'}</div></div>
           </div>
         </Card>
+        {monthTours.length>0&&<Card style={{padding:20}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Onde vocês lucram</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>Resultado e ROI por site e por modalidade neste mês.</div>
+          {[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:6}}>{titulo}</div>
+            {rows.map(g=>{const mx=Math.max(1,...rows.map(x=>Math.abs(x.res))); return <div key={g.k} style={{padding:'8px 0',borderBottom:`1px solid ${C.border}`}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>{g.k}</div><div style={{fontSize:11.5,color:C.inkSoft}}>{g.n} torneio{g.n!==1?'s':''} · investido {fmt(g.inv)} · ROI <b style={{color:g.res>=0?C.greenMid:C.red}}>{pctFmt(g.roi)}</b></div></div>
+                <span style={{fontWeight:800,fontSize:14.5,color:g.res>=0?C.greenMid:C.red,flexShrink:0}}>{g.res>=0?'+':'−'}{fmt(Math.abs(g.res))}</span>
+              </div>
+              <div style={{marginTop:6}}><Bar2 pct={(Math.abs(g.res)/mx)*100} color={g.res>=0?C.greenMid:C.red}/></div>
+            </div>;})}
+          </div>)}
+        </Card>}
       </div>}
 
       {/* ---------------- SAQUES ---------------- */}

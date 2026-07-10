@@ -18,6 +18,7 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 - Só há **saque autorizado** quando o make-up zera **e** a banca continua acima do **piso mínimo**.
 - **ABI/grade por jogador**: cada jogador tem seu próprio limite de ABI (em Ajustes). Um torneio fica "FORA DA GRADE" se o buy-in passou do máximo **daquele jogador**; "ATENÇÃO" se o ABI médio do dia chegou perto do limite. O alerta de fora-da-grade no Painel é clicável e mostra quais torneios e de quem.
 - Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
+- **Gráficos**: no Painel, curva de **lucro acumulado por jogador** (interativa) e evolução da banca com eixos e valor ao passar o dedo; barras com valor ao tocar. No Mensal, **desempenho por site e por modalidade** (resultado e ROI).
 - **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
 - **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.
 - **Login flexível**: entra com **e-mail, nickname ou CPF**. No primeiro acesso o app força a troca da senha padrão e completa o cadastro (nickname/CPF) — tabela `player_profiles` + função `email_for_login`.
