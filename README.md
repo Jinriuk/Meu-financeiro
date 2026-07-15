@@ -22,13 +22,14 @@ Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqu
 - **Diário com filtros**: dá pra filtrar por **jogador, plataforma ou modalidade** e escolher um **período** (últimos 7/15/30 dias ou um intervalo de datas), com um **cálculo agregado** do período (resultado, ROI, ABI médio, ITM, torneios).
 - Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
 - **Gráficos**: no Painel, curva de **lucro acumulado por jogador** (interativa) e evolução da banca com eixos e valor ao passar o dedo; barras com valor ao tocar. No Mensal, **desempenho por site e por modalidade** (resultado e ROI), com filtro **Geral / por jogador**.
+- **Stats (motor de hand history)**: importe os .txt do PokerStars ou o export do PokerCraft/GG (aceita .zip) na aba **Stats**. O parser roda **no navegador** — pro banco sobem só **agregados por torneio** (contagens + oportunidades). Mostra VPIP, PFR, 3-bet, fold pra 3-bet, roubo/defesa de blinds, c-bet, WWSF/WTSD/W$SD, agressão, stats por posição, bb/100 e **Sorte (all-in EV)** — quanto você ganhou nos all-ins vs o que a equity dizia. Tiles com faixas saudáveis (verde/amarelo/vermelho). Reimportar o mesmo torneio substitui, não duplica. Parser GG em beta até calibrar com um export real.
 - **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
 - **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.
 - **Login flexível**: entra com **e-mail, nickname ou CPF**. No primeiro acesso o app força a troca da senha padrão e completa o cadastro (nickname/CPF) — tabela `player_profiles` + função `email_for_login`.
 
 ## Telas
 
-Painel · Diário · Torneios · Semanal · Mensal · Saques · Banca · Ajustes.
+Painel · Torneios · Diário · Semanal · Mensal · Stats · Saques · Banca · Ajustes.
 
 ## Arquivos
 
