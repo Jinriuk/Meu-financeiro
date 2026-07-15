@@ -59,6 +59,18 @@
     main{padding-bottom:30px !important}
     .mobile-only{display:none !important}
   }
+  /* relatórios: na impressão só o relatório aparece (Imprimir -> Salvar como PDF) */
+  @media print{
+    body{background:#fff}
+    body *{visibility:hidden}
+    .printrep,.printrep *{visibility:visible}
+    .printrep{position:absolute !important;inset:0 !important;overflow:visible !important}
+    .noprint{display:none !important}
+  }
+  .repcard{break-inside:avoid;page-break-inside:avoid}
+  .reptable{width:100%;border-collapse:collapse;font-size:12px}
+  .reptable th{text-align:left;padding:7px 8px;background:#F2EEE3;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:#6B6455}
+  .reptable td{padding:7px 8px;border-bottom:1px solid #E7E1D2}
 </style>
 </head>
 <body>
@@ -437,6 +449,67 @@ function mergeHH(a,b){
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
 const HH_BANDS={vpip:[18,27],pfr:[14,22],tb:[5,10],f3b:[45,65],steal:[30,50],bbdef:[35,55],cbet:[50,75],fcbet:[40,60],wtsd:[24,32],wsd:[48,58],wwsf:[42,52]};
 const fmtBB=n=>`${n>=0?'+':'−'}${Math.abs(n).toFixed(1).replace('.',',')} bb`;
+// glossário das siglas (mostrado na tela Stats)
+const HH_GLOSS=[
+  ['VPIP','% de mãos em que você pôs ficha por vontade própria antes do flop (call ou raise; blind obrigatório não conta). Mede quantas mãos você joga.'],
+  ['PFR','% de mãos em que você deu raise pré-flop. Quanto mais perto do VPIP, mais agressivo (e melhor) o estilo.'],
+  ['3-bet','Re-raise em cima de quem abriu. Pouco 3-bet = os outros abrem de graça contra você.'],
+  ['Fold pra 3-bet','Quantas vezes você desistiu depois de abrir e levar um re-raise. Muito baixo = paga demais; muito alto = vira alvo.'],
+  ['Roubo de blinds','Abertura de CO, BTN ou SB quando todos foldaram antes — a jogada mais lucrativa do MTT com antes.'],
+  ['BB defende','Quantas vezes você (no BB) pagou ou re-raisou contra um roubo, em vez de foldar.'],
+  ['C-bet flop','Aposta de continuação: você abriu pré-flop e seguiu apostando no flop.'],
+  ['Fold pra c-bet','Quantas vezes você desistiu no flop contra a c-bet do agressor. Alto demais = "fit-or-fold", fácil de explorar.'],
+  ['WWSF','% das vezes que você viu o flop e LEVOU o pote (com ou sem showdown). Mede briga pós-flop.'],
+  ['WTSD','% das vezes que, tendo visto o flop, você foi até o showdown. Alto = paga muito; baixo = desiste muito.'],
+  ['W$SD','% dos showdowns que você ganhou. Lido junto com o WTSD: ir muito ao showdown e ganhar pouco = vazamento clássico.'],
+  ['AF (agressão)','(apostas + raises) ÷ calls no pós-flop. Abaixo de ~1,5 = passivo; acima de ~4 = hiperagressivo.'],
+  ['bb/100','Resultado em big blinds a cada 100 mãos, em FICHAS de torneio — mede qualidade de jogo, não dinheiro direto.'],
+  ['Sorte (all-in EV)','Explicada no card "Sorte nos all-ins" acima.'],
+];
+/* Leituras automáticas: compara as suas stats com as faixas de um reg de MTT micro/low e
+   escreve o que precisa de atenção. Cada regra só dispara com amostra mínima. */
+function hhInsights(d){
+  const out=[]; const add=(tone,t,x)=>out.push({tone,t,x});
+  const pct=(c,o)=>o>0?c/o*100:null;
+  const p={vpip:pct(d.vpip,d.hands),pfr:pct(d.pfr,d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
+  const f=n=>n==null?'—':n.toFixed(1).replace('.',',')+'%';
+  if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
+  if(d.hands>=200){
+    if(p.vpip>29) add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`);
+    if(p.vpip!=null&&p.vpip<16) add('gold','Muito apertado',`VPIP ${f(p.vpip)} (reg: 18–27%). Dá pra abrir mais em CO/BTN sem virar aventura — hoje você deixa roubo fácil na mesa.`);
+    const gap=(p.vpip!=null&&p.pfr!=null)?p.vpip-p.pfr:null;
+    if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${gap.toFixed(1).replace('.',',')} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold.`);
+  }
+  if(d.tbOpp>=40&&p.tb<4.5) add('gold','Pouco 3-bet',`3-bet ${f(p.tb)} (reg: 5–10%). Sem 3-bet, os regs abrem em cima de você de graça — adicione blefes tipo A5s.`);
+  if(d.f3bOpp>=15){
+    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais.`);
+    if(p.f3b>70) add('gold','Foldando demais pra 3-bet',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Quando percebem, passam a 3-betar você sem mão.`);
+  }
+  if(d.stealOpp>=30&&p.steal<28) add('gold','Roubando pouco',`Roubo de blinds ${f(p.steal)} (reg: 30–50%). Com antes em jogo, roubar de CO/BTN/SB é onde o MTT se ganha.`);
+  if(d.bbdefOpp>=30&&p.bbdef<32) add('gold','Foldando o BB demais',`Defesa de BB ${f(p.bbdef)} (reg: 35–55%). Pelo preço que o BB paga pra ver, folda-se menos do que parece.`);
+  if(d.cbetOpp>=30){
+    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Em board que bate no vilão, a c-bet automática vira rifa.`);
+    if(p.cbet<45) add('gold','Agressor passivo',`C-bet ${f(p.cbet)} (reg: 50–75%). Quem abriu o pote precisa continuar contando a história com mais frequência.`);
+  }
+  if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`);
+  if(d.sawflop>=100){
+    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão — solte o segundo par quando a ação esquenta no turn/river.`);
+    else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`);
+    if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`);
+  }
+  const af=d.afC>0?d.afB/d.afC:null;
+  if(af!=null&&(d.afB+d.afC)>=60&&af<1.3) add('gold','Passivo pós-flop',`Agressão (AF) ${af.toFixed(1).replace('.',',')} (reg: ~1,5–3). Mais bet/raise, menos call.`);
+  if(d.allinCnt>=15){
+    if(d.sorte<=-15) add('info','Rodando abaixo do EV',`${fmtBB(d.sorte)} de "sorte" em ${d.allinCnt} all-ins: parte do resultado ruim é variância, não erro. Mantenha o plano, a grade e o volume.`);
+    if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
+  }
+  const ep=d.pos&&d.pos.EP, btn=d.pos&&d.pos.BTN;
+  if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`);
+  if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`);
+  if(d.hands>=300&&!out.some(i=>i.tone==='red'||i.tone==='gold')) add('green','Perfil sólido','Nenhum vazamento gritante contra as faixas de reg. Agora o ganho está nos spots finos — revisão de mãos no Coach.');
+  const ord={red:0,gold:1,green:2,info:3};
+  return out.sort((a,b)=>ord[a.tone]-ord[b.tone]);
+}
 
 /* ---------- ícones ---------- */
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
@@ -1042,6 +1115,9 @@ function Dashboard({session}){
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
   const [stF,setStF]=useState({player:'',days:''}); // filtros da tela Stats
+  const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
+  const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
+  const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
   const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
@@ -1365,7 +1441,7 @@ function Dashboard({session}){
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
-  const MAIN_TABS=['painel','torneios','diario','saques'];
+  const MAIN_TABS=['painel','torneios','diario','stats'];
   const nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'torneios',label:'Torneios',Icon:IcoTrophy},
@@ -1631,6 +1707,7 @@ function Dashboard({session}){
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</span></div>
+        <button onClick={()=>setReport({type:'mensal'})} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Gerar relatório do mês (PDF)</button>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
@@ -1713,12 +1790,13 @@ function Dashboard({session}){
           </Card>
 
           {/* filtros */}
-          <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap'}}>
+          <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-end'}}>
             <Seg label="Jogador" value={sp} options={players} onChange={v=>setStF(f=>({...f,player:v}))}/>
             <div><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',marginBottom:4}}>Período</div>
               <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                 {[['','Tudo'],['30','30 dias'],['90','90 dias'],['365','1 ano']].map(([v,l])=><button key={l} onClick={()=>setStF(f=>({...f,days:v}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${stF.days===v?P:C.border}`,background:stF.days===v?C.plumSoft:C.surface,color:stF.days===v?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{l}</button>)}
               </div></div>
+            <button onClick={()=>setReport({type:'jogador',player:sp,days:stF.days})} style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Relatório do jogador (PDF)</button>
           </Card>
 
           {rows.length===0?<Empty>Sem dados de {sp} nesse período. Importe os hand histories acima.</Empty>:<>
@@ -1729,6 +1807,54 @@ function Dashboard({session}){
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>SORTE (ALL-IN)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div><div style={{fontSize:11,color:C.inkSoft}}>real {fmtBB(netbb)} vs EV {fmtBB(evbb)} · {S('allin_cnt')} all-in{S('allin_cnt')!==1?'s':''}</div></Card>
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
           </div>
+
+          {/* Sorte explicada em detalhe */}
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
+            </div>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
+            </div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
+          </Card>
+
+          {/* Leituras automáticas (insights vs faixas de reg) */}
+          {(()=>{ const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos});
+            const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
+            const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
+            const coachTxt=()=>[
+              `Análise de poker — ${sp} (PoolGG)`,
+              `Período: ${n>0?`últimos ${n} dias`:'todo o histórico'} · ${hands} mãos · ${rows.length} torneios`,
+              `bb/100 (fichas): ${fmtBB(bb100)}`,
+              `Sorte all-in: ${fmtBB(sorte)} (real ${fmtBB(netbb)} vs EV ${fmtBB(evbb)}) em ${S('allin_cnt')} all-ins`,
+              `VPIP ${pctS(S('vpip_cnt'),hands)} · PFR ${pctS(S('pfr_cnt'),hands)}`,
+              `3-bet ${pctS(S('tb_cnt'),S('tb_opp'))} · Fold pra 3-bet ${pctS(S('f3b_cnt'),S('f3b_opp'))}`,
+              `Roubo de blinds ${pctS(S('steal_cnt'),S('steal_opp'))} · BB defende ${pctS(S('bbdef_cnt'),S('bbdef_opp'))}`,
+              `C-bet flop ${pctS(S('cbet_cnt'),S('cbet_opp'))} · Fold pra c-bet ${pctS(S('fcbet_cnt'),S('fcbet_opp'))}`,
+              `WWSF ${pctS(S('wwsf_cnt'),S('sawflop_cnt'))} · WTSD ${pctS(S('wtsd_cnt'),S('sawflop_cnt'))} · W$SD ${pctS(S('wsd_cnt'),S('wtsd_cnt'))}`,
+              `AF: ${afc>0?(afb/afc).toFixed(2).replace('.',','):'—'}`,
+              'Por posição (mãos · VPIP · PFR): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%`).join(' | '),
+              'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
+              '',
+              'Contexto: jogador de MTT micro/low numa pool 50/50 com make-up. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.',
+            ].join('\n');
+            const copiar=async()=>{ const tx=coachTxt(); try{ await navigator.clipboard.writeText(tx); }catch(e){ const ta=document.createElement('textarea'); ta.value=tx; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } setCopied(true); setTimeout(()=>setCopied(false),2500); };
+            return <Card style={{padding:18}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:0,flex:1}}>Leituras do jogo</h3>
+                <button onClick={copiar} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:11,border:`1.5px solid ${copied?C.greenMid:P}`,background:copied?C.greenSoft:C.plumSoft,color:copied?C.greenMid:P,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{copied?'✓ Copiado!':'Copiar resumo pro Coach'}</button>
+              </div>
+              <div style={{fontSize:12,color:C.inkSoft,marginBottom:10}}>Comparação automática com as faixas de um reg de MTT micro/low. Pra análise profunda, copie o resumo e cole no seu projeto <b>Coach de Poker</b> no Claude.</div>
+              {insights.map((i,ix)=><div key={ix} style={{display:'flex',gap:10,padding:'10px 12px',borderRadius:12,background:TONE[i.tone].bg,marginBottom:6,alignItems:'flex-start'}}>
+                <span style={{flexShrink:0,marginTop:1,color:TONE[i.tone].c}}><IcoAlert s={15}/></span>
+                <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
+              </div>)}
+            </Card>;
+          })()}
 
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
@@ -1750,7 +1876,7 @@ function Dashboard({session}){
               <StatTile label="WTSD" cnt={S('wtsd_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wtsd}/>
               <StatTile label="W$SD" cnt={S('wsd_cnt')} opp={S('wtsd_cnt')} band={HH_BANDS.wsd}/>
             </div>
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. A <b>Sorte</b> lá em cima compara o que você ganhou nos all-ins com o que a equity dizia — negativo grande = azar, não necessariamente jogo ruim.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
           </Card>
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
@@ -1762,6 +1888,20 @@ function Dashboard({session}){
             </div>)}
           </Card>
           </>}
+
+          {/* glossário das siglas */}
+          <Card style={{padding:0,overflow:'hidden'}}>
+            <button onClick={()=>setGloss(g=>!g)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+              <span style={{fontFamily:"'Fraunces',serif",fontSize:16,fontWeight:600,flex:1}}>O que significa cada estatística?</span>
+              <span style={{color:C.inkSoft,fontSize:20,transform:gloss?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+            </button>
+            {gloss&&<div style={{padding:'0 18px 16px'}}>
+              {HH_GLOSS.map(([k,v])=><div key={k} style={{padding:'9px 0',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontWeight:800,fontSize:12.5,color:P}}>{k}</div>
+                <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5,marginTop:2}}>{v}</div>
+              </div>)}
+            </div>}
+          </Card>
         </div>;
       })()}
 
@@ -1897,6 +2037,163 @@ function Dashboard({session}){
         </div>
       </div>
     </div>}
+
+    {/* relatório imprimível: Imprimir -> "Salvar como PDF" (funciona no celular e no desktop) */}
+    {report&&(()=>{
+      const hoje=todayISO();
+      const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+          <span style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
+          <span style={{fontSize:12,color:'#6B6455'}}>pool de poker · {config.player1_name} & {config.player2_name}</span>
+        </div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
+        <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
+      </div>;
+      const Big=({label,value,tone})=><div className="repcard" style={{padding:'10px 12px',borderRadius:10,background:'#F7F4EA',minWidth:0}}>
+        <div style={{fontSize:10,color:'#6B6455',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,color:tone||'#1E2A24'}}>{value}</div></div>;
+      const Sec=({t,children})=><div className="repcard" style={{marginBottom:18}}><div style={{fontSize:13,fontWeight:800,color:P,margin:'0 0 8px',textTransform:'uppercase',letterSpacing:'.04em'}}>{t}</div>{children}</div>;
+      let corpo=null, titulo='', sub='';
+      if(report.type==='mensal'){
+        titulo=`Relatório mensal — ${mLabel(month)}`; sub='fechamento da pool';
+        const wkRows=players.flatMap(pl=>(weeksByPlayer[pl]||[]).filter(w=>w.week.slice(0,7)===month).map(w=>({...w,pl,vs:valorSacadoFor(w.week,pl)})));
+        const mSaques=wds.filter(w=>String(w.week_ending_date||'').slice(0,7)===month);
+        const bs=breakdownBy('site',monthTours), bm=breakdownBy('modality',monthTours);
+        corpo=<>
+          <Sec t="Resumo do mês">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Resultado" value={fmt(mRes)} tone={mRes>=0?C.greenMid:C.red}/>
+              <Big label="Lucro dividido" value={fmt(mLucroDiv)}/>
+              <Big label="Ficou na pool" value={fmt(mPool)}/>
+              <Big label="Torneios" value={String(mTorneios)}/>
+              <Big label="ABI médio" value={fmt(mAbi)}/>
+              <Big label="ROI" value={pctFmt(mRoi)} tone={mRoi>=0?C.greenMid:C.red}/>
+            </div>
+          </Sec>
+          <Sec t="Por jogador">
+            <table className="reptable"><thead><tr><th>Jogador</th><th>Torneios</th><th>Investido</th><th>Premiação</th><th>Resultado</th><th>ROI</th><th>ITM</th><th>Make-up final</th></tr></thead>
+            <tbody>{perPlayerMonth.map(pm=><tr key={pm.p}><td><b>{pm.p}</b></td><td>{pm.torneios}</td><td>{fmt(pm.vol)}</td><td>{fmt(pm.premios)}</td><td style={{color:pm.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(pm.res)}</td><td>{pctFmt(pm.roi)}</td><td>{pctFmt(pm.itm)}</td><td>{fmt(pm.makeAberto)}</td></tr>)}</tbody></table>
+          </Sec>
+          <Sec t="Semana a semana">
+            {wkRows.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Jogador</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
+            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{dLabel(w.week)}</td><td>{w.pl}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
+          </Sec>
+          {mSaques.length>0&&<Sec t="Saques pagos no mês">
+            <table className="reptable"><thead><tr><th>Semana</th><th>Jogador</th><th>Carteira</th><th>Valor</th></tr></thead>
+            <tbody>{mSaques.map(w=><tr key={w.id}><td>{dLabel(w.week_ending_date)}</td><td>{w.player}</td><td>{w.wallet||'—'}</td><td style={{fontWeight:700}}>{fmt(w.valor_sacado)}</td></tr>)}</tbody></table>
+          </Sec>}
+          {monthTours.length>0&&<Sec t="Onde a pool lucra (mês)">
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              {[['Por site',bs],['Por modalidade',bm]].map(([tt,rws])=><div key={tt}>
+                <div style={{fontSize:11,fontWeight:700,color:'#6B6455',marginBottom:4}}>{tt}</div>
+                <table className="reptable"><tbody>{rws.map(g=><tr key={g.k}><td>{g.k}</td><td>{g.n} tor.</td><td>{pctFmt(g.roi)}</td><td style={{color:g.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(g.res)}</td></tr>)}</tbody></table>
+              </div>)}
+            </div>
+          </Sec>}
+          <div style={{fontSize:11,color:'#6B6455'}}>Banca central da pool no momento do relatório: <b>{fmt(bancaAtual)}</b> · make-up em aberto: {players.map(pl=>`${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · ')}.</div>
+        </>;
+      } else {
+        const sp2=report.player||players[0]; const nn=parseInt(report.days,10);
+        // história COMPLETA do jogador na pool (financeiro — não depende do período das stats)
+        const pT=tours.filter(t=>t.player===sp2);
+        const pDias=[...new Set(pT.map(t=>t.entry_date))].sort();
+        const pWeeks=weeksByPlayer[sp2]||[];
+        const pInv=pT.reduce((s,t)=>s+totalInvestido(t),0);
+        const pPrem=pT.reduce((s,t)=>s+num(t.prize),0);
+        const pRes=pPrem-pInv;
+        const pEntr=pT.reduce((s,t)=>s+1+num(t.reentries),0);
+        const pCash=pT.filter(t=>num(t.prize)>0).length;
+        const pParteJog=pWeeks.reduce((s,w)=>s+w.parteJog,0);
+        const pSaqueAut=pWeeks.reduce((s,w)=>s+w.saqueAut,0);
+        const pPago=wds.filter(w=>w.player===sp2).reduce((s,w)=>s+num(w.valor_sacado),0);
+        const pDayRes={}; pT.forEach(t=>{ pDayRes[t.entry_date]=(pDayRes[t.entry_date]||0)+lucroTorneio(t); });
+        const pDR=Object.entries(pDayRes);
+        const pBest=pDR.length?pDR.reduce((a,b)=>b[1]>a[1]?b:a):null;
+        const pWorst=pDR.length?pDR.reduce((a,b)=>b[1]<a[1]?b:a):null;
+        const pMaior=pT.length?pT.reduce((a,b)=>num(b.prize)>num(a.prize)?b:a):null;
+        const pWk8=pWeeks.slice(-8).reverse();
+        const from=nn>0?addDaysISO(todayISO(),-(nn-1)):null;
+        const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from)));
+        const S2=k=>rws.reduce((s,r)=>s+num(r[k]),0);
+        const hands2=S2('hands'), bb100v=hands2>0?S2('net_bb')/hands2*100:0;
+        const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
+        const afb=S2('af_bets'), afc=S2('af_calls');
+        const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
+        const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
+        titulo=`Relatório do jogador — ${sp2}`;
+        sub=`história completa na pool + estatísticas de jogo (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`;
+        const MET=[
+          ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
+          ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
+          ['Roubo de blinds',S2('steal_cnt'),S2('steal_opp'),HH_BANDS.steal],['BB defende',S2('bbdef_cnt'),S2('bbdef_opp'),HH_BANDS.bbdef],
+          ['C-bet flop',S2('cbet_cnt'),S2('cbet_opp'),HH_BANDS.cbet],['Fold pra c-bet',S2('fcbet_cnt'),S2('fcbet_opp'),HH_BANDS.fcbet],
+          ['WWSF',S2('wwsf_cnt'),S2('sawflop_cnt'),HH_BANDS.wwsf],['WTSD',S2('wtsd_cnt'),S2('sawflop_cnt'),HH_BANDS.wtsd],['W$SD',S2('wsd_cnt'),S2('wtsd_cnt'),HH_BANDS.wsd],
+        ];
+        const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
+        const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
+        corpo=<>
+          <Sec t="Na pool — história completa">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Na pool desde" value={pDias[0]?`${dLabel(pDias[0])}/${pDias[0].slice(0,4)}`:'—'}/>
+              <Big label="Dias jogados" value={String(pDias.length)}/>
+              <Big label="Semanas" value={String(pWeeks.length)}/>
+              <Big label="Torneios (entradas)" value={`${pT.length} (${pEntr})`}/>
+              <Big label="Investido" value={fmt(pInv)}/>
+              <Big label="Premiação" value={fmt(pPrem)}/>
+              <Big label="Resultado na pool" value={fmt(pRes)} tone={pRes>=0?C.greenMid:C.red}/>
+              <Big label="ROI" value={pInv>0?pctFmt(pRes/pInv*100):'—'} tone={pRes>=0?C.greenMid:C.red}/>
+              <Big label="ABI médio" value={pEntr>0?fmt(pInv/pEntr):'—'}/>
+              <Big label="ITM" value={pT.length?pctFmt(pCash/pT.length*100):'—'}/>
+              <Big label="Make-up atual" value={fmt(curMakeUp[sp2])} tone={num(curMakeUp[sp2])>0?C.red:C.greenMid}/>
+              <Big label="Lucro dividido (dele)" value={fmt(pParteJog)}/>
+              <Big label="Saque autorizado (acum.)" value={fmt(pSaqueAut)}/>
+              <Big label="Sacado" value={fmt(pPago)}/>
+              <Big label="A receber" value={fmt(aReceber[sp2]||0)} tone={P}/>
+            </div>
+            <div style={{fontSize:11,color:'#6B6455',marginTop:8,lineHeight:1.5}}>
+              Melhor dia: <b>{pBest?`${dLabel(pBest[0])} (${fmt(pBest[1])})`:'—'}</b> · Pior dia: <b>{pWorst?`${dLabel(pWorst[0])} (${fmt(pWorst[1])})`:'—'}</b> · Maior premiação: <b>{pMaior&&num(pMaior.prize)>0?`${pMaior.tournament_name||'torneio'} (${fmt(pMaior.prize)})`:'—'}</b>
+            </div>
+          </Sec>
+          <Sec t="Últimas semanas na pool">
+            {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
+            <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
+          </Sec>
+          <Sec t={`Estatísticas de jogo — hand histories (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Mãos" value={String(hands2)}/>
+              <Big label="Torneios" value={String(rws.length)}/>
+              <Big label="bb/100 (fichas)" value={fmtBB(bb100v)} tone={bb100v>=0?C.greenMid:C.red}/>
+              <Big label="All-ins" value={String(S2('allin_cnt'))}/>
+              <Big label="Sorte (real − EV)" value={fmtBB(sorte)} tone={sorte>=0?C.greenMid:C.red}/>
+              <Big label="Agressão (AF)" value={afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}/>
+            </div>
+            <div style={{fontSize:11,color:'#6B6455',marginTop:6}}>Sorte: real {fmtBB(netbb)} vs esperado pela equity {fmtBB(evbb)} nos all-ins — a diferença é variância, não mérito ou erro.</div>
+          </Sec>
+          <Sec t="Estatísticas vs faixa de reg (MTT micro/low)">
+            <table className="reptable"><thead><tr><th>Estatística</th><th>Valor</th><th>Amostra</th><th>Faixa reg</th><th>Status</th></tr></thead>
+            <tbody>{MET.map(([nm,c,o,b])=>{ const [lbl,cor]=stOf(c,o,b); return <tr key={nm}><td>{nm}</td><td style={{fontWeight:700}}>{o>0?pctFmt(c/o*100):'—'}</td><td>{c}/{o}</td><td>{b[0]}–{b[1]}%</td><td style={{color:cor,fontWeight:700}}>{lbl}</td></tr>; })}</tbody></table>
+          </Sec>
+          <Sec t="Por posição">
+            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th></tr></thead>
+            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pctFmt(pos2[k].v/pos2[k].h*100)}</td><td>{pctFmt(pos2[k].p/pos2[k].h*100)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
+          </Sec>
+          <Sec t="Leituras do jogo">
+            {insights.length?insights.map((iz,ix)=><div key={ix} style={{marginBottom:8}}><div style={{fontWeight:800,fontSize:12.5,color:TONE2[iz.tone]}}>{iz.t}</div><div style={{fontSize:12,color:'#3d463f',lineHeight:1.5}}>{iz.x}</div></div>):<div style={{fontSize:12,color:'#6B6455'}}>Sem leituras — importe hand histories.</div>}
+          </Sec>
+        </>;
+      }
+      return <div className="printrep" style={{position:'fixed',inset:0,background:'#fff',zIndex:80,overflowY:'auto'}}>
+        <div className="noprint" style={{position:'sticky',top:0,background:'#fff',borderBottom:`1px solid ${C.border}`,padding:'12px 16px',display:'flex',gap:10,zIndex:2}}>
+          <button onClick={()=>setReport(null)} style={{padding:'10px 16px',borderRadius:12,border:`1.5px solid ${C.border}`,background:'#fff',color:C.ink,fontWeight:700,fontSize:13.5,cursor:'pointer'}}>← Voltar</button>
+          <button onClick={()=>window.print()} style={{marginLeft:'auto',padding:'10px 18px',borderRadius:12,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13.5,cursor:'pointer'}}>🖨 Imprimir / Salvar PDF</button>
+        </div>
+        <div style={{maxWidth:820,margin:'0 auto',padding:'22px 20px 60px',color:'#1E2A24'}}>
+          <Hdr title={titulo} sub={sub}/>
+          {corpo}
+          <div style={{marginTop:22,paddingTop:10,borderTop:'1px solid #E7E1D2',fontSize:10.5,color:'#6B6455'}}>PoolGG · gerado pelo app · valores financeiros vêm dos lançamentos; estatísticas de jogo vêm dos hand histories importados.</div>
+        </div>
+      </div>;
+    })()}
 
     {/* modal adicionar */}
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
