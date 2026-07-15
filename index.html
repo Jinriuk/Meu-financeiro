@@ -1050,7 +1050,7 @@ function Dashboard({session}){
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
-  const MAIN_TABS=['painel','torneios','semanal','saques'];
+  const MAIN_TABS=['painel','torneios','diario','saques'];
   const nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'torneios',label:'Torneios',Icon:IcoTrophy},
@@ -1314,7 +1314,7 @@ function Dashboard({session}){
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
-        <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'center',gap:6}}><IcoAlert s={14}/>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</div>
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</span></div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
