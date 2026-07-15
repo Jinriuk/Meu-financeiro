@@ -1054,10 +1054,10 @@ function Dashboard({session}){
   const nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'torneios',label:'Torneios',Icon:IcoTrophy},
-    {id:'semanal',label:'Semanal',Icon:IcoWeek},
-    {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'diario',label:'Diário',Icon:IcoDaily},
+    {id:'semanal',label:'Semanal',Icon:IcoWeek},
     {id:'mensal',label:'Mensal',Icon:IcoMonth},
+    {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
   ];
@@ -1194,7 +1194,7 @@ function Dashboard({session}){
 
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool.</div>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool. <b>"A receber"</b> é o acumulado (autorizado − pago); o quanto dá pra sacar <b>agora</b> respeita o piso — veja "Saque autorizado" acima.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             {players.map((p,i)=><div key={p} style={{padding:14,borderRadius:14,background:C.plumSoft}}>
               <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12.5,color:P,fontWeight:700}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>A receber · {p}</div>
@@ -1314,6 +1314,7 @@ function Dashboard({session}){
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'center',gap:6}}><IcoAlert s={14}/>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
@@ -1341,8 +1342,8 @@ function Dashboard({session}){
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?`${dLabel(melhorDia.d)} · ${fmt(melhorDia.r)}`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?`${dLabel(piorDia.d)} · ${fmt(piorDia.r)}`:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · {fmt(melhorDia.r)}{melhorDia.d.slice(0,7)!==month&&<span style={{color:C.green,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · {fmt(piorDia.r)}{piorDia.d.slice(0,7)!==month&&<span style={{color:C.red,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
@@ -1422,6 +1423,7 @@ function Dashboard({session}){
             </div>
           </div>;})}
           <div style={{fontSize:12,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>Toque numa plataforma pra ajustar o <b>saldo inicial</b> daquele jogador. Depósitos/transferências entram como <b>movimento</b> abaixo (escolhendo o jogador); saque pago sai da carteira escolhida na aba Saques.</div>
+          <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>ℹ️ Esta é a visão de <b>quem tem o quê</b>, montada a partir do saldo inicial que cada um declarou por plataforma. Ela <b>não precisa bater</b> com o total da <b>banca central</b> lá em cima — a banca central parte da banca inicial da pool, não desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em <b>"Outros"</b>.</div>
         </Card>
 
         <ListView title="Movimentos da banca" subtitle="Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
