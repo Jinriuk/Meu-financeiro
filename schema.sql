@@ -140,6 +140,7 @@ create table if not exists public.hh_tournament_stats (
   allin_net_bb numeric not null default 0,
   pos_json jsonb,                          -- {BTN:{h,v,p},...} mãos/vpip/pfr por posição
   stack_json jsonb,                        -- por faixa de stack em bb
+  hand_ids jsonb not null default '[]'::jsonb, -- nº de cada mão já importada (dedup: reimportar não conta 2x)
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now(),
   unique (player, site, site_tournament_id)
