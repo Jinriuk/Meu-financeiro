@@ -261,7 +261,8 @@ function hhParseHand(block){
   if(!/Hold'em/.test(head)) return null;                                   // v1: só No-Limit Hold'em
   const mT=head.match(/(?:Tournament|Torneio) #([^,\s]+)/); if(!mT) return null;  // só torneios
   const tid=mT[1];
-  const mBB=head.match(/\(([\d,]+)\/([\d,]+)(?:\/([\d,]+))?\)/); const bb=mBB?hhNum(mBB[2]):0; if(!bb) return null;
+  // blinds: PS "(35/70)" ou "(50/100/10)" · GG "Level6(150/300(35))" com ante aninhado
+  const mBB=head.match(/\(([\d,]+)\/([\d,]+)(?:[\/(]([\d,]+)\)?)?\)/); const bb=mBB?hhNum(mBB[2]):0; if(!bb) return null;
   const mD=head.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})/); const date=mD?`${mD[1]}-${mD[2]}-${mD[3]}`:null;
   const mH=head.match(/#([^:\s]+):/); const hid=mH?mH[1]:null;   // nº da mão (dedup)
   const seg=head.slice(0,Math.max(0,head.search(/Hold'em/)));
@@ -284,7 +285,7 @@ function hhParseHand(block){
     if(/^\*\*\* FLOP/.test(L)){ street=1; commit={}; const mm=L.match(/\[([^\]]+)\]/); if(mm) mm[1].split(/\s+/).forEach(c=>{const k=hhCard(c); if(k>=0&&board.length<3) board.push(k);}); continue; }
     if(/^\*\*\* TURN/.test(L)){ street=2; commit={}; const mm=L.match(/\]\s*\[([^\]]+)\]/); if(mm){const k=hhCard(mm[1].trim()); if(k>=0) board[3]=k;} continue; }
     if(/^\*\*\* RIVER/.test(L)){ street=3; commit={}; const mm=L.match(/\]\s*\[([^\]]+)\]/); if(mm){const k=hhCard(mm[1].trim()); if(k>=0) board[4]=k;} continue; }
-    if(/^\*\*\* SHOW DOWN/.test(L)){ showdown=true; continue; }
+    if(/^\*\*\* SHOW ?DOWN/.test(L)){ showdown=true; continue; }   // PS "SHOW DOWN" · GG "SHOWDOWN"
     if(m=L.match(/^(?:Uncalled bet|Aposta não-igualada) \(?\$?\s?([\d,.]+)\)?\s+(?:returned to|voltou para) (.+)$/)){ addInv(m[2],-hhNum(m[1])); continue; }
     if(m=L.match(/^(.+?) collected \$?([\d,]+) from/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }
     if(m=L.match(/^(.+?) recebeu \$?\s?([\d,.]+) do(?: \S+)? pote/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }  // PT: pote / principal pote / secundário pote
@@ -349,7 +350,8 @@ function hhParseHand(block){
     }
   }
   const heroFolded=acts.some(a=>a.n===hero&&a.act==='folds');
-  const wtsd=showdown&&!heroFolded, wsd=wtsd&&heroCol>0, wwsf=sawflop&&heroCol>0;
+  // showdown DE VERDADE exige cartas mostradas — a GG imprime o marcador SHOWDOWN em toda mão, até fold-win
+  const wtsd=showdown&&!heroFolded&&Object.keys(shows).length>0, wsd=wtsd&&heroCol>0, wwsf=sawflop&&heroCol>0;
   let afB=0,afC=0; acts.forEach(a=>{ if(a.n===hero&&a.street>0){ if(a.act==='bets'||a.act==='raises') afB++; if(a.act==='calls') afC++; } });
   // all-in EV (sorte): só quando o herói foi ao showdown de all-in e os vilões mostraram as cartas
   let allin=null;
