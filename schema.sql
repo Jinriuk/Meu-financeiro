@@ -109,6 +109,43 @@ create table if not exists public.withdrawals (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Estatísticas de hand history (motor de stats) ----------
+-- 1 linha por (jogador, site, torneio) — SÓ agregados (contagens + oportunidades,
+-- pra somar qualquer período). O texto bruto das mãos NUNCA sobe pro banco.
+create table if not exists public.hh_tournament_stats (
+  id uuid primary key default gen_random_uuid(),
+  player text not null,
+  site text not null,                      -- PokerStars / GG Poker
+  site_tournament_id text not null,        -- Tournament # do arquivo
+  tournament_name text,
+  entry_date date,
+  buyin numeric not null default 0,
+  hands int not null default 0,
+  net_bb numeric not null default 0,       -- resultado em big blinds (fichas)
+  vpip_cnt int not null default 0,
+  pfr_cnt int not null default 0,
+  tb_cnt int not null default 0,  tb_opp int not null default 0,     -- 3-bet
+  f3b_cnt int not null default 0, f3b_opp int not null default 0,    -- fold para 3-bet
+  steal_cnt int not null default 0, steal_opp int not null default 0,
+  bbdef_cnt int not null default 0, bbdef_opp int not null default 0,
+  cbet_cnt int not null default 0, cbet_opp int not null default 0,
+  fcbet_cnt int not null default 0, fcbet_opp int not null default 0,
+  sawflop_cnt int not null default 0,
+  wwsf_cnt int not null default 0,
+  wtsd_cnt int not null default 0,
+  wsd_cnt int not null default 0,
+  af_bets int not null default 0, af_calls int not null default 0,
+  allin_cnt int not null default 0,
+  allin_ev_bb numeric not null default 0,  -- quanto DEVIA ter ganho pela equity (sorte = net - ev)
+  allin_net_bb numeric not null default 0,
+  pos_json jsonb,                          -- {BTN:{h,v,p},...} mãos/vpip/pfr por posição
+  stack_json jsonb,                        -- por faixa de stack em bb
+  hand_ids jsonb not null default '[]'::jsonb, -- nº de cada mão já importada (dedup: reimportar não conta 2x)
+  created_by uuid references auth.users(id) default auth.uid(),
+  created_at timestamptz not null default now(),
+  unique (player, site, site_tournament_id)
+);
+
 -- ============================================================
 --  Segurança (RLS): pool compartilhada — qualquer AUTENTICADO
 --  vê e mexe em tudo. Cadastro público deve ficar DESLIGADO
@@ -120,11 +157,12 @@ alter table public.tournaments     enable row level security;
 alter table public.bankroll_ledger enable row level security;
 alter table public.player_wallets  enable row level security;
 alter table public.withdrawals     enable row level security;
+alter table public.hh_tournament_stats enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals'] loop
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats'] loop
     execute format('drop policy if exists pool_shared on public.%I;', t);
     execute format(
       'create policy pool_shared on public.%I
@@ -176,7 +214,7 @@ grant execute on function public.email_for_login(text) to anon, authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals'] loop
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats'] loop
     if not exists (
       select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
