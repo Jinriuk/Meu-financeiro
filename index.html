@@ -59,6 +59,18 @@
     main{padding-bottom:30px !important}
     .mobile-only{display:none !important}
   }
+  /* relatórios: na impressão só o relatório aparece (Imprimir -> Salvar como PDF) */
+  @media print{
+    body{background:#fff}
+    body *{visibility:hidden}
+    .printrep,.printrep *{visibility:visible}
+    .printrep{position:absolute !important;inset:0 !important;overflow:visible !important}
+    .noprint{display:none !important}
+  }
+  .repcard{break-inside:avoid;page-break-inside:avoid}
+  .reptable{width:100%;border-collapse:collapse;font-size:12px}
+  .reptable th{text-align:left;padding:7px 8px;background:#F2EEE3;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:#6B6455}
+  .reptable td{padding:7px 8px;border-bottom:1px solid #E7E1D2}
 </style>
 </head>
 <body>
@@ -1105,6 +1117,7 @@ function Dashboard({session}){
   const [stF,setStF]=useState({player:'',days:''}); // filtros da tela Stats
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
+  const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
   const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
@@ -1694,6 +1707,7 @@ function Dashboard({session}){
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</span></div>
+        <button onClick={()=>setReport({type:'mensal'})} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Gerar relatório do mês (PDF)</button>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
@@ -1776,12 +1790,13 @@ function Dashboard({session}){
           </Card>
 
           {/* filtros */}
-          <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap'}}>
+          <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-end'}}>
             <Seg label="Jogador" value={sp} options={players} onChange={v=>setStF(f=>({...f,player:v}))}/>
             <div><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',marginBottom:4}}>Período</div>
               <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                 {[['','Tudo'],['30','30 dias'],['90','90 dias'],['365','1 ano']].map(([v,l])=><button key={l} onClick={()=>setStF(f=>({...f,days:v}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${stF.days===v?P:C.border}`,background:stF.days===v?C.plumSoft:C.surface,color:stF.days===v?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{l}</button>)}
               </div></div>
+            <button onClick={()=>setReport({type:'jogador',player:sp,days:stF.days})} style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Relatório do jogador (PDF)</button>
           </Card>
 
           {rows.length===0?<Empty>Sem dados de {sp} nesse período. Importe os hand histories acima.</Empty>:<>
@@ -2022,6 +2037,119 @@ function Dashboard({session}){
         </div>
       </div>
     </div>}
+
+    {/* relatório imprimível: Imprimir -> "Salvar como PDF" (funciona no celular e no desktop) */}
+    {report&&(()=>{
+      const hoje=todayISO();
+      const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
+        <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+          <span style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
+          <span style={{fontSize:12,color:'#6B6455'}}>pool de poker · {config.player1_name} & {config.player2_name}</span>
+        </div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
+        <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
+      </div>;
+      const Big=({label,value,tone})=><div className="repcard" style={{padding:'10px 12px',borderRadius:10,background:'#F7F4EA',minWidth:0}}>
+        <div style={{fontSize:10,color:'#6B6455',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,color:tone||'#1E2A24'}}>{value}</div></div>;
+      const Sec=({t,children})=><div className="repcard" style={{marginBottom:18}}><div style={{fontSize:13,fontWeight:800,color:P,margin:'0 0 8px',textTransform:'uppercase',letterSpacing:'.04em'}}>{t}</div>{children}</div>;
+      let corpo=null, titulo='', sub='';
+      if(report.type==='mensal'){
+        titulo=`Relatório mensal — ${mLabel(month)}`; sub='fechamento da pool';
+        const wkRows=players.flatMap(pl=>(weeksByPlayer[pl]||[]).filter(w=>w.week.slice(0,7)===month).map(w=>({...w,pl,vs:valorSacadoFor(w.week,pl)})));
+        const mSaques=wds.filter(w=>String(w.week_ending_date||'').slice(0,7)===month);
+        const bs=breakdownBy('site',monthTours), bm=breakdownBy('modality',monthTours);
+        corpo=<>
+          <Sec t="Resumo do mês">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Resultado" value={fmt(mRes)} tone={mRes>=0?C.greenMid:C.red}/>
+              <Big label="Lucro dividido" value={fmt(mLucroDiv)}/>
+              <Big label="Ficou na pool" value={fmt(mPool)}/>
+              <Big label="Torneios" value={String(mTorneios)}/>
+              <Big label="ABI médio" value={fmt(mAbi)}/>
+              <Big label="ROI" value={pctFmt(mRoi)} tone={mRoi>=0?C.greenMid:C.red}/>
+            </div>
+          </Sec>
+          <Sec t="Por jogador">
+            <table className="reptable"><thead><tr><th>Jogador</th><th>Torneios</th><th>Investido</th><th>Premiação</th><th>Resultado</th><th>ROI</th><th>ITM</th><th>Make-up final</th></tr></thead>
+            <tbody>{perPlayerMonth.map(pm=><tr key={pm.p}><td><b>{pm.p}</b></td><td>{pm.torneios}</td><td>{fmt(pm.vol)}</td><td>{fmt(pm.premios)}</td><td style={{color:pm.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(pm.res)}</td><td>{pctFmt(pm.roi)}</td><td>{pctFmt(pm.itm)}</td><td>{fmt(pm.makeAberto)}</td></tr>)}</tbody></table>
+          </Sec>
+          <Sec t="Semana a semana">
+            {wkRows.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Jogador</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
+            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{dLabel(w.week)}</td><td>{w.pl}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
+          </Sec>
+          {mSaques.length>0&&<Sec t="Saques pagos no mês">
+            <table className="reptable"><thead><tr><th>Semana</th><th>Jogador</th><th>Carteira</th><th>Valor</th></tr></thead>
+            <tbody>{mSaques.map(w=><tr key={w.id}><td>{dLabel(w.week_ending_date)}</td><td>{w.player}</td><td>{w.wallet||'—'}</td><td style={{fontWeight:700}}>{fmt(w.valor_sacado)}</td></tr>)}</tbody></table>
+          </Sec>}
+          {monthTours.length>0&&<Sec t="Onde a pool lucra (mês)">
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+              {[['Por site',bs],['Por modalidade',bm]].map(([tt,rws])=><div key={tt}>
+                <div style={{fontSize:11,fontWeight:700,color:'#6B6455',marginBottom:4}}>{tt}</div>
+                <table className="reptable"><tbody>{rws.map(g=><tr key={g.k}><td>{g.k}</td><td>{g.n} tor.</td><td>{pctFmt(g.roi)}</td><td style={{color:g.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(g.res)}</td></tr>)}</tbody></table>
+              </div>)}
+            </div>
+          </Sec>}
+          <div style={{fontSize:11,color:'#6B6455'}}>Banca central da pool no momento do relatório: <b>{fmt(bancaAtual)}</b> · make-up em aberto: {players.map(pl=>`${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · ')}.</div>
+        </>;
+      } else {
+        const sp2=report.player||players[0]; const nn=parseInt(report.days,10);
+        const from=nn>0?addDaysISO(todayISO(),-(nn-1)):null;
+        const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from)));
+        const S2=k=>rws.reduce((s,r)=>s+num(r[k]),0);
+        const hands2=S2('hands'), bb100v=hands2>0?S2('net_bb')/hands2*100:0;
+        const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
+        const afb=S2('af_bets'), afc=S2('af_calls');
+        const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
+        const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
+        titulo=`Relatório do jogador — ${sp2}`;
+        sub=`${nn>0?`últimos ${nn} dias`:'todo o histórico'} · ${hands2} mão${hands2!==1?'s':''} · ${rws.length} torneio${rws.length!==1?'s':''}`;
+        const MET=[
+          ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
+          ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
+          ['Roubo de blinds',S2('steal_cnt'),S2('steal_opp'),HH_BANDS.steal],['BB defende',S2('bbdef_cnt'),S2('bbdef_opp'),HH_BANDS.bbdef],
+          ['C-bet flop',S2('cbet_cnt'),S2('cbet_opp'),HH_BANDS.cbet],['Fold pra c-bet',S2('fcbet_cnt'),S2('fcbet_opp'),HH_BANDS.fcbet],
+          ['WWSF',S2('wwsf_cnt'),S2('sawflop_cnt'),HH_BANDS.wwsf],['WTSD',S2('wtsd_cnt'),S2('sawflop_cnt'),HH_BANDS.wtsd],['W$SD',S2('wsd_cnt'),S2('wtsd_cnt'),HH_BANDS.wsd],
+        ];
+        const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
+        const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
+        corpo=<>
+          <Sec t="Resumo">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Mãos" value={String(hands2)}/>
+              <Big label="Torneios" value={String(rws.length)}/>
+              <Big label="bb/100 (fichas)" value={fmtBB(bb100v)} tone={bb100v>=0?C.greenMid:C.red}/>
+              <Big label="All-ins" value={String(S2('allin_cnt'))}/>
+              <Big label="Sorte (real − EV)" value={fmtBB(sorte)} tone={sorte>=0?C.greenMid:C.red}/>
+              <Big label="Agressão (AF)" value={afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}/>
+            </div>
+            <div style={{fontSize:11,color:'#6B6455',marginTop:6}}>Sorte: real {fmtBB(netbb)} vs esperado pela equity {fmtBB(evbb)} nos all-ins — a diferença é variância, não mérito ou erro.</div>
+          </Sec>
+          <Sec t="Estatísticas vs faixa de reg (MTT micro/low)">
+            <table className="reptable"><thead><tr><th>Estatística</th><th>Valor</th><th>Amostra</th><th>Faixa reg</th><th>Status</th></tr></thead>
+            <tbody>{MET.map(([nm,c,o,b])=>{ const [lbl,cor]=stOf(c,o,b); return <tr key={nm}><td>{nm}</td><td style={{fontWeight:700}}>{o>0?pctFmt(c/o*100):'—'}</td><td>{c}/{o}</td><td>{b[0]}–{b[1]}%</td><td style={{color:cor,fontWeight:700}}>{lbl}</td></tr>; })}</tbody></table>
+          </Sec>
+          <Sec t="Por posição">
+            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th></tr></thead>
+            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pctFmt(pos2[k].v/pos2[k].h*100)}</td><td>{pctFmt(pos2[k].p/pos2[k].h*100)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
+          </Sec>
+          <Sec t="Leituras do jogo">
+            {insights.length?insights.map((iz,ix)=><div key={ix} style={{marginBottom:8}}><div style={{fontWeight:800,fontSize:12.5,color:TONE2[iz.tone]}}>{iz.t}</div><div style={{fontSize:12,color:'#3d463f',lineHeight:1.5}}>{iz.x}</div></div>):<div style={{fontSize:12,color:'#6B6455'}}>Sem leituras — importe hand histories.</div>}
+          </Sec>
+        </>;
+      }
+      return <div className="printrep" style={{position:'fixed',inset:0,background:'#fff',zIndex:80,overflowY:'auto'}}>
+        <div className="noprint" style={{position:'sticky',top:0,background:'#fff',borderBottom:`1px solid ${C.border}`,padding:'12px 16px',display:'flex',gap:10,zIndex:2}}>
+          <button onClick={()=>setReport(null)} style={{padding:'10px 16px',borderRadius:12,border:`1.5px solid ${C.border}`,background:'#fff',color:C.ink,fontWeight:700,fontSize:13.5,cursor:'pointer'}}>← Voltar</button>
+          <button onClick={()=>window.print()} style={{marginLeft:'auto',padding:'10px 18px',borderRadius:12,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13.5,cursor:'pointer'}}>🖨 Imprimir / Salvar PDF</button>
+        </div>
+        <div style={{maxWidth:820,margin:'0 auto',padding:'22px 20px 60px',color:'#1E2A24'}}>
+          <Hdr title={titulo} sub={sub}/>
+          {corpo}
+          <div style={{marginTop:22,paddingTop:10,borderTop:'1px solid #E7E1D2',fontSize:10.5,color:'#6B6455'}}>PoolGG · gerado pelo app · valores financeiros vêm dos lançamentos; estatísticas de jogo vêm dos hand histories importados.</div>
+        </div>
+      </div>;
+    })()}
 
     {/* modal adicionar */}
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
