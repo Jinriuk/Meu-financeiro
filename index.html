@@ -89,6 +89,8 @@ const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`
 const dLabel = d => { if(!d) return ''; const [,m,day]=d.split('-'); return `${day}/${m}`; };
 // data LOCAL (não UTC): no Brasil, depois das 21h o toISOString() já viraria "amanhã"
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+// soma n dias a uma data ISO (via UTC, sem depender do relógio) — usado no filtro "últimos N dias" do Diário
+const addDaysISO = (iso,n) => { const [y,m,d]=(iso||todayISO()).split('-').map(Number); const dt=new Date(Date.UTC(y,m-1,d)); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
 function parseValor(s){
   if(typeof s==='number') return s;
   s=String(s||'').trim().replace(/[R$US\s]/g,'');
@@ -105,8 +107,14 @@ function weekEnding(dateStr){
 }
 
 /* ---------- regras de negócio (seção 4) ---------- */
-// saque pago precisa casar com a semana do cálculo: qualquer data vira o domingo que fecha aquela semana
-const normalizeRow = (type,d) => type==='wd' && d.week_ending_date ? {...d, week_ending_date: weekEnding(d.week_ending_date)} : d;
+// normaliza antes de salvar: semana do saque vira domingo; "pool/não informar" viram null (não atribuído)
+function normalizeRow(type,d){
+  d={...d};
+  if(type==='wd' && d.week_ending_date) d.week_ending_date=weekEnding(d.week_ending_date);
+  if(type==='wd' && (d.wallet==='Não informar'||!d.wallet)) d.wallet=null;
+  if(type==='bank' && (d.player==='Pool / Reserva'||!d.player)) d.player=null;
+  return d;
+}
 
 /* ---------- backup CSV (separador ; e BOM pra abrir certo no Excel pt-BR) ---------- */
 function toCSV(rows){
@@ -643,8 +651,17 @@ function TourRow({t,config,players,onEdit,onDelete}){
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
+// seletor em pílulas (filtros do Diário e do Mensal)
+function Seg({label,value,options,onChange}){
+  return <div style={{minWidth:0}}>
+    {label&&<div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',marginBottom:4}}>{label}</div>}
+    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+      {options.map(o=><button key={o} onClick={()=>onChange(o)} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${value===o?P:C.border}`,background:value===o?C.plumSoft:C.surface,color:value===o?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{o}</button>)}
+    </div>
+  </div>;
+}
 // mini-stat usado no Diário/Mensal
-const MiniStat = ({label,value,tone}) => <div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Fraunces',serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
+const MiniStat = ({label,value,tone}) =><div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Fraunces',serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
 
 function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
@@ -703,11 +720,63 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   </Card>;
 }
 
+// linha de uma semana (por jogador) no Semanal — SEM status de saque (isso só aparece na aba Saques)
+function WeekRow({w,player,config}){
+  const wkTorn=w.entries.reduce((s,e)=>s+num(e.qtd_torneios),0);
+  const wkBuyins=w.entries.reduce((s,e)=>s+num(e.total_buyins),0);
+  const wkEnt=w.entries.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
+  const wkAbi=wkEnt>0?wkBuyins/wkEnt:0, pAbi=abiMaxFor(config,player);
+  return <div style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
+      <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
+      <span style={{fontWeight:800,fontSize:15,color:w.resultado>=0?C.greenMid:C.red}}>{w.resultado>=0?'+':'−'}{fmt(Math.abs(w.resultado))}</span>
+    </div>
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
+      <div style={{color:C.inkSoft}}>Make-up: <b style={{color:C.ink}}>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</b></div>
+      <div style={{color:C.inkSoft}}>Lucro divisível: <b style={{color:C.ink}}>{fmt(w.lucroDiv)}</b></div>
+      <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
+      <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
+    </div>
+    {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>}
+  </div>;
+}
+// botão que abre/fecha o histórico de semanas de meses anteriores
+function HistToggle({n,open,onClick}){
+  return <button onClick={onClick} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'10px 14px',borderRadius:12,fontWeight:700,fontSize:13,cursor:'pointer',width:'100%'}}>{open?'Ocultar':'Ver'} histórico de meses anteriores ({n} semana{n!==1?'s':''})</button>;
+}
+// card "geral da pool por semana" — mês atual aberto; meses anteriores viram histórico recolhível
+function SemanalGeral({geral,curMonth}){
+  const [hist,setHist]=useState(false);
+  const atuais=geral.filter(g=>g.mes===curMonth), antigas=geral.filter(g=>g.mes!==curMonth);
+  const Row=g=><div key={g.week} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'11px 0',borderBottom:`1px solid ${C.border}`}}>
+    <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>Semana até {dLabel(g.week)}</div><div style={{fontSize:11.5,color:C.inkSoft,marginTop:1}}>saque autorizado {fmt(g.saqueAut)} · pool ficou com {fmt(g.partePool)}</div></div>
+    <span style={{fontWeight:800,fontSize:15.5,color:g.resultado>=0?C.greenMid:C.red,flexShrink:0}}>{g.resultado>=0?'+':'−'}{fmt(Math.abs(g.resultado))}</span>
+  </div>;
+  return <Card style={{padding:20}}>
+    <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Resultado por semana (geral da pool)</h3>
+    <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:8}}>Os dois jogadores somados, semana a semana.</div>
+    {atuais.length?atuais.map(Row):<Empty>Sem semanas neste mês ainda.</Empty>}
+    {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(Row)}</div>}</>}
+  </Card>;
+}
+// card por jogador — semanas do mês atual abertas; meses anteriores em histórico recolhível
+function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual}){
+  const [hist,setHist]=useState(false);
+  const arr=[...weeks].reverse();
+  const atuais=arr.filter(w=>w.week.slice(0,7)===curMonth), antigas=arr.filter(w=>w.week.slice(0,7)!==curMonth);
+  return <Card style={{padding:20}}>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span></div>
+    {atuais.length?atuais.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>):<Empty>Sem semanas neste mês ainda.</Empty>}
+    {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>)}</div>}</>}
+  </Card>;
+}
+
 /* ---------- app ---------- */
 function Dashboard({session}){
   const [config,setConfig]=useState(null);
   const [tours,setTours]=useState([]);
   const [ledger,setLedger]=useState([]);
+  const [wallets,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
   const [wds,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
   const [view,setView]=useState('painel');
@@ -718,18 +787,25 @@ function Dashboard({session}){
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
+  const [diF,setDiF]=useState({player:'Todos',site:'Todos',mod:'Todos',from:'',to:'',days:''}); // filtros do Diário
+  const [mensalWho,setMensalWho]=useState('Geral'); // filtro do "Onde vocês lucram"
+  const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
+  const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
+  const seq=React.useRef(0);
+  const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...l,{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
 
   const loadAll=async()=>{
     try{
-      const [cfg,t,l,w]=await Promise.all([
+      const [cfg,t,l,pw,w]=await Promise.all([
         sb.from('pool_config').select('*').maybeSingle(),
         sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
         sb.from('bankroll_ledger').select('*').order('entry_date'),
+        sb.from('player_wallets').select('*'),
         sb.from('withdrawals').select('*').order('week_ending_date',{ascending:false}),
       ]);
       let c=cfg.data;
       if(!c){ const r=await sb.from('pool_config').insert({}).select().single(); c=r.data; }
-      setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWds(w.data||[]);
+      setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]);
     }catch(e){ console.error(e); }
   };
   useEffect(()=>{(async()=>{ await loadAll(); setLoading(false); })();},[]);
@@ -750,19 +826,36 @@ function Dashboard({session}){
       if(p.eventType==='DELETE') return list.filter(x=>x.id!==p.old.id);
       return list;
     });
+    // avisa o OUTRO jogador quando um torneio fora da grade chega pelo tempo real (não avisa quem lançou)
+    const onTour=p=>{
+      apply(setTours)(p);
+      if(p.eventType==='INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current){
+        const c=configRef.current, mx=abiMaxFor(c,p.new.player);
+        if(num(p.new.buyin)>mx) pushToast({tone:C.red,title:`${p.new.player} jogou fora da grade`,text:`${p.new.tournament_name||'Torneio'} · buy-in ${fmt(p.new.buyin)} (máx ${fmt(mx)}). Fique atento e verifique com ${p.new.player.split(' ')[0]}.`});
+      }
+    };
     const ch=sb.channel('pool-sync')
-      .on('postgres_changes',{event:'*',schema:'public',table:'tournaments'},apply(setTours))
+      .on('postgres_changes',{event:'*',schema:'public',table:'tournaments'},onTour)
       .on('postgres_changes',{event:'*',schema:'public',table:'bankroll_ledger'},apply(setLedger))
+      .on('postgres_changes',{event:'*',schema:'public',table:'player_wallets'},apply(setWallets))
       .on('postgres_changes',{event:'*',schema:'public',table:'withdrawals'},apply(setWds))
       .on('postgres_changes',{event:'*',schema:'public',table:'pool_config'},p=>{ if(p.new&&p.new.id) setConfig(prev=>prev&&prev.id===p.new.id?p.new:prev); })
       .subscribe();
     return ()=>{ sb.removeChannel(ch); };
   },[]);
+  // ref com o config atual pro handler de realtime (que roda fora do render)
+  const configRef=React.useRef(null);
+  useEffect(()=>{configRef.current=config;},[config]);
 
+  const [gradeWarn,setGradeWarn]=useState(null); // torneio recém-salvo fora da grade (aviso pro próprio jogador)
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table,data,setter,list)=>{
     const {data:row,error}=await sb.from(table).insert(data).select().single();
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
+    if(table==='tournaments' && row){
+      localIds.current.add(row.id);
+      if(config && num(row.buyin)>abiMaxFor(config,row.player)) setGradeWarn(row); // avisa quem lançou
+    }
     setter([row,...list]); setModal(null);
   };
   const del = async (table,id,setter,list)=>{
@@ -780,6 +873,13 @@ function Dashboard({session}){
     const next={...config,...patch}; setConfig(next); setQuickEdit(null);
     const {error}=await sb.from('pool_config').update(patch).eq('id',config.id);
     if(error){alert('Não consegui salvar a configuração.');console.error(error);}
+  };
+  // saldo inicial de um jogador numa plataforma (upsert por player+wallet)
+  const saveWallet = async (player,wallet,saldo_inicial)=>{
+    setQuickEdit(null);
+    const {data,error}=await sb.from('player_wallets').upsert({player,wallet,saldo_inicial},{onConflict:'player,wallet'}).select().single();
+    if(error){alert('Não consegui salvar o saldo.');console.error(error);return;}
+    setWallets(w=>{ const rest=w.filter(x=>!(x.player===player&&x.wallet===wallet)); return [...rest,data]; });
   };
 
   // Diário derivado dos torneios (fonte da verdade = torneios)
@@ -802,11 +902,31 @@ function Dashboard({session}){
   const movimentosTotal = ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
   const sacadoTotal = wds.reduce((s,w)=>s+num(w.valor_sacado),0);
   const bancaAtual = num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal;
+  // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
+  const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
+  const saldoWallet=(player,wallet)=>
+    walletInicial(player,wallet)
+    + tours.filter(t=>t.player===player&&t.site===wallet).reduce((s,t)=>s+lucroTorneio(t),0)
+    + ledger.filter(l=>l.player===player&&l.wallet===wallet).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0)
+    - wds.filter(w=>w.player===player&&w.wallet===wallet).reduce((s,w)=>s+num(w.valor_sacado),0);
+  const saldoJogador=(player)=>WALLETS.reduce((s,wl)=>s+saldoWallet(player,wl),0);
+  const walletsDoJogador=(player)=>WALLETS.map(wl=>({wallet:wl, saldo:saldoWallet(player,wl), inicial:walletInicial(player,wl),
+    temMov: walletInicial(player,wl)!==0 || tours.some(t=>t.player===player&&t.site===wl) || ledger.some(l=>l.player===player&&l.wallet===wl) || wds.some(w=>w.player===player&&w.wallet===wl)})).filter(x=>x.temMov);
   const curMakeUp={}, curWeek={};
   players.forEach(p=>{const arr=weeksByPlayer[p]||[]; curMakeUp[p]=arr.length?arr[arr.length-1].makeFinal:(makeInit[p]||0); curWeek[p]=arr.find(w=>w.week===CURWK)||null;});
   const valorSacadoFor=(week,player)=>wds.filter(w=>w.week_ending_date===week&&w.player===player).reduce((s,w)=>s+num(w.valor_sacado),0);
   const makeUpAt=(p,wk)=>{let mk=makeInit[p]||0; for(const w of (weeksByPlayer[p]||[])){ if(w.week<=wk) mk=w.makeFinal; else break;} return mk;};
   const allWeeks=[...new Set(players.flatMap(p=>(weeksByPlayer[p]||[]).map(w=>w.week)))].sort();
+  const curMonthISO=todayISO().slice(0,7);
+  // geral da pool por semana (os dois jogadores somados) — mais recente primeiro
+  const geralSemana=allWeeks.map(wk=>{
+    const perP=players.map(p=>(weeksByPlayer[p]||[]).find(w=>w.week===wk)).filter(Boolean);
+    return {week:wk, mes:wk.slice(0,7),
+      resultado:perP.reduce((s,w)=>s+w.resultado,0),
+      parteJog:perP.reduce((s,w)=>s+w.parteJog,0),
+      partePool:perP.reduce((s,w)=>s+w.partePool,0),
+      saqueAut:perP.reduce((s,w)=>s+w.saqueAut,0)};
+  }).reverse();
 
   const lucroPoolAcum = players.reduce((s,p)=>s+(weeksByPlayer[p]||[]).reduce((a,w)=>a+w.partePool,0),0);
   const totalPago = sacadoTotal;
@@ -876,6 +996,7 @@ function Dashboard({session}){
     ],
     bank:[
       {k:'entry_date',label:'Data',type:'date',def:todayISO()},
+      {k:'player',label:'Jogador (ou pool)',type:'select',opts:['Pool / Reserva',...players]},
       {k:'wallet',label:'Carteira',type:'select',opts:WALLETS},
       {k:'entrada',label:'Entrada (US$)',type:'money',def:'0'},
       {k:'saida',label:'Saída (US$)',type:'money',def:'0'},
@@ -884,6 +1005,7 @@ function Dashboard({session}){
     wd:[
       {k:'week_ending_date',label:'Semana (domingo de fechamento)',type:'date',def:CURWK,full:true},
       {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'wallet',label:'Saiu de qual carteira',type:'select',opts:['Não informar',...WALLETS]},
       {k:'valor_sacado',label:'Valor sacado (US$)',type:'money',def:'0'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
     ],
@@ -941,14 +1063,45 @@ function Dashboard({session}){
   const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
   // desempenho por site e por modalidade (usa os campos que já são lançados em cada torneio)
   const monthTours=tours.filter(t=>weekEnding(t.entry_date).slice(0,7)===month);
-  const breakdownBy=key=>{
+  // "Onde vocês lucram" com filtro Geral/jogador
+  const monthToursWho=mensalWho==='Geral'?monthTours:monthTours.filter(t=>t.player===mensalWho);
+  const breakdownBy=(key,list)=>{
     const m={};
-    monthTours.forEach(t=>{ const k=t[key]||'—'; if(!m[k]) m[k]={k,n:0,inv:0,res:0,premios:0}; const g=m[k]; g.n+=1; g.inv+=totalInvestido(t); g.res+=lucroTorneio(t); g.premios+=num(t.prize); });
+    list.forEach(t=>{ const k=t[key]||'—'; if(!m[k]) m[k]={k,n:0,inv:0,res:0,premios:0}; const g=m[k]; g.n+=1; g.inv+=totalInvestido(t); g.res+=lucroTorneio(t); g.premios+=num(t.prize); });
     return Object.values(m).map(g=>({...g,roi:g.inv>0?(g.res/g.inv)*100:0})).sort((a,b)=>b.res-a.res);
   };
-  const bySite=breakdownBy('site'), byModality=breakdownBy('modality');
+  const bySite=breakdownBy('site',monthToursWho), byModality=breakdownBy('modality',monthToursWho);
 
   const pcolor=p=>PLAYER_COLORS[players.indexOf(p)]||C.inkSoft;
+
+  /* ---------- Diário: filtros (jogador / site / modalidade) + período (intervalo ou últimos N dias) ---------- */
+  const diarySites=['Todos',...[...new Set(tours.map(t=>t.site).filter(Boolean))]];
+  const diaryMods=['Todos',...[...new Set(tours.map(t=>t.modality).filter(Boolean))]];
+  const diPeriodo=(()=>{ // resolve o período ativo -> {from,to} (ou null)
+    const n=parseInt(diF.days,10);
+    if(n>0) return {from:addDaysISO(todayISO(),-(n-1)), to:todayISO(), label:`últimos ${n} dias`};
+    if(diF.from||diF.to) return {from:diF.from||'0000-01-01', to:diF.to||'9999-12-31', label:`${diF.from?dLabel(diF.from):'início'} a ${diF.to?dLabel(diF.to):'hoje'}`};
+    return null;
+  })();
+  const diaryTours=tours.filter(t=>
+    (diF.player==='Todos'||t.player===diF.player) &&
+    (diF.site==='Todos'||t.site===diF.site) &&
+    (diF.mod==='Todos'||t.modality===diF.mod) &&
+    (!diPeriodo || (t.entry_date>=diPeriodo.from && t.entry_date<=diPeriodo.to)));
+  const diaryDaily=deriveDaily(diaryTours);
+  const diFiltroAtivo=diF.player!=='Todos'||diF.site!=='Todos'||diF.mod!=='Todos'||!!diPeriodo;
+  const diAgg=(()=>{
+    const dd=diaryDaily;
+    const res=dd.reduce((s,e)=>s+resultadoDia(e),0);
+    const torneios=dd.reduce((s,e)=>s+num(e.qtd_torneios),0);
+    const entradas=dd.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
+    const buyins=dd.reduce((s,e)=>s+num(e.total_buyins),0);
+    const premios=diaryTours.reduce((s,t)=>s+num(t.prize),0);
+    const cashes=diaryTours.filter(t=>num(t.prize)>0).length;
+    return {res,torneios,entradas,buyins,premios,
+      abi:entradas>0?buyins/entradas:0, roi:buyins>0?(res/buyins)*100:0, itm:torneios>0?(cashes/torneios)*100:0,
+      dias:[...new Set(dd.map(e=>e.entry_date))].length};
+  })();
 
   return <div className="wrap">
     {/* sidebar desktop */}
@@ -1064,7 +1217,46 @@ function Dashboard({session}){
       {/* ---------------- DIÁRIO (resumo por jogador/dia, editável pelos torneios) ---------------- */}
       {view==='diario'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:12}}>
         <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. Toque num dia pra conferir/corrigir.</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
-        {daily.length?daily.map(e=><DiaryCard key={e.id} entry={e} dayTours={tours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>):<Empty>Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.</Empty>}
+
+        {/* filtros */}
+        <Card style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
+            <Seg label="Jogador" value={diF.player} options={['Todos',...players]} onChange={v=>setDiF(f=>({...f,player:v}))}/>
+            {diarySites.length>1&&<Seg label="Plataforma" value={diF.site} options={diarySites} onChange={v=>setDiF(f=>({...f,site:v}))}/>}
+            {diaryMods.length>1&&<Seg label="Modalidade" value={diF.mod} options={diaryMods} onChange={v=>setDiF(f=>({...f,mod:v}))}/>}
+          </div>
+          <div>
+            <div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',marginBottom:4}}>Período</div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+              {[7,15,30].map(n=><button key={n} onClick={()=>setDiF(f=>({...f,days:String(f.days)===String(n)?'':String(n),from:'',to:''}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${String(diF.days)===String(n)?P:C.border}`,background:String(diF.days)===String(n)?C.plumSoft:C.surface,color:String(diF.days)===String(n)?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{n} dias</button>)}
+              <span style={{fontSize:12,color:C.inkSoft}}>ou</span>
+              <input type="date" value={diF.from} onChange={e=>setDiF(f=>({...f,from:e.target.value,days:''}))} style={{padding:'6px 9px',borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:12.5,color:C.ink,background:C.surface}}/>
+              <span style={{fontSize:12,color:C.inkSoft}}>até</span>
+              <input type="date" value={diF.to} onChange={e=>setDiF(f=>({...f,to:e.target.value,days:''}))} style={{padding:'6px 9px',borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:12.5,color:C.ink,background:C.surface}}/>
+              {diFiltroAtivo&&<button onClick={()=>setDiF({player:'Todos',site:'Todos',mod:'Todos',from:'',to:'',days:''})} style={{marginLeft:'auto',padding:'6px 11px',borderRadius:99,border:`1.5px solid ${C.border}`,background:C.surface,color:C.red,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar</button>}
+            </div>
+          </div>
+        </Card>
+
+        {/* cálculo do período/filtro */}
+        {diFiltroAtivo&&<Card style={{padding:18}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:0}}>Cálculo do período</h3>
+            <span style={{fontSize:12,color:C.inkSoft}}>{diPeriodo?diPeriodo.label:'todo o histórico'}{diF.player!=='Todos'?` · ${diF.player}`:''}{diF.site!=='Todos'?` · ${diF.site}`:''}{diF.mod!=='Todos'?` · ${diF.mod}`:''}</span>
+            <span style={{marginLeft:'auto',fontFamily:"'Fraunces',serif",fontWeight:700,fontSize:19,color:diAgg.res>=0?C.greenMid:C.red}}>{diAgg.res>=0?'+':'−'}{fmt(Math.abs(diAgg.res))}</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(88px,1fr))',gap:8}}>
+            <MiniStat label="Dias" value={String(diAgg.dias)}/>
+            <MiniStat label="Torneios" value={String(diAgg.torneios)}/>
+            <MiniStat label="ABI médio" value={fmt(diAgg.abi)}/>
+            <MiniStat label="Investido" value={fmt(diAgg.buyins)}/>
+            <MiniStat label="Premiação" value={fmt(diAgg.premios)} tone={C.greenMid}/>
+            <MiniStat label="ROI" value={pctFmt(diAgg.roi)} tone={diAgg.res>=0?C.greenMid:C.red}/>
+            <MiniStat label="ITM" value={pctFmt(diAgg.itm)}/>
+          </div>
+        </Card>}
+
+        {diaryDaily.length?diaryDaily.map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>):<Empty>{diFiltroAtivo?'Nenhum torneio nesse filtro/período.':'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.'}</Empty>}
       </div>}
 
       {/* ---------------- SEMANAL ---------------- */}
@@ -1077,22 +1269,8 @@ function Dashboard({session}){
             <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
           </div>
         </Card>
-        {players.map(p=>{const arr=[...(weeksByPlayer[p]||[])].reverse(); return <Card key={p} style={{padding:20}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}><span style={{width:12,height:12,borderRadius:99,background:pcolor(p)}}/><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>{p}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(curMakeUp[p])}</span></div>
-          {arr.length?arr.map(w=>{const vs=valorSacadoFor(w.week,p); const st=saqueStatus(w,bancaAtual,piso,vs); const wkAbiEntries=w.entries; const wkBuyins=wkAbiEntries.reduce((s,e)=>s+num(e.total_buyins),0); const wkTorn=wkAbiEntries.reduce((s,e)=>s+num(e.qtd_torneios),0); const wkEnt=wkAbiEntries.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0); const wkAbi=wkEnt>0?wkBuyins/wkEnt:0; return <div key={w.week} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
-              <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontWeight:800,fontSize:15,color:w.resultado>=0?C.greenMid:C.red}}>{w.resultado>=0?'+':'−'}{fmt(Math.abs(w.resultado))}</span><Badge text={st}/></div>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
-              <div style={{color:C.inkSoft}}>Make-up: <b style={{color:C.ink}}>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</b></div>
-              <div style={{color:C.inkSoft}}>Lucro divisível: <b style={{color:C.ink}}>{fmt(w.lucroDiv)}</b></div>
-              <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
-              <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
-            </div>
-            {wkTorn>0&&(()=>{const pAbi=abiMaxFor(config,p); return <div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>;})()}
-          </div>;}):<Empty>Sem semanas fechadas ainda.</Empty>}
-        </Card>;})}
+        <SemanalGeral geral={geralSemana} curMonth={curMonthISO}/>
+        {players.map(p=><SemanalPlayer key={p} player={p} weeks={weeksByPlayer[p]||[]} config={config} curMonth={curMonthISO} makeUpAtual={curMakeUp[p]}/>)}
       </div>}
 
       {/* ---------------- MENSAL ---------------- */}
@@ -1134,8 +1312,9 @@ function Dashboard({session}){
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Onde vocês lucram</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>Resultado e ROI por site e por modalidade neste mês.</div>
-          {[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Resultado e ROI por site e por modalidade neste mês.</div>
+          <div style={{marginBottom:14}}><Seg value={mensalWho} options={['Geral',...players]} onChange={setMensalWho}/></div>
+          {monthToursWho.length===0?<Empty>Sem torneios de {mensalWho} neste mês.</Empty>:[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
             <div style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:6}}>{titulo}</div>
             {rows.map(g=>{const mx=Math.max(1,...rows.map(x=>Math.abs(x.res))); return <div key={g.k} style={{padding:'8px 0',borderBottom:`1px solid ${C.border}`}}>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -1185,16 +1364,36 @@ function Dashboard({session}){
             <div><div style={{fontSize:12.5,opacity:.85}}>Aportes/movimentos</div><div style={{fontWeight:700,fontSize:15}}>{movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(sacadoTotal)}</div></div>
           </div>
-          {ledger.length>0&&<div style={{display:'flex',gap:18,marginTop:12,flexWrap:'wrap',paddingTop:12,borderTop:'1px solid rgba(255,255,255,.18)'}}>
-            {WALLETS.map(wl=>{const net=ledger.filter(l=>l.wallet===wl).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0); return net!==0&&<div key={wl}><div style={{fontSize:12,opacity:.75}}>{wl} (manual)</div><div style={{fontWeight:700,fontSize:14}}>{net>=0?'+':'−'}{fmt(Math.abs(net))}</div></div>;})}
-          </div>}
         </Card>
+
+        <Card style={{padding:20}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
+            <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
+            <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>Onde o dinheiro está. Atualiza sozinho com torneios, saques e movimentos.</div></div>
+          </div>
+          {players.map((p,i)=>{const wl=walletsDoJogador(p); const tot=saldoJogador(p); return <div key={p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{width:10,height:10,borderRadius:99,background:PLAYER_COLORS[i]}}/>
+              <span style={{fontWeight:700,flex:1}}>{p}</span>
+              <span style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:18,color:P}}>{fmt(tot)}</span>
+            </div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+              {WALLETS.map(w=>{const wr=wl.find(x=>x.wallet===w); return <button key={w} onClick={()=>setQuickEdit({label:`Saldo inicial · ${p} · ${w}`,hint:'O que o jogador tinha nessa plataforma no começo. O app soma torneios, movimentos e saques em cima disso.',kind:'money',current:walletInicial(p,w),onSave:nv=>saveWallet(p,w,nv)})}
+                style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2,padding:'8px 12px',borderRadius:11,border:`1px solid ${C.border}`,background:wr?C.warm:'transparent',cursor:'pointer',minWidth:96}}>
+                <span style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>{w}</span>
+                <span style={{fontFamily:"'Fraunces',serif",fontSize:15,fontWeight:600,color:wr?(wr.saldo>=0?C.ink:C.red):'#C3BBA9'}}>{wr?fmt(wr.saldo):'definir'}</span>
+              </button>;})}
+            </div>
+          </div>;})}
+          <div style={{fontSize:12,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>Toque numa plataforma pra ajustar o <b>saldo inicial</b> daquele jogador. Depósitos/transferências entram como <b>movimento</b> abaixo (escolhendo o jogador); saque pago sai da carteira escolhida na aba Saques.</div>
+        </Card>
+
         <ListView title="Movimentos da banca" subtitle="Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
             onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
             onEdit={()=>setEditing({type:'bank',item:l})}
             left={<><span style={{width:40,height:40,borderRadius:12,background:net>=0?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:net>=0?C.greenMid:C.red}}>{net>=0?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
-              <div><div style={{fontWeight:700,fontSize:15}}>{l.wallet}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(l.entry_date)}{l.observacao?` · ${l.observacao}`:''}</div></div></>}
+              <div><div style={{fontWeight:700,fontSize:15}}>{l.wallet}{l.player?` · ${l.player}`:''}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(l.entry_date)}{l.observacao?` · ${l.observacao}`:''}</div></div></>}
             right={<span style={{fontWeight:800,fontSize:16,color:net>=0?C.greenMid:C.red,flexShrink:0}}>{net>=0?'+':'−'}{fmt(Math.abs(net))}</span>}/>;}}/>
       </div>}
 
@@ -1290,6 +1489,24 @@ function Dashboard({session}){
           right={<span style={{fontWeight:800,fontSize:15,color:lucroTorneio(t)>=0?C.greenMid:C.red,flexShrink:0}}>{lucroTorneio(t)>=0?'+':'−'}{fmt(Math.abs(lucroTorneio(t)))}</span>}/>)}
         {(!alertDetail.items||!alertDetail.items.length)&&<Empty>Tudo certo agora — nenhum torneio fora da grade.</Empty>}
       </div>
+    </div>}
+
+    {/* aviso pro próprio jogador que acabou de lançar fora da grade */}
+    {gradeWarn&&<div onClick={()=>setGradeWarn(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.5)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,padding:20}}>
+      <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:400,borderRadius:22,padding:24,textAlign:'center'}}>
+        <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
+        <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
+        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima do ABI máximo de {gradeWarn.player.split(' ')[0]}</b> ({fmt(abiMaxFor(config,gradeWarn.player))}). Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.</p>
+        <button onClick={()=>setGradeWarn(null)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Entendi</button>
+      </div>
+    </div>}
+
+    {/* toasts flutuantes (avisos de tempo real, ex: fora da grade do outro jogador) */}
+    {toasts.length>0&&<div style={{position:'fixed',top:'calc(12px + env(safe-area-inset-top))',left:0,right:0,display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:70,pointerEvents:'none',padding:'0 12px'}}>
+      {toasts.map(t=><div key={t.id} onClick={()=>setToasts(l=>l.filter(x=>x.id!==t.id))} className="ftfade" style={{pointerEvents:'auto',cursor:'pointer',width:'100%',maxWidth:440,background:C.surface,borderLeft:`4px solid ${t.tone||C.red}`,borderRadius:14,boxShadow:'0 10px 30px -10px rgba(0,0,0,.35)',padding:'12px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
+        <span style={{color:t.tone||C.red,flexShrink:0,marginTop:1}}><IcoAlert s={19}/></span>
+        <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13.5,color:C.ink}}>{t.title}</div><div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.4}}>{t.text}</div></div>
+      </div>)}
     </div>}
   </div>;
 }

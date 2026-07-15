@@ -78,6 +78,7 @@ create table if not exists public.bankroll_ledger (
   id uuid primary key default gen_random_uuid(),
   entry_date date not null,
   wallet text not null,                        -- PokerStars / GG Poker / Reserva / Outros
+  player text,                                 -- opcional: atribui o movimento a um jogador
   entrada numeric not null default 0,
   saida numeric not null default 0,
   observacao text,
@@ -85,11 +86,23 @@ create table if not exists public.bankroll_ledger (
   created_at timestamptz not null default now()
 );
 
+-- ---------- Saldo inicial de cada jogador por plataforma ----------
+create table if not exists public.player_wallets (
+  id uuid primary key default gen_random_uuid(),
+  player text not null,
+  wallet text not null,                        -- PokerStars / GG Poker / Reserva / Outros
+  saldo_inicial numeric not null default 0,
+  created_by uuid references auth.users(id) default auth.uid(),
+  created_at timestamptz not null default now(),
+  unique (player, wallet)
+);
+
 -- ---------- Saques (só o que foi realmente pago) ----------
 create table if not exists public.withdrawals (
   id uuid primary key default gen_random_uuid(),
   week_ending_date date not null,              -- domingo de fechamento da semana
   player text not null,
+  wallet text,                                 -- opcional: de qual plataforma saiu o dinheiro
   valor_sacado numeric not null default 0,
   observacoes text,
   created_by uuid references auth.users(id) default auth.uid(),
@@ -105,12 +118,13 @@ alter table public.pool_config     enable row level security;
 alter table public.daily_entries   enable row level security;
 alter table public.tournaments     enable row level security;
 alter table public.bankroll_ledger enable row level security;
+alter table public.player_wallets  enable row level security;
 alter table public.withdrawals     enable row level security;
 
 do $$
 declare t text;
 begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','withdrawals'] loop
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals'] loop
     execute format('drop policy if exists pool_shared on public.%I;', t);
     execute format(
       'create policy pool_shared on public.%I
@@ -162,7 +176,7 @@ grant execute on function public.email_for_login(text) to anon, authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','withdrawals'] loop
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals'] loop
     if not exists (
       select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
