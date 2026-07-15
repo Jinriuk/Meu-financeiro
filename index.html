@@ -254,40 +254,45 @@ function hhEquity(hero,vils,board){
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
 function hhParseHand(block){
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const head=lines[0];
-  const site=/^PokerStars/.test(head)?'PokerStars':'GG Poker';
+  // o transcript por e-mail do PS quebra o cabeçalho em 2 linhas — junta até achar os blinds "(600/1200)"
+  let head=lines[0], hi=1;
+  while(hi<lines.length&&hi<4&&!/\(\s*[\d,]+\/[\d,]+/.test(head)){ head+=' '+lines[hi]; hi++; }
+  const site=head.includes('PokerStars')?'PokerStars':'GG Poker';
   if(!/Hold'em/.test(head)) return null;                                   // v1: só No-Limit Hold'em
-  const mT=head.match(/Tournament #([^,\s]+)/); if(!mT) return null;       // só torneios
+  const mT=head.match(/(?:Tournament|Torneio) #([^,\s]+)/); if(!mT) return null;  // só torneios
   const tid=mT[1];
   const mBB=head.match(/\(([\d,]+)\/([\d,]+)(?:\/([\d,]+))?\)/); const bb=mBB?hhNum(mBB[2]):0; if(!bb) return null;
   const mD=head.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})/); const date=mD?`${mD[1]}-${mD[2]}-${mD[3]}`:null;
   const seg=head.slice(0,Math.max(0,head.search(/Hold'em/)));
-  let buyin=0; (seg.match(/\$[\d.,]+/g)||[]).forEach(x=>buyin+=hhNum(x));
-  const tname=((seg.split(/Tournament #[^,]+,\s*/)[1]||'').replace(/\$[\d.,]+/g,'').replace(/USD|EUR|CNY|\+/g,'').trim().replace(/[,\s]+$/,''))||null;
+  let buyin=0; (seg.match(/\$\s?[\d.,]+/g)||[]).forEach(x=>buyin+=hhNum(x));
+  const tname=((seg.split(/(?:Tournament|Torneio) #[^,]+,\s*/)[1]||'').replace(/\$\s?[\d.,]+/g,'').replace(/USD|EUR|CNY|\+/g,'').trim().replace(/[,\s]+$/,''))||null;
 
   let button=0; const seats=[]; let hero=null, heroCards=null;
   let street=0; const board=[]; const acts=[]; const invested={}, collected={}, shows={};
   let commit={}; let showdown=false, inSummary=false;
   const addInv=(n,x)=>{ invested[n]=(invested[n]||0)+x; };
-  for(let i=1;i<lines.length;i++){
+  const ACT_PT={desiste:'folds',passa:'checks',iguala:'calls',aposta:'bets',aumenta:'raises'};
+  for(let i=hi;i<lines.length;i++){
     const L=lines[i]; let m;
-    if(/^\*\*\* SUMMARY/.test(L)){ inSummary=true; continue; }
+    if(/\*\*\* (SUMMARY|SUMÁRIO)/.test(L)){ inSummary=true; continue; }   // às vezes vem colado no fim de outra linha
     if(inSummary) continue;
-    if(m=L.match(/Seat #(\d+) is the button/)){ button=+m[1]; continue; }
-    if(m=L.match(/^Seat (\d+): (.+?) \(\$?([\d,]+) in chips/)){ seats.push({seat:+m[1],n:m[2],chips:hhNum(m[3])}); continue; }
+    if(m=L.match(/(?:Seat|Lugar) #(\d+) (?:is the button|é o botão)/)){ button=+m[1]; continue; }
+    if(m=L.match(/^(?:Seat|Lugar) (\d+): (.+?) \(\$?\s?([\d,.]+) (?:in chips|em fichas)/)){ seats.push({seat:+m[1],n:m[2],chips:hhNum(m[3])}); continue; }
     if(m=L.match(/^Dealt to (.+?) \[([^\]]+)\]/)){ hero=m[1]; heroCards=m[2].split(/\s+/).map(hhCard); continue; }
+    if(m=L.match(/^(.+?) recebe \[([^\]]+)\]/)){ hero=m[1]; heroCards=m[2].split(/\s+/).map(hhCard); continue; }   // cliente PT
     if(/^\*\*\* FLOP/.test(L)){ street=1; commit={}; const mm=L.match(/\[([^\]]+)\]/); if(mm) mm[1].split(/\s+/).forEach(c=>{const k=hhCard(c); if(k>=0&&board.length<3) board.push(k);}); continue; }
     if(/^\*\*\* TURN/.test(L)){ street=2; commit={}; const mm=L.match(/\]\s*\[([^\]]+)\]/); if(mm){const k=hhCard(mm[1].trim()); if(k>=0) board[3]=k;} continue; }
     if(/^\*\*\* RIVER/.test(L)){ street=3; commit={}; const mm=L.match(/\]\s*\[([^\]]+)\]/); if(mm){const k=hhCard(mm[1].trim()); if(k>=0) board[4]=k;} continue; }
     if(/^\*\*\* SHOW DOWN/.test(L)){ showdown=true; continue; }
-    if(m=L.match(/^Uncalled bet \(?\$?([\d,]+)\)?\s+returned to (.+)$/)){ addInv(m[2],-hhNum(m[1])); continue; }
+    if(m=L.match(/^(?:Uncalled bet|Aposta não-igualada) \(?\$?\s?([\d,.]+)\)?\s+(?:returned to|voltou para) (.+)$/)){ addInv(m[2],-hhNum(m[1])); continue; }
     if(m=L.match(/^(.+?) collected \$?([\d,]+) from/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }
-    if(m=L.match(/^(.+?): shows \[([^\]]+)\]/)){ shows[m[1]]=m[2].split(/\s+/).map(hhCard).filter(c=>c>=0); continue; }
-    if(m=L.match(/^(.+?): posts (?:the )?ante \$?([\d,]+)/)){ addInv(m[1],hhNum(m[2])); continue; }
-    if(m=L.match(/^(.+?): posts (?:small|big) blind \$?([\d,]+)/)){ addInv(m[1],hhNum(m[2])); commit[m[1]]=(commit[m[1]]||0)+hhNum(m[2]); continue; }
-    if(m=L.match(/^(.+?): posts .*?([\d,]+)$/)){ addInv(m[1],hhNum(m[2])); continue; }   // straddle/dead blind
-    if(m=L.match(/^(.+?): (folds|checks|calls|bets|raises)\b\s*\$?([\d,]*)(?:\s+to\s+\$?([\d,]+))?/)){
-      const n=m[1],act=m[2],allin=/and is all[- ]in/.test(L);
+    if(m=L.match(/^(.+?) recebeu \$?\s?([\d,.]+) do(?: \S+)? pote/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }  // PT: pote / principal pote / secundário pote
+    if(m=L.match(/^(.+?): (?:shows|mostra) \[([^\]]+)\]/)){ shows[m[1]]=m[2].split(/\s+/).map(hhCard).filter(c=>c>=0); continue; }
+    if(m=L.match(/^(.+?): (?:posts (?:the )?ante|coloca ante) \$?\s?([\d,.]+)/)){ addInv(m[1],hhNum(m[2])); continue; }
+    if(m=L.match(/^(.+?): (?:posts|paga o) (?:small|big) blind \$?\s?([\d,.]+)/)){ addInv(m[1],hhNum(m[2])); commit[m[1]]=(commit[m[1]]||0)+hhNum(m[2]); continue; }
+    if(m=L.match(/^(.+?): (?:posts|paga)\b.*?([\d,.]+)$/)){ addInv(m[1],hhNum(m[2])); continue; }   // straddle/dead blind
+    if(m=L.match(/^(.+?): (folds|checks|calls|bets|raises|desiste|passa|iguala|aposta|aumenta)\b\s*\$?\s?([\d,.]*)(?:\s+(?:to|para)\s+\$?\s?([\d,.]+))?/)){
+      const n=m[1],act=ACT_PT[m[2]]||m[2],allin=/and is all[- ]in|e está all-in/.test(L);
       if(act==='calls'||act==='bets'){ const x=hhNum(m[3]); addInv(n,x); commit[n]=(commit[n]||0)+x; }
       if(act==='raises'){ const to=hhNum(m[4]||m[3]); addInv(n,Math.max(0,to-(commit[n]||0))); commit[n]=to; }
       acts.push({n,act,street,allin});
@@ -297,7 +302,6 @@ function hhParseHand(block){
   if(!hero||!heroCards||heroCards.length!==2||heroCards.some(c=>c<0)) return null;
   if(!seats.some(s=>s.n===hero)) return null;
 
-  const potTotal=Object.values(invested).reduce((s,x)=>s+Math.max(0,x),0);
   const heroInv=invested[hero]||0, heroCol=collected[hero]||0, net=heroCol-heroInv;
   // posições (relativas ao botão)
   const order=seats.slice().sort((a,b)=>a.seat-b.seat);
@@ -354,7 +358,9 @@ function hhParseHand(block){
     if(vils.length){
       const bAt=board.slice(0,[0,3,4,5][aiAct.street]).filter(c=>c!=null&&c>=0);
       const eq=hhEquity(heroCards,vils,bAt);
-      allin={ev:(eq*potTotal-heroInv)/bb, net:net/bb};
+      // pote que o herói DISPUTA: de cada jogador, no máximo o que o próprio herói investiu (side pot fica de fora)
+      const heroPot=Object.keys(invested).reduce((s,k)=>s+Math.max(0,Math.min(invested[k],heroInv)),0);
+      allin={ev:(eq*heroPot-heroInv)/bb, net:net/bb};
     }
   }
   const heroChips=(seats.find(s=>s.n===hero)||{}).chips||0;
@@ -367,7 +373,11 @@ function hhParseHand(block){
 // texto -> mãos parseadas
 function parseHH(text){
   const issues=[]; let ignored=0; const hands=[];
-  const blocks=String(text||'').split(/\r?\n\s*\r?\n/).filter(b=>/^\s*(PokerStars |Poker |GGPoker )(Hand|Game) #/.test(b.trim()));
+  // o transcript por e-mail do PS usa form-feed (\f) como quebra em alguns pontos — normaliza pra \n
+  text=String(text||'').replace(/[\f]/g,'\n');
+  // corta no INÍCIO de cada mão (funciona com o transcript por e-mail, que separa com "*** # N ***")
+  const blocks=text.split(/(?=^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #)/m)
+    .filter(b=>/^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #/.test(b.trim()));
   for(const b of blocks){
     try{ const h=hhParseHand(b.trim()); if(h) hands.push(h); else ignored++; }
     catch(e){ ignored++; if(issues.length<10) issues.push('mão ignorada: '+e.message); }
@@ -1650,7 +1660,7 @@ function Dashboard({session}){
               <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.hands} mão{imp.res.hands!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)`:''}
               {imp.res.issues.length>0&&<div style={{marginTop:6,color:C.red}}>{imp.res.issues.map((x,i)=><div key={i}>• {x}</div>)}{imp.res.issuesTotal>imp.res.issues.length&&<div>… e mais {imp.res.issuesTotal-imp.res.issues.length}</div>}</div>}
             </div>}
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: ative o histórico local em Configurações → Histórico de Mãos. <b>GG</b>: exporte pelo PokerCraft (formato em calibragem — beta). Import grande é melhor no computador.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte pelo PokerCraft (formato em calibragem — beta). Import grande é melhor no computador.</div>
           </Card>
 
           {/* filtros */}
