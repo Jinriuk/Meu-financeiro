@@ -78,6 +78,10 @@ const C = {
 };
 const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
 const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
+// "Outros" é o coringa: qualquer site/carteira que não seja um dos nomeados (inclusive null/desconhecido)
+// cai em "Outros" — assim nenhum torneio/movimento/saque some da visão por jogador/plataforma.
+const WALLET_NAMED = ['PokerStars','GG Poker','Reserva'];
+const walletBucket = x => WALLET_NAMED.includes(x) ? x : 'Outros';
 const PLAYER_COLORS = [P, C.gold]; // jogador 1 / jogador 2
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -923,14 +927,16 @@ function Dashboard({session}){
   const bancaAtual = num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal;
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
+  // usa walletBucket pra que site/carteira fora da lista (ou saque "Não informar" = null) caiam em "Outros"
+  // em vez de sumir — mantendo a soma dos saldos por carteira coerente com todo o dinheiro do jogador.
   const saldoWallet=(player,wallet)=>
     walletInicial(player,wallet)
-    + tours.filter(t=>t.player===player&&t.site===wallet).reduce((s,t)=>s+lucroTorneio(t),0)
-    + ledger.filter(l=>l.player===player&&l.wallet===wallet).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0)
-    - wds.filter(w=>w.player===player&&w.wallet===wallet).reduce((s,w)=>s+num(w.valor_sacado),0);
+    + tours.filter(t=>t.player===player&&walletBucket(t.site)===wallet).reduce((s,t)=>s+lucroTorneio(t),0)
+    + ledger.filter(l=>l.player===player&&walletBucket(l.wallet)===wallet).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0)
+    - wds.filter(w=>w.player===player&&walletBucket(w.wallet)===wallet).reduce((s,w)=>s+num(w.valor_sacado),0);
   const saldoJogador=(player)=>WALLETS.reduce((s,wl)=>s+saldoWallet(player,wl),0);
   const walletsDoJogador=(player)=>WALLETS.map(wl=>({wallet:wl, saldo:saldoWallet(player,wl), inicial:walletInicial(player,wl),
-    temMov: walletInicial(player,wl)!==0 || tours.some(t=>t.player===player&&t.site===wl) || ledger.some(l=>l.player===player&&l.wallet===wl) || wds.some(w=>w.player===player&&w.wallet===wl)})).filter(x=>x.temMov);
+    temMov: walletInicial(player,wl)!==0 || tours.some(t=>t.player===player&&walletBucket(t.site)===wl) || ledger.some(l=>l.player===player&&walletBucket(l.wallet)===wl) || wds.some(w=>w.player===player&&walletBucket(w.wallet)===wl)})).filter(x=>x.temMov);
   const curMakeUp={}, curWeek={};
   players.forEach(p=>{const arr=weeksByPlayer[p]||[]; curMakeUp[p]=arr.length?arr[arr.length-1].makeFinal:(makeInit[p]||0); curWeek[p]=arr.find(w=>w.week===CURWK)||null;});
   const valorSacadoFor=(week,player)=>wds.filter(w=>w.week_ending_date===week&&w.player===player).reduce((s,w)=>s+num(w.valor_sacado),0);
@@ -958,7 +964,8 @@ function Dashboard({session}){
   });
   const resSemanaAtual = players.reduce((s,p)=>s+(curWeek[p]?curWeek[p].resultado:0),0);
   const makeUpTotal = players.reduce((s,p)=>s+curMakeUp[p],0);
-  const saqueAutTotal = players.reduce((s,p)=>{ const w=curWeek[p]; if(!w||w.saqueAut===0||w.makeFinal>0) return s; if(bancaAtual-w.saqueAut<piso) return s; return s+w.saqueAut; },0);
+  // piso respeitado contra os saques SOMADOS (não por jogador isolado): desconta de uma banca que vai diminuindo
+  let saqueAutTotal=0; { let bancaLivre=bancaAtual; players.forEach(p=>{ const w=curWeek[p]; if(!w||w.saqueAut===0||w.makeFinal>0) return; if(bancaLivre-w.saqueAut<piso) return; bancaLivre-=w.saqueAut; saqueAutTotal+=w.saqueAut; }); }
 
   /* alertas */
   const alerts=[];
@@ -967,7 +974,7 @@ function Dashboard({session}){
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player));
   if(foraGradeTours.length) alerts.push({tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
-  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; if(r<0 && r<=-num(config.stoploss_weekly_pct)*bancaAtual) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-num(config.stoploss_weekly_pct)*bancaAtual)}).`}); });
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
   daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
 
   /* dados dos gráficos */
