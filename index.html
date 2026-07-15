@@ -881,6 +881,25 @@ function Dashboard({session}){
     if(error){alert('Não consegui salvar o saldo.');console.error(error);return;}
     setWallets(w=>{ const rest=w.filter(x=>!(x.player===player&&x.wallet===wallet)); return [...rest,data]; });
   };
+  /* transferência interna: move saldo de uma carteira pra outra (2 lançamentos casados,
+     saída de um lado + entrada do outro). Não muda a banca central (é zero-a-zero);
+     só rebalanceia o saldo por jogador/plataforma. "Pool / Reserva" = dinheiro sem dono (player null). */
+  const addTransfer = async (out)=>{
+    const val=num(out.valor);
+    const deP=out.de_player==='Pool / Reserva'?null:out.de_player;
+    const paraP=out.para_player==='Pool / Reserva'?null:out.para_player;
+    if(val<=0){ alert('Informe um valor maior que zero.'); return; }
+    if(deP===paraP && out.de_wallet===out.para_wallet){ alert('Origem e destino são a mesma carteira.'); return; }
+    const obs=out.observacao?` · ${out.observacao}`:'';
+    const nome=x=>x?x.split(' ')[0]:'pool';
+    const rows=[
+      {entry_date:out.entry_date, player:deP,   wallet:out.de_wallet,   entrada:0,   saida:val, observacao:`Transferência → ${out.para_wallet} (${nome(paraP)})${obs}`},
+      {entry_date:out.entry_date, player:paraP, wallet:out.para_wallet, entrada:val, saida:0,   observacao:`Transferência ← ${out.de_wallet} (${nome(deP)})${obs}`},
+    ];
+    const {data,error}=await sb.from('bankroll_ledger').insert(rows).select();
+    if(error){ alert('Não consegui registrar a transferência.'); console.error(error); return; }
+    setLedger(l=>[...(data||rows),...l]); setModal(null);
+  };
 
   // Diário derivado dos torneios (fonte da verdade = torneios)
   const daily = useMemo(()=>deriveDaily(tours),[tours]);
@@ -1008,6 +1027,15 @@ function Dashboard({session}){
       {k:'wallet',label:'Saiu de qual carteira',type:'select',opts:['Não informar',...WALLETS]},
       {k:'valor_sacado',label:'Valor sacado (US$)',type:'money',def:'0'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
+    ],
+    transfer:[
+      {k:'entry_date',label:'Data',type:'date',def:todayISO()},
+      {k:'de_player',label:'Sai de quem',type:'select',opts:['Pool / Reserva',...players]},
+      {k:'de_wallet',label:'Sai de qual carteira',type:'select',opts:WALLETS,def:'Reserva'},
+      {k:'para_player',label:'Vai pra quem',type:'select',opts:[...players,'Pool / Reserva']},
+      {k:'para_wallet',label:'Vai pra qual carteira',type:'select',opts:WALLETS,def:'PokerStars'},
+      {k:'valor',label:'Valor (US$)',type:'money',def:'0'},
+      {k:'observacao',label:'Observação',type:'text',full:true},
     ],
   };
   const MODAL_TITLE={tour:'torneio',bank:'movimento na banca',wd:'saque pago'};
@@ -1370,6 +1398,7 @@ function Dashboard({session}){
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
             <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>Onde o dinheiro está. Atualiza sozinho com torneios, saques e movimentos.</div></div>
+            <button onClick={()=>setModal('transfer')} style={{display:'flex',alignItems:'center',gap:6,background:C.plumSoft,color:P,border:`1.5px solid ${P}`,padding:'9px 13px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',flexShrink:0}}><IcoCashOut s={16}/>Transferir</button>
           </div>
           {players.map((p,i)=>{const wl=walletsDoJogador(p); const tot=saldoJogador(p); return <div key={p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -1459,7 +1488,9 @@ function Dashboard({session}){
     </div>}
 
     {/* modal adicionar */}
-    {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null; const [list,setter]=MODAL_STATE[type]; return (
+    {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
+      if(type==='transfer') return <AddModal title="Nova transferência" fields={FIELDS.transfer} initial={initial} onClose={()=>setModal(null)} onSave={addTransfer}/>;
+      const [list,setter]=MODAL_STATE[type]; return (
       <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)}
         onSave={d=>add(MODAL_TABLE[type],normalizeRow(type,d),setter,list)}/>);})()}
 
