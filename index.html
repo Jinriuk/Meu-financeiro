@@ -437,6 +437,67 @@ function mergeHH(a,b){
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
 const HH_BANDS={vpip:[18,27],pfr:[14,22],tb:[5,10],f3b:[45,65],steal:[30,50],bbdef:[35,55],cbet:[50,75],fcbet:[40,60],wtsd:[24,32],wsd:[48,58],wwsf:[42,52]};
 const fmtBB=n=>`${n>=0?'+':'−'}${Math.abs(n).toFixed(1).replace('.',',')} bb`;
+// glossário das siglas (mostrado na tela Stats)
+const HH_GLOSS=[
+  ['VPIP','% de mãos em que você pôs ficha por vontade própria antes do flop (call ou raise; blind obrigatório não conta). Mede quantas mãos você joga.'],
+  ['PFR','% de mãos em que você deu raise pré-flop. Quanto mais perto do VPIP, mais agressivo (e melhor) o estilo.'],
+  ['3-bet','Re-raise em cima de quem abriu. Pouco 3-bet = os outros abrem de graça contra você.'],
+  ['Fold pra 3-bet','Quantas vezes você desistiu depois de abrir e levar um re-raise. Muito baixo = paga demais; muito alto = vira alvo.'],
+  ['Roubo de blinds','Abertura de CO, BTN ou SB quando todos foldaram antes — a jogada mais lucrativa do MTT com antes.'],
+  ['BB defende','Quantas vezes você (no BB) pagou ou re-raisou contra um roubo, em vez de foldar.'],
+  ['C-bet flop','Aposta de continuação: você abriu pré-flop e seguiu apostando no flop.'],
+  ['Fold pra c-bet','Quantas vezes você desistiu no flop contra a c-bet do agressor. Alto demais = "fit-or-fold", fácil de explorar.'],
+  ['WWSF','% das vezes que você viu o flop e LEVOU o pote (com ou sem showdown). Mede briga pós-flop.'],
+  ['WTSD','% das vezes que, tendo visto o flop, você foi até o showdown. Alto = paga muito; baixo = desiste muito.'],
+  ['W$SD','% dos showdowns que você ganhou. Lido junto com o WTSD: ir muito ao showdown e ganhar pouco = vazamento clássico.'],
+  ['AF (agressão)','(apostas + raises) ÷ calls no pós-flop. Abaixo de ~1,5 = passivo; acima de ~4 = hiperagressivo.'],
+  ['bb/100','Resultado em big blinds a cada 100 mãos, em FICHAS de torneio — mede qualidade de jogo, não dinheiro direto.'],
+  ['Sorte (all-in EV)','Explicada no card "Sorte nos all-ins" acima.'],
+];
+/* Leituras automáticas: compara as suas stats com as faixas de um reg de MTT micro/low e
+   escreve o que precisa de atenção. Cada regra só dispara com amostra mínima. */
+function hhInsights(d){
+  const out=[]; const add=(tone,t,x)=>out.push({tone,t,x});
+  const pct=(c,o)=>o>0?c/o*100:null;
+  const p={vpip:pct(d.vpip,d.hands),pfr:pct(d.pfr,d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
+  const f=n=>n==null?'—':n.toFixed(1).replace('.',',')+'%';
+  if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
+  if(d.hands>=200){
+    if(p.vpip>29) add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`);
+    if(p.vpip!=null&&p.vpip<16) add('gold','Muito apertado',`VPIP ${f(p.vpip)} (reg: 18–27%). Dá pra abrir mais em CO/BTN sem virar aventura — hoje você deixa roubo fácil na mesa.`);
+    const gap=(p.vpip!=null&&p.pfr!=null)?p.vpip-p.pfr:null;
+    if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${gap.toFixed(1).replace('.',',')} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold.`);
+  }
+  if(d.tbOpp>=40&&p.tb<4.5) add('gold','Pouco 3-bet',`3-bet ${f(p.tb)} (reg: 5–10%). Sem 3-bet, os regs abrem em cima de você de graça — adicione blefes tipo A5s.`);
+  if(d.f3bOpp>=15){
+    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais.`);
+    if(p.f3b>70) add('gold','Foldando demais pra 3-bet',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Quando percebem, passam a 3-betar você sem mão.`);
+  }
+  if(d.stealOpp>=30&&p.steal<28) add('gold','Roubando pouco',`Roubo de blinds ${f(p.steal)} (reg: 30–50%). Com antes em jogo, roubar de CO/BTN/SB é onde o MTT se ganha.`);
+  if(d.bbdefOpp>=30&&p.bbdef<32) add('gold','Foldando o BB demais',`Defesa de BB ${f(p.bbdef)} (reg: 35–55%). Pelo preço que o BB paga pra ver, folda-se menos do que parece.`);
+  if(d.cbetOpp>=30){
+    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Em board que bate no vilão, a c-bet automática vira rifa.`);
+    if(p.cbet<45) add('gold','Agressor passivo',`C-bet ${f(p.cbet)} (reg: 50–75%). Quem abriu o pote precisa continuar contando a história com mais frequência.`);
+  }
+  if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`);
+  if(d.sawflop>=100){
+    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão — solte o segundo par quando a ação esquenta no turn/river.`);
+    else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`);
+    if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`);
+  }
+  const af=d.afC>0?d.afB/d.afC:null;
+  if(af!=null&&(d.afB+d.afC)>=60&&af<1.3) add('gold','Passivo pós-flop',`Agressão (AF) ${af.toFixed(1).replace('.',',')} (reg: ~1,5–3). Mais bet/raise, menos call.`);
+  if(d.allinCnt>=15){
+    if(d.sorte<=-15) add('info','Rodando abaixo do EV',`${fmtBB(d.sorte)} de "sorte" em ${d.allinCnt} all-ins: parte do resultado ruim é variância, não erro. Mantenha o plano, a grade e o volume.`);
+    if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
+  }
+  const ep=d.pos&&d.pos.EP, btn=d.pos&&d.pos.BTN;
+  if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`);
+  if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`);
+  if(d.hands>=300&&!out.some(i=>i.tone==='red'||i.tone==='gold')) add('green','Perfil sólido','Nenhum vazamento gritante contra as faixas de reg. Agora o ganho está nos spots finos — revisão de mãos no Coach.');
+  const ord={red:0,gold:1,green:2,info:3};
+  return out.sort((a,b)=>ord[a.tone]-ord[b.tone]);
+}
 
 /* ---------- ícones ---------- */
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
@@ -1042,6 +1103,8 @@ function Dashboard({session}){
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
   const [stF,setStF]=useState({player:'',days:''}); // filtros da tela Stats
+  const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
+  const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
   const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
@@ -1365,7 +1428,7 @@ function Dashboard({session}){
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
-  const MAIN_TABS=['painel','torneios','diario','saques'];
+  const MAIN_TABS=['painel','torneios','diario','stats'];
   const nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'torneios',label:'Torneios',Icon:IcoTrophy},
@@ -1730,6 +1793,54 @@ function Dashboard({session}){
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
           </div>
 
+          {/* Sorte explicada em detalhe */}
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
+            </div>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
+            </div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
+          </Card>
+
+          {/* Leituras automáticas (insights vs faixas de reg) */}
+          {(()=>{ const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos});
+            const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
+            const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
+            const coachTxt=()=>[
+              `Análise de poker — ${sp} (PoolGG)`,
+              `Período: ${n>0?`últimos ${n} dias`:'todo o histórico'} · ${hands} mãos · ${rows.length} torneios`,
+              `bb/100 (fichas): ${fmtBB(bb100)}`,
+              `Sorte all-in: ${fmtBB(sorte)} (real ${fmtBB(netbb)} vs EV ${fmtBB(evbb)}) em ${S('allin_cnt')} all-ins`,
+              `VPIP ${pctS(S('vpip_cnt'),hands)} · PFR ${pctS(S('pfr_cnt'),hands)}`,
+              `3-bet ${pctS(S('tb_cnt'),S('tb_opp'))} · Fold pra 3-bet ${pctS(S('f3b_cnt'),S('f3b_opp'))}`,
+              `Roubo de blinds ${pctS(S('steal_cnt'),S('steal_opp'))} · BB defende ${pctS(S('bbdef_cnt'),S('bbdef_opp'))}`,
+              `C-bet flop ${pctS(S('cbet_cnt'),S('cbet_opp'))} · Fold pra c-bet ${pctS(S('fcbet_cnt'),S('fcbet_opp'))}`,
+              `WWSF ${pctS(S('wwsf_cnt'),S('sawflop_cnt'))} · WTSD ${pctS(S('wtsd_cnt'),S('sawflop_cnt'))} · W$SD ${pctS(S('wsd_cnt'),S('wtsd_cnt'))}`,
+              `AF: ${afc>0?(afb/afc).toFixed(2).replace('.',','):'—'}`,
+              'Por posição (mãos · VPIP · PFR): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%`).join(' | '),
+              'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
+              '',
+              'Contexto: jogador de MTT micro/low numa pool 50/50 com make-up. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.',
+            ].join('\n');
+            const copiar=async()=>{ const tx=coachTxt(); try{ await navigator.clipboard.writeText(tx); }catch(e){ const ta=document.createElement('textarea'); ta.value=tx; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } setCopied(true); setTimeout(()=>setCopied(false),2500); };
+            return <Card style={{padding:18}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:0,flex:1}}>Leituras do jogo</h3>
+                <button onClick={copiar} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:11,border:`1.5px solid ${copied?C.greenMid:P}`,background:copied?C.greenSoft:C.plumSoft,color:copied?C.greenMid:P,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{copied?'✓ Copiado!':'Copiar resumo pro Coach'}</button>
+              </div>
+              <div style={{fontSize:12,color:C.inkSoft,marginBottom:10}}>Comparação automática com as faixas de um reg de MTT micro/low. Pra análise profunda, copie o resumo e cole no seu projeto <b>Coach de Poker</b> no Claude.</div>
+              {insights.map((i,ix)=><div key={ix} style={{display:'flex',gap:10,padding:'10px 12px',borderRadius:12,background:TONE[i.tone].bg,marginBottom:6,alignItems:'flex-start'}}>
+                <span style={{flexShrink:0,marginTop:1,color:TONE[i.tone].c}}><IcoAlert s={15}/></span>
+                <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
+              </div>)}
+            </Card>;
+          })()}
+
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
@@ -1750,7 +1861,7 @@ function Dashboard({session}){
               <StatTile label="WTSD" cnt={S('wtsd_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wtsd}/>
               <StatTile label="W$SD" cnt={S('wsd_cnt')} opp={S('wtsd_cnt')} band={HH_BANDS.wsd}/>
             </div>
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. A <b>Sorte</b> lá em cima compara o que você ganhou nos all-ins com o que a equity dizia — negativo grande = azar, não necessariamente jogo ruim.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
           </Card>
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
@@ -1762,6 +1873,20 @@ function Dashboard({session}){
             </div>)}
           </Card>
           </>}
+
+          {/* glossário das siglas */}
+          <Card style={{padding:0,overflow:'hidden'}}>
+            <button onClick={()=>setGloss(g=>!g)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+              <span style={{fontFamily:"'Fraunces',serif",fontSize:16,fontWeight:600,flex:1}}>O que significa cada estatística?</span>
+              <span style={{color:C.inkSoft,fontSize:20,transform:gloss?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+            </button>
+            {gloss&&<div style={{padding:'0 18px 16px'}}>
+              {HH_GLOSS.map(([k,v])=><div key={k} style={{padding:'9px 0',borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontWeight:800,fontSize:12.5,color:P}}>{k}</div>
+                <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5,marginTop:2}}>{v}</div>
+              </div>)}
+            </div>}
+          </Card>
         </div>;
       })()}
 
