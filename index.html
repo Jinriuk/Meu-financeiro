@@ -2094,6 +2094,24 @@ function Dashboard({session}){
         </>;
       } else {
         const sp2=report.player||players[0]; const nn=parseInt(report.days,10);
+        // história COMPLETA do jogador na pool (financeiro — não depende do período das stats)
+        const pT=tours.filter(t=>t.player===sp2);
+        const pDias=[...new Set(pT.map(t=>t.entry_date))].sort();
+        const pWeeks=weeksByPlayer[sp2]||[];
+        const pInv=pT.reduce((s,t)=>s+totalInvestido(t),0);
+        const pPrem=pT.reduce((s,t)=>s+num(t.prize),0);
+        const pRes=pPrem-pInv;
+        const pEntr=pT.reduce((s,t)=>s+1+num(t.reentries),0);
+        const pCash=pT.filter(t=>num(t.prize)>0).length;
+        const pParteJog=pWeeks.reduce((s,w)=>s+w.parteJog,0);
+        const pSaqueAut=pWeeks.reduce((s,w)=>s+w.saqueAut,0);
+        const pPago=wds.filter(w=>w.player===sp2).reduce((s,w)=>s+num(w.valor_sacado),0);
+        const pDayRes={}; pT.forEach(t=>{ pDayRes[t.entry_date]=(pDayRes[t.entry_date]||0)+lucroTorneio(t); });
+        const pDR=Object.entries(pDayRes);
+        const pBest=pDR.length?pDR.reduce((a,b)=>b[1]>a[1]?b:a):null;
+        const pWorst=pDR.length?pDR.reduce((a,b)=>b[1]<a[1]?b:a):null;
+        const pMaior=pT.length?pT.reduce((a,b)=>num(b.prize)>num(a.prize)?b:a):null;
+        const pWk8=pWeeks.slice(-8).reverse();
         const from=nn>0?addDaysISO(todayISO(),-(nn-1)):null;
         const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from)));
         const S2=k=>rws.reduce((s,r)=>s+num(r[k]),0);
@@ -2103,7 +2121,7 @@ function Dashboard({session}){
         const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
         const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
         titulo=`Relatório do jogador — ${sp2}`;
-        sub=`${nn>0?`últimos ${nn} dias`:'todo o histórico'} · ${hands2} mão${hands2!==1?'s':''} · ${rws.length} torneio${rws.length!==1?'s':''}`;
+        sub=`história completa na pool + estatísticas de jogo (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`;
         const MET=[
           ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
           ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
@@ -2114,7 +2132,33 @@ function Dashboard({session}){
         const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
         const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
         corpo=<>
-          <Sec t="Resumo">
+          <Sec t="Na pool — história completa">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+              <Big label="Na pool desde" value={pDias[0]?`${dLabel(pDias[0])}/${pDias[0].slice(0,4)}`:'—'}/>
+              <Big label="Dias jogados" value={String(pDias.length)}/>
+              <Big label="Semanas" value={String(pWeeks.length)}/>
+              <Big label="Torneios (entradas)" value={`${pT.length} (${pEntr})`}/>
+              <Big label="Investido" value={fmt(pInv)}/>
+              <Big label="Premiação" value={fmt(pPrem)}/>
+              <Big label="Resultado na pool" value={fmt(pRes)} tone={pRes>=0?C.greenMid:C.red}/>
+              <Big label="ROI" value={pInv>0?pctFmt(pRes/pInv*100):'—'} tone={pRes>=0?C.greenMid:C.red}/>
+              <Big label="ABI médio" value={pEntr>0?fmt(pInv/pEntr):'—'}/>
+              <Big label="ITM" value={pT.length?pctFmt(pCash/pT.length*100):'—'}/>
+              <Big label="Make-up atual" value={fmt(curMakeUp[sp2])} tone={num(curMakeUp[sp2])>0?C.red:C.greenMid}/>
+              <Big label="Lucro dividido (dele)" value={fmt(pParteJog)}/>
+              <Big label="Saque autorizado (acum.)" value={fmt(pSaqueAut)}/>
+              <Big label="Sacado" value={fmt(pPago)}/>
+              <Big label="A receber" value={fmt(aReceber[sp2]||0)} tone={P}/>
+            </div>
+            <div style={{fontSize:11,color:'#6B6455',marginTop:8,lineHeight:1.5}}>
+              Melhor dia: <b>{pBest?`${dLabel(pBest[0])} (${fmt(pBest[1])})`:'—'}</b> · Pior dia: <b>{pWorst?`${dLabel(pWorst[0])} (${fmt(pWorst[1])})`:'—'}</b> · Maior premiação: <b>{pMaior&&num(pMaior.prize)>0?`${pMaior.tournament_name||'torneio'} (${fmt(pMaior.prize)})`:'—'}</b>
+            </div>
+          </Sec>
+          <Sec t="Últimas semanas na pool">
+            {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
+            <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
+          </Sec>
+          <Sec t={`Estatísticas de jogo — hand histories (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Mãos" value={String(hands2)}/>
               <Big label="Torneios" value={String(rws.length)}/>
