@@ -1174,16 +1174,21 @@ function Dashboard({session}){
     for(let i=0;i<texts.length;i++){
       setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name}`}));
       await new Promise(r=>setTimeout(r,0));   // deixa a UI respirar entre arquivos
-      const r=parseHH(texts[i].text);
-      allHands=allHands.concat(r.hands); ignored+=r.ignored;
-      r.issues.forEach(x=>issues.push(texts[i].name+': '+x));
+      // arquivos grandes (milhares de mãos) são parseados em fatias pra não travar a tela
+      const parts=String(texts[i].text||'').replace(/\f/g,'\n').split(/(?=^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #)/m);
+      for(let j=0;j<parts.length;j+=400){
+        const r=parseHH(parts.slice(j,j+400).join(''));
+        allHands=allHands.concat(r.hands); ignored+=r.ignored;
+        r.issues.forEach(x=>issues.push(texts[i].name+': '+x));
+        if(parts.length>400){ setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name} (${Math.min(j+400,parts.length)} de ${parts.length} mãos)`})); await new Promise(rs=>setTimeout(rs,0)); }
+      }
     }
     /* dedup: cada torneio guarda o nº das mãos já importadas (hand_ids). Aqui separamos
        mão NOVA de mão REPETIDA — arquivos sobrepostos (transcript geral + avulsos) podem
        ser importados em qualquer ordem sem contar nada 2x nem perder o que já existia. */
     const grupos={};
     for(const h of allHands){ const k=h.site+'|'+h.tid; (grupos[k]=grupos[k]||[]).push(h); }
-    let saved=0, novas=0, repetidas=0;
+    let saved=0, novas=0, repetidas=0; const paraSalvar=[];
     for(const k of Object.keys(grupos)){
       const g=grupos[k], site=g[0].site, tid=g[0].tid;
       const existente=hh.find(x=>x.player===player&&x.site===site&&x.site_tournament_id===tid);
@@ -1196,14 +1201,21 @@ function Dashboard({session}){
       }
       novas+=frescas.length;
       if(!frescas.length) continue;
-      setImp(s=>({...s,prog:`Salvando torneio ${tid}…`}));
       let row=hhAggregate(frescas,player)[0];
       if(existente&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length) row=mergeHH(existente,row);
       // linha antiga sem hand_ids (importada antes do dedup): substitui em vez de somar, pra não contar 2x
-      const {data,error}=await sb.from('hh_tournament_stats').upsert(row,{onConflict:'player,site,site_tournament_id'}).select().single();
-      if(error){ issues.push(`torneio ${tid}: não salvou (${error.message})`); continue; }
-      const rec=data||row; saved++;
-      setHh(list=>{ const rest=list.filter(x=>!(x.player===rec.player&&x.site===rec.site&&x.site_tournament_id===rec.site_tournament_id)); return [rec,...rest]; });
+      paraSalvar.push(row);
+    }
+    // grava em LOTES de 100 torneios (10 mil mãos ≈ centenas de torneios: poucas idas ao banco em vez de uma por torneio)
+    const keyOf=x=>x.player+'|'+x.site+'|'+x.site_tournament_id;
+    for(let i=0;i<paraSalvar.length;i+=100){
+      const chunk=paraSalvar.slice(i,i+100);
+      setImp(s=>({...s,prog:`Salvando torneios ${i+1}–${Math.min(i+100,paraSalvar.length)} de ${paraSalvar.length}…`}));
+      const {data,error}=await sb.from('hh_tournament_stats').upsert(chunk,{onConflict:'player,site,site_tournament_id'}).select();
+      if(error){ issues.push(`lote de torneios ${i+1}+: não salvou (${error.message})`); continue; }
+      const recs=(data&&data.length===chunk.length)?data:chunk; saved+=chunk.length;
+      setHh(list=>{ const novasKeys=new Set(recs.map(keyOf)); return [...recs,...list.filter(x=>!novasKeys.has(keyOf(x)))]; });
+      await new Promise(r=>setTimeout(r,0));
     }
     setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,tours:Object.keys(grupos).length,saved,ignored,issues:issues.slice(0,8),issuesTotal:issues.length}});
   };
