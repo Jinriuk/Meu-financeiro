@@ -264,6 +264,7 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
+const HH_BUILD='2026-07-16.2';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
 function hhParseHand(block,why){
   const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -1256,6 +1257,9 @@ function Dashboard({session,profile}){
     if(!files.length) return;
     setImp({busy:true,prog:'Lendo arquivos…',res:null});
     const issues=[]; const texts=[];
+    // diagnóstico do import: SÓ metadados (nome/tamanho/cabeçalho) — nunca as mãos. Sobe pro
+    // hh_import_log no fim, pra dar pra investigar um import que "não foi" sem pedir o arquivo.
+    const diag={build:HH_BUILD,ua:String(navigator.userAgent||'').slice(0,140),files:[],zips:[],texts:[]};
     // decodifica dando conta de BOM/UTF-16 (arquivo salvo como "Unicode" no Windows/celular)
     const decodeSmart=u=>{
       if(u[0]===0xFE&&u[1]===0xFF) return new TextDecoder('utf-16be').decode(u);
@@ -1270,18 +1274,23 @@ function Dashboard({session,profile}){
     const addZip=(name,u,depth)=>{
       if(!window.fflate){ issues.push(name+': leitor de ZIP não carregou (recarregue a página e tente de novo)'); return; }
       let entries; try{ entries=fflate.unzipSync(u); }catch(e){ issues.push(name+': zip inválido ou protegido ('+e.message+')'); return; }
-      let usou=false;
+      let usou=false, planilhas=0;
       for(const [n,b] of Object.entries(entries)){
+        if(diag.zips.length<60) diag.zips.push({zip:name,entry:n,kb:Math.round(b.length/1024)});
         if(!b.length) continue;
         if(/\.zip$/i.test(n)||isZip(b)){ if(depth<3){ addZip(name+' → '+n,b,depth+1); usou=true; } continue; }
+        if(/\.(csv|xlsx?|pdf)$/i.test(n)){ planilhas++; continue; }
         const tx=decodeSmart(b);
         if(/\.txt$/i.test(n)||HH_START.test(tx)){ texts.push({name:n,text:tx}); usou=true; }
       }
-      if(!usou) issues.push(name+': nenhum arquivo de mãos dentro do zip');
+      if(!usou) issues.push(name+(planilhas
+        ? ': isso parece o export de RESULTADOS (planilha/PDF) do PokerCraft — baixe o HAND HISTORY (as mãos), não o resumo'
+        : ': nenhum arquivo de mãos dentro do zip'));
     };
     for(const f of files){
       try{
         const u=new Uint8Array(await f.arrayBuffer());
+        diag.files.push({name:f.name,kb:Math.round((f.size||u.length)/1024),magic:Array.from(u.slice(0,4)).map(x=>x.toString(16).padStart(2,'0')).join('')});
         if(/\.zip$/i.test(f.name)||isZip(u)) addZip(f.name,u,0);
         else texts.push({name:f.name,text:decodeSmart(u)});
       }catch(e){ issues.push(f.name+': '+e.message); }
@@ -1292,16 +1301,17 @@ function Dashboard({session,profile}){
       await new Promise(r=>setTimeout(r,0));   // deixa a UI respirar entre arquivos
       // arquivos grandes (milhares de mãos) são parseados em fatias pra não travar a tela
       const parts=String(texts[i].text||'').replace(/\f/g,'\n').split(/(?=^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #)/m);
-      let achou=0;
+      let achou=0, maosArq=0;
       for(let j=0;j<parts.length;j+=400){
         const r=parseHH(parts.slice(j,j+400).join(''));
-        allHands=allHands.concat(r.hands); ignored+=r.ignored; achou+=r.hands.length+r.ignored;
+        allHands=allHands.concat(r.hands); ignored+=r.ignored; achou+=r.hands.length+r.ignored; maosArq+=r.hands.length;
         Object.keys(r.reasons||{}).forEach(k=>{ reasons[k]=(reasons[k]||0)+r.reasons[k]; });
         r.issues.forEach(x=>issues.push(texts[i].name+': '+x));
         if(parts.length>400){ setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name} (${Math.min(j+400,parts.length)} de ${parts.length} mãos)`})); await new Promise(rs=>setTimeout(rs,0)); }
       }
       // arquivo que não rendeu NENHUMA mão: avisa em vez de terminar em silêncio com "0 mãos"
       if(!achou) issues.push(texts[i].name+': nenhuma mão reconhecida — é um hand history do PokerStars (.txt) ou do PokerCraft (GG)?');
+      if(diag.texts.length<60) diag.texts.push({name:texts[i].name,head:String(texts[i].text||'').slice(0,200).split(/\r?\n/)[0].slice(0,120),maos:maosArq,ign:achou-maosArq});
     }
     /* dedup: cada torneio guarda o nº das mãos já importadas (hand_ids). Aqui separamos
        mão NOVA de mão REPETIDA — arquivos sobrepostos (transcript geral + avulsos) podem
@@ -1338,6 +1348,8 @@ function Dashboard({session,profile}){
       await new Promise(r=>setTimeout(r,0));
     }
     setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,tours:Object.keys(grupos).length,saved,ignored,reasons,issues:issues.slice(0,8),issuesTotal:issues.length}});
+    // grava o diagnóstico (só metadados) — se um import "não for", dá pra ver o motivo sem pedir o arquivo
+    try{ await sb.from('hh_import_log').insert({player,saved,novas,repetidas,ignored,reasons,issues:issues.slice(0,20),meta:diag}); }catch(e){ console.error('hh_import_log',e); }
   };
 
   // Diário derivado dos torneios (fonte da verdade = torneios)
@@ -1844,7 +1856,7 @@ function Dashboard({session,profile}){
               <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.novas} mão{imp.res.novas!==1?'s':''} nova{imp.res.novas!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.repetidas?` · ${imp.res.repetidas} já importada${imp.res.repetidas!==1?'s':''} (pulada${imp.res.repetidas!==1?'s':''})`:''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)${(r=>{const M={cash:'cash game — só torneios entram',modalidade:"outra modalidade — só Hold'em",incompleta:'incompletas',formato:'formato não reconhecido'};const ps=Object.keys(M).filter(k=>r[k]).map(k=>`${r[k]} ${M[k]}`);return ps.length?` — ${ps.join(' · ')}`:'';})(imp.res.reasons||{})}`:''}
               {imp.res.issues.length>0&&<div style={{marginTop:6,color:C.red}}>{imp.res.issues.map((x,i)=><div key={i}>• {x}</div>)}{imp.res.issuesTotal>imp.res.issues.length&&<div>… e mais {imp.res.issuesTotal-imp.res.issues.length}</div>}</div>}
             </div>}
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte pelo PokerCraft (formato em calibragem — beta). Import grande é melhor no computador.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte o <b>hand history</b> pelo PokerCraft (pode mandar o .zip direto). Import grande é melhor no computador. <span style={{opacity:.6}}>build {HH_BUILD}</span></div>
           </Card>
 
           {/* filtros */}

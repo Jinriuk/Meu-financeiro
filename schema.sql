@@ -196,6 +196,30 @@ create policy pool_shared on public.hh_tournament_stats
   using (public.my_role()='pool' or created_by=auth.uid())
   with check (public.my_role()='pool' or created_by=auth.uid());
 
+-- ---------- Diagnóstico de import de hand history ----------
+-- 1 linha por TENTATIVA de import, só metadados (nome/tamanho dos arquivos, entradas
+-- do zip, 1ª linha de cada texto, contagens e motivos) — nunca as mãos em si.
+-- Serve pra investigar um import que "não foi" sem precisar do arquivo da pessoa.
+create table if not exists public.hh_import_log (
+  id uuid primary key default gen_random_uuid(),
+  player text,
+  saved int not null default 0,
+  novas int not null default 0,
+  repetidas int not null default 0,
+  ignored int not null default 0,
+  reasons jsonb,
+  issues jsonb,
+  meta jsonb,
+  created_by uuid references auth.users(id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+alter table public.hh_import_log enable row level security;
+drop policy if exists pool_shared on public.hh_import_log;
+create policy pool_shared on public.hh_import_log
+  for all to authenticated
+  using (public.my_role()='pool' or created_by=auth.uid())
+  with check (public.my_role()='pool' or created_by=auth.uid());
+
 -- ============================================================
 --  Perfil dos jogadores: nickname/CPF pra login e primeiro acesso
 --  (o app força troca de senha + cadastro no primeiro login;
