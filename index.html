@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 <title>Pool de Poker · Gabriel & Guedes</title>
-<meta name="theme-color" content="#5B4B8A" />
+<meta name="theme-color" content="#4C3E92" />
 
 <!-- PWA: na tela inicial vira o app "PoolGG", abrindo em tela cheia -->
 <link rel="manifest" href="manifest.webmanifest" />
@@ -28,16 +28,19 @@
 
 
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap');
+  /* Tipografia profissional de produto financeiro: Inter no corpo/UI (números tabulares,
+     legibilidade em tela pequena) + Space Grotesk nos títulos e números grandes. */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
   :root{
-    --bg:#F5F0E6; --surface:#fff; --warm:#FCFAF3; --ink:#1E2A24; --inkSoft:#5E6B61;
-    --green:#16513F; --greenMid:#1F7355; --greenSoft:#E5EDE6; --gold:#B0823A;
-    --goldSoft:#F1E6CD; --red:#AE472E; --redSoft:#F5E3DC; --border:#EAE3D4;
-    --plum:#5B4B8A; --plumSoft:#ECE7F4;
+    --bg:#F5F0E6; --surface:#fff; --warm:#FCFAF3; --ink:#19231D; --inkSoft:#57645A;
+    --green:#16513F; --greenMid:#1F7355; --greenSoft:#E5EDE6; --gold:#A5782C;
+    --goldSoft:#F1E6CD; --red:#AE472E; --redSoft:#F5E3DC; --border:#E7DFCC;
+    --plum:#4C3E92; --plumSoft:#EAE7F8;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Hanken Grotesk',sans-serif}
-  input,select,button,textarea{font-family:'Hanken Grotesk',sans-serif}
+  /* tabular-nums: todo dígito com a mesma largura — dinheiro e stats alinham em coluna */
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums}
+  input,select,button,textarea{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums}
   select{-webkit-appearance:none;appearance:none}
   .ftfade{animation:ftf .5s cubic-bezier(.2,.7,.3,1) both}
   @keyframes ftf{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -85,10 +88,10 @@ const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window
 
 /* ---------- constantes ---------- */
 const C = {
-  bg:'#F5F0E6', surface:'#fff', warm:'#FCFAF3', ink:'#1E2A24', inkSoft:'#5E6B61',
-  green:'#16513F', greenMid:'#1F7355', greenSoft:'#E5EDE6', gold:'#B0823A',
-  goldSoft:'#F1E6CD', red:'#AE472E', redSoft:'#F5E3DC', border:'#EAE3D4',
-  plum:'#5B4B8A', plumSoft:'#ECE7F4',
+  bg:'#F5F0E6', surface:'#fff', warm:'#FCFAF3', ink:'#19231D', inkSoft:'#57645A',
+  green:'#16513F', greenMid:'#1F7355', greenSoft:'#E5EDE6', gold:'#A5782C',
+  goldSoft:'#F1E6CD', red:'#AE472E', redSoft:'#F5E3DC', border:'#E7DFCC',
+  plum:'#4C3E92', plumSoft:'#EAE7F8',
 };
 const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
 const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
@@ -567,7 +570,7 @@ const IcoEye    = p => <Svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 
 const IcoEyeOff = p => <Svg {...p}><path d="M3 3l18 18"/><path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.1 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 4.2-1"/><path d="M9.5 9.6a3 3 0 0 0 4.2 4.2"/></Svg>;
 
 /* ---------- componentes base ---------- */
-const Card = ({children,style,className,onClick}) => <div onClick={onClick} className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 8px 30px -18px rgba(30,42,36,.25)',...style}}>{children}</div>;
+const Card = ({children,style,className,onClick}) => <div onClick={onClick} className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 1px 2px rgba(25,35,29,.05), 0 12px 32px -20px rgba(25,35,29,.28)',...style}}>{children}</div>;
 
 function NavBtn({Icon,label,active,onClick,mobile}){
   return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:0,flex:mobile?'1 1 0':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 4px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
@@ -577,8 +580,8 @@ function NavBtn({Icon,label,active,onClick,mobile}){
 const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
 const Brand = ({small}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
-  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:P,display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
-  <div><div style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:small?17:19,lineHeight:1}}>Pool de Poker</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600}}>staking · make-up · saques</div></div>
+  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
+  <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?17:19,lineHeight:1,letterSpacing:'-0.02em'}}>Pool de Poker</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>staking · make-up · saques</div></div>
 </div>;
 function Badge({text}){
   const t=STATUS_TONE[text]||{tone:C.inkSoft,bg:C.bg};
@@ -591,7 +594,7 @@ function Stat({Icon,tone,bg,label,value,sub}){
   return <Card style={{padding:18}}>
     <span style={{width:36,height:36,borderRadius:11,background:bg,display:'grid',placeItems:'center',color:tone}}><Icon s={19}/></span>
     <div style={{fontSize:13,color:C.inkSoft,fontWeight:600,marginTop:12}}>{label}</div>
-    <div style={{fontFamily:"'Fraunces',serif",fontSize:23,fontWeight:600,color:tone}}>{value}</div>
+    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:23,fontWeight:600,color:tone}}>{value}</div>
     {sub&&<div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{sub}</div>}
   </Card>;
 }
@@ -747,7 +750,7 @@ function Row({left,right,onDelete,onEdit}){
 function ListView({title,subtitle,onAdd,rows,renderRow,empty}){
   return <Card style={{padding:20}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:12}}>
-      <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:0}}>{title}</h3>{subtitle&&<div style={{fontSize:13,color:C.inkSoft,marginTop:2}}>{subtitle}</div>}</div>
+      <div><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:0}}>{title}</h3>{subtitle&&<div style={{fontSize:13,color:C.inkSoft,marginTop:2}}>{subtitle}</div>}</div>
       {onAdd&&<button onClick={onAdd} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>}
     </div>
     {rows.length?rows.map(renderRow):<Empty>{empty}</Empty>}
@@ -783,7 +786,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
@@ -793,7 +796,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
           ? <input type="date" style={{...inputStyle,marginBottom:16}} value={val} onChange={e=>setVal(e.target.value)}/>
           : kind==='text'||kind==='list'
           ? <input style={{...inputStyle,marginBottom:16}} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus placeholder={kind==='list'?'Separe por vírgula':''}/>
-          : <input style={{...inputStyle,fontSize:24,fontFamily:"'Fraunces',serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>}
+          : <input style={{...inputStyle,fontSize:24,fontFamily:"'Space Grotesk',sans-serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>}
         <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
       </div>
     </div>
@@ -830,7 +833,7 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'92vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div className="modalgrid">
@@ -839,7 +842,7 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
             {fd.type==='select' ? <Select value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)} opts={fd.opts}/>
               : fd.type==='date' ? <input type="date" style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
               : fd.type==='textarea' ? <textarea rows={2} style={{...inputStyle,resize:'vertical'}} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
-              : fd.type==='money' ? <input inputMode="decimal" placeholder="0,00" style={{...inputStyle,fontFamily:"'Fraunces',serif"}} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
+              : fd.type==='money' ? <input inputMode="decimal" placeholder="0,00" style={{...inputStyle,fontFamily:"'Space Grotesk',sans-serif"}} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
               : fd.type==='int' ? <input inputMode="numeric" placeholder="0" style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
               : <input style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>}
           </div>)}
@@ -877,7 +880,7 @@ function ChangePassModal({onClose}){
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>Trocar senha</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Trocar senha</h3>
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         {ok
@@ -954,7 +957,7 @@ function Onboarding({session,profile,onDone}){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
-      <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 6px',textAlign:'center'}}>Primeiro acesso</h3>
+      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 6px',textAlign:'center'}}>Primeiro acesso</h3>
       <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail, nickname ou CPF</b>.</p>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
@@ -972,7 +975,7 @@ function NotConfigured(){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:24}}>
     <Card style={{padding:30,maxWidth:460}}>
       <div style={{display:'flex',justifyContent:'center',marginBottom:16}}><Brand/></div>
-      <h3 style={{fontFamily:"'Fraunces',serif",margin:'0 0 8px'}}>Falta conectar o banco de dados</h3>
+      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",margin:'0 0 8px'}}>Falta conectar o banco de dados</h3>
       <p style={{color:C.inkSoft,fontSize:14.5,lineHeight:1.6,margin:0}}>Abra o <b>index.html</b> e cole a <b>URL</b> e a <b>chave anon</b> do projeto Supabase da pool no topo do arquivo. Depois recarregue.</p>
     </Card>
   </div>;
@@ -1010,12 +1013,12 @@ function StatTile({label,cnt,opp,band}){
   }
   return <div style={{padding:'10px 12px',borderRadius:12,background:bg,minWidth:0}}>
     <div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div>
-    <div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:has?tone:C.inkSoft}}>{has?pctFmt(pct):'—'}</div>
+    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:has?tone:C.inkSoft}}>{has?pctFmt(pct):'—'}</div>
     <div style={{fontSize:10.5,color:C.inkSoft}}>{has?`${cnt}/${opp}`:'sem amostra'}{band&&has?` · alvo ${band[0]}–${band[1]}`:''}{has&&opp<30?' · amostra curta':''}</div>
   </div>;
 }
 // mini-stat usado no Diário/Mensal
-const MiniStat = ({label,value,tone}) =><div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Fraunces',serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
+const MiniStat = ({label,value,tone}) =><div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
 
 function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
@@ -1024,10 +1027,10 @@ function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   return <Card style={{padding:0,overflow:'hidden',border:today?`1.5px solid ${P}`:`1px solid ${C.border}`}}>
     <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:today?C.plumSoft:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
       <div style={{flex:1,minWidth:0}}>
-        <div style={{fontFamily:"'Fraunces',serif",fontSize:16.5,fontWeight:600,color:today?P:C.ink}}>{today?'Hoje · ':''}{dLabel(date)}</div>
+        <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16.5,fontWeight:600,color:today?P:C.ink}}>{today?'Hoje · ':''}{dLabel(date)}</div>
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>{dayTours.length} torneio{dayTours.length!==1?'s':''}{per.length?' · '+per.map(x=>x.p.split(' ')[0]).join(' + '):''}</div>
       </div>
-      <span style={{fontFamily:"'Fraunces',serif",fontWeight:700,fontSize:17,color:res>=0?C.greenMid:C.red}}>{res>=0?'+':'−'}{fmt(Math.abs(res))}</span>
+      <span style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:17,color:res>=0?C.greenMid:C.red}}>{res>=0?'+':'−'}{fmt(Math.abs(res))}</span>
       <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
     {open&&<div style={{padding:'0 18px 16px'}}>
@@ -1107,7 +1110,7 @@ function SemanalGeral({geral,curMonth}){
     <span style={{fontWeight:800,fontSize:15.5,color:g.resultado>=0?C.greenMid:C.red,flexShrink:0}}>{g.resultado>=0?'+':'−'}{fmt(Math.abs(g.resultado))}</span>
   </div>;
   return <Card style={{padding:20}}>
-    <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Resultado por semana (geral da pool)</h3>
+    <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Resultado por semana (geral da pool)</h3>
     <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:8}}>Os dois jogadores somados, semana a semana.</div>
     {atuais.length?atuais.map(Row):<Empty>Sem semanas neste mês ainda.</Empty>}
     {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(Row)}</div>}</>}
@@ -1119,7 +1122,7 @@ function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual}){
   const arr=[...weeks].reverse();
   const atuais=arr.filter(w=>w.week.slice(0,7)===curMonth), antigas=arr.filter(w=>w.week.slice(0,7)!==curMonth);
   return <Card style={{padding:20}}>
-    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span></div>
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span></div>
     {atuais.length?atuais.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>):<Empty>Sem semanas neste mês ainda.</Empty>}
     {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>)}</div>}</>}
   </Card>;
@@ -1672,7 +1675,7 @@ function Dashboard({session,profile}){
       <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
         <div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
           <div style={{fontSize:12.5,color:P,fontWeight:700}}>Banca atual</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
+          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
         </div>
         <button onClick={()=>sb.auth.signOut()} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
       </div>
@@ -1690,7 +1693,7 @@ function Dashboard({session,profile}){
       {view==='locked'&&<div className="ftfade" style={{display:'grid',placeItems:'center',minHeight:'60vh'}}>
         <Card style={{padding:28,maxWidth:430,textAlign:'center'}}>
           <div style={{fontSize:42,marginBottom:6}}>🔒</div>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 8px'}}>Área restrita da pool</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 8px'}}>Área restrita da pool</h3>
           <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6}}>Oi, {guestName}! Esta parte é exclusiva dos jogadores da pool. O seu acesso é às <b>suas estatísticas</b> e ao <b>seu relatório</b> — importa seus hand histories na aba Stats e aproveita.</div>
           <button onClick={()=>setView('stats')} style={{marginTop:14,padding:'12px 20px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Ir para minhas Stats</button>
         </Card>
@@ -1699,7 +1702,7 @@ function Dashboard({session,profile}){
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca central da pool</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
+          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
           <div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Inicial {fmt(config.banca_inicial)}</span>
             <span>Jogos {resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</span>
@@ -1729,41 +1732,41 @@ function Dashboard({session,profile}){
         </div>
 
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool. <b>"A receber"</b> é o acumulado (autorizado − pago); o quanto dá pra sacar <b>agora</b> respeita o piso — veja "Saque autorizado" acima.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             {players.map((p,i)=><div key={p} style={{padding:14,borderRadius:14,background:C.plumSoft}}>
               <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12.5,color:P,fontWeight:700}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>A receber · {p}</div>
-              <div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:P,marginTop:4}}>{fmt(aReceber[p])}</div>
+              <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:P,marginTop:4}}>{fmt(aReceber[p])}</div>
             </div>)}
             <div style={{padding:14,borderRadius:14,background:C.greenSoft}}>
               <div style={{fontSize:12.5,color:C.green,fontWeight:700}}>Fica na banca (pool)</div>
-              <div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
+              <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
             </div>
           </div>
         </Card>
 
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>A curva de cada um ao longo do tempo. Passe o dedo pra ver os valores.</div>
           <MultiLineChart labels={lucroLabels} series={lucroSeries}/>
         </Card>
 
         <div className="grid2">
           <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Evolução da banca</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Evolução da banca</h3>
             <LineChart data={bancaChart} ref_={piso}/>
           </Card>
           <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Resultado semanal por jogador</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Resultado semanal por jogador</h3>
             <MultiBars data={resChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
           </Card>
           <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Make-up por jogador</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Make-up por jogador</h3>
             <MultiBars data={makeChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
           </Card>
           <Card style={{padding:20}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Volume de torneios por semana</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Volume de torneios por semana</h3>
             <MultiBars data={volChart} series={[{name:'Torneios',color:C.greenMid}]}/>
           </Card>
         </div>
@@ -1776,7 +1779,7 @@ function Dashboard({session,profile}){
         const past=dates.filter(d=>d!==today);
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
-            <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Lança torneio a torneio · o Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
+            <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Lança torneio a torneio · o Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
             <button onClick={()=>addTourOn(today)} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>
           </div>
           <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
@@ -1787,7 +1790,7 @@ function Dashboard({session,profile}){
 
       {/* ---------------- DIÁRIO (resumo por jogador/dia, editável pelos torneios) ---------------- */}
       {view==='diario'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:12}}>
-        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. Toque num dia pra conferir/corrigir.</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
+        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. Toque num dia pra conferir/corrigir.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
 
         {/* filtros */}
         <Card style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
@@ -1812,9 +1815,9 @@ function Dashboard({session,profile}){
         {/* cálculo do período/filtro */}
         {diFiltroAtivo&&<Card style={{padding:18}}>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:0}}>Cálculo do período</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:0}}>Cálculo do período</h3>
             <span style={{fontSize:12,color:C.inkSoft}}>{diPeriodo?diPeriodo.label:'todo o histórico'}{diF.player!=='Todos'?` · ${diF.player}`:''}{diF.site!=='Todos'?` · ${diF.site}`:''}{diF.mod!=='Todos'?` · ${diF.mod}`:''}</span>
-            <span style={{marginLeft:'auto',fontFamily:"'Fraunces',serif",fontWeight:700,fontSize:19,color:diAgg.res>=0?C.greenMid:C.red}}>{diAgg.res>=0?'+':'−'}{fmt(Math.abs(diAgg.res))}</span>
+            <span style={{marginLeft:'auto',fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:19,color:diAgg.res>=0?C.greenMid:C.red}}>{diAgg.res>=0?'+':'−'}{fmt(Math.abs(diAgg.res))}</span>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(88px,1fr))',gap:8}}>
             <MiniStat label="Dias" value={String(diAgg.dias)}/>
@@ -1833,11 +1836,11 @@ function Dashboard({session,profile}){
       {/* ---------------- SEMANAL ---------------- */}
       {view==='semanal'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Geral da pool</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Geral da pool</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Split {pctFmt(num(config.player_pct)*100)} pro jogador · {pctFmt((1-num(config.player_pct))*100)} pra pool</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Lucro acumulado da pool</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:C.green}}>{fmt(lucroPoolAcum)}</div></div>
-            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
+            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Lucro acumulado da pool</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:C.green}}>{fmt(lucroPoolAcum)}</div></div>
+            <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
           </div>
         </Card>
         <SemanalGeral geral={geralSemana} curMonth={curMonthISO}/>
@@ -1847,7 +1850,7 @@ function Dashboard({session,profile}){
       {/* ---------------- MENSAL ---------------- */}
       {view==='mensal'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12}}>
-          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Fraunces',serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
+          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</span></div>
@@ -1859,7 +1862,7 @@ function Dashboard({session,profile}){
           <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
         </div>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
           {perPlayerMonth.map(pm=><div key={pm.p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
@@ -1884,7 +1887,7 @@ function Dashboard({session,profile}){
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Onde vocês lucram</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Onde vocês lucram</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Resultado e ROI por site e por modalidade neste mês.</div>
           <div style={{marginBottom:14}}><Seg value={mensalWho} options={['Geral',...players]} onChange={setMensalWho}/></div>
           {monthToursWho.length===0?<Empty>Sem torneios de {mensalWho} neste mês.</Empty>:[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
@@ -1918,11 +1921,11 @@ function Dashboard({session,profile}){
         const pos={}; rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos[k])pos[k]={h:0,v:0,p:0}; pos[k].h+=num(pj[k].h); pos[k].v+=num(pj[k].v); pos[k].p+=num(pj[k].p); }); });
         const POS_ORDER=['EP','MP','CO','BTN','SB','BB'];
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
-          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories — só agregados sobem pro banco.</div><div style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
+          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories — só agregados sobem pro banco.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
 
           {/* importação */}
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 4px'}}>Importar hand histories</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 4px'}}>Importar hand histories</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Arquivos .txt do PokerStars ou export do PokerCraft (GG) — pode mandar o .zip direto. Reimportar o mesmo torneio substitui, não duplica.</div>
             <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
               <Seg label="De quem são os arquivos" value={impPlayer||players[0]} options={players} onChange={setImpPlayer}/>
@@ -1955,14 +1958,14 @@ function Dashboard({session,profile}){
           {rows.length===0?<Empty>Sem dados de {sp} nesse período. Importe os hand histories acima.</Empty>:<>
           {/* resumo */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}>
-            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>MÃOS</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600}}>{hands}</div><div style={{fontSize:11,color:C.inkSoft}}>{rows.length} torneio{rows.length!==1?'s':''}</div></Card>
-            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>BB/100</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</div><div style={{fontSize:11,color:C.inkSoft}}>em fichas</div></Card>
-            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>SORTE (ALL-IN)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div><div style={{fontSize:11,color:C.inkSoft}}>real {fmtBB(netbb)} vs EV {fmtBB(evbb)} · {S('allin_cnt')} all-in{S('allin_cnt')!==1?'s':''}</div></Card>
-            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
+            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>MÃOS</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600}}>{hands}</div><div style={{fontSize:11,color:C.inkSoft}}>{rows.length} torneio{rows.length!==1?'s':''}</div></Card>
+            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>BB/100</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</div><div style={{fontSize:11,color:C.inkSoft}}>em fichas</div></Card>
+            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>SORTE (ALL-IN)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div><div style={{fontSize:11,color:C.inkSoft}}>real {fmtBB(netbb)} vs EV {fmtBB(evbb)} · {S('allin_cnt')} all-in{S('allin_cnt')!==1?'s':''}</div></Card>
+            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
           </div>
 
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
               <StatTile label="VPIP" cnt={S('vpip_cnt')} opp={hands} band={HH_BANDS.vpip}/>
               <StatTile label="PFR" cnt={S('pfr_cnt')} opp={hands} band={HH_BANDS.pfr}/>
@@ -1973,7 +1976,7 @@ function Dashboard({session,profile}){
             </div>
           </Card>
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
               <StatTile label="C-bet flop" cnt={S('cbet_cnt')} opp={S('cbet_opp')} band={HH_BANDS.cbet}/>
               <StatTile label="Fold pra c-bet" cnt={S('fcbet_cnt')} opp={S('fcbet_opp')} band={HH_BANDS.fcbet}/>
@@ -1984,7 +1987,7 @@ function Dashboard({session,profile}){
             <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
           </Card>
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
             {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=><div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13}}>
               <b style={{width:42}}>{k}</b>
               <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
@@ -2016,7 +2019,7 @@ function Dashboard({session,profile}){
             const copiar=async()=>{ const tx=coachTxt(); try{ await navigator.clipboard.writeText(tx); }catch(e){ const ta=document.createElement('textarea'); ta.value=tx; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } setCopied(true); setTimeout(()=>setCopied(false),2500); };
             return <Card style={{padding:18}}>
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
-                <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:0,flex:1}}>Leituras do jogo</h3>
+                <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:0,flex:1}}>Leituras do jogo</h3>
                 <button onClick={copiar} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:11,border:`1.5px solid ${copied?C.greenMid:P}`,background:copied?C.greenSoft:C.plumSoft,color:copied?C.greenMid:P,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{copied?'✓ Copiado!':'Copiar resumo pro Coach'}</button>
               </div>
               <div style={{fontSize:12,color:C.inkSoft,marginBottom:10}}>Comparação automática com as faixas de um reg de MTT micro/low. Pra análise profunda, copie o resumo e cole no seu projeto <b>Coach de Poker</b> no Claude.</div>
@@ -2029,7 +2032,7 @@ function Dashboard({session,profile}){
 
           {/* Sorte explicada em detalhe */}
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
             {/* veredito do período: com sorte ou com azar, quanto acima/abaixo do justo, e o bb/100 sem o fator sorte */}
             {(()=>{
               const allins=S('allin_cnt');
@@ -2045,7 +2048,7 @@ function Dashboard({session,profile}){
                 {allins===0
                   ? <div style={{fontSize:13.5,color:C.inkSoft,marginTop:4}}>Nenhum all-in com cartas reveladas no período — ainda não há sorte pra medir.</div>
                   : <>
-                    <div style={{fontFamily:"'Fraunces',serif",fontSize:17.5,fontWeight:600,color:tone,marginTop:4}}>
+                    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17.5,fontWeight:600,color:tone,marginTop:4}}>
                       {neutro?'Neutro — variância dentro do normal':`Você está ${grau} com ${sorte>=0?'SORTE':'AZAR'}`}
                       <span style={{fontSize:13.5,fontWeight:700}}> ({luck100>=0?'+':'−'}{Math.abs(luck100).toFixed(1).replace('.',',')} bb/100 {sorte>=0?'acima':'abaixo'} do justo)</span>
                     </div>
@@ -2058,9 +2061,9 @@ function Dashboard({session,profile}){
               </div>;
             })()}
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
             </div>
             <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
               Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
@@ -2073,7 +2076,7 @@ function Dashboard({session,profile}){
           {/* glossário das siglas */}
           <Card style={{padding:0,overflow:'hidden'}}>
             <button onClick={()=>setGloss(g=>!g)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
-              <span style={{fontFamily:"'Fraunces',serif",fontSize:16,fontWeight:600,flex:1}}>O que significa cada estatística?</span>
+              <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600,flex:1}}>O que significa cada estatística?</span>
               <span style={{color:C.inkSoft,fontSize:20,transform:gloss?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
             </button>
             {gloss&&<div style={{padding:'0 18px 16px'}}>
@@ -2089,7 +2092,7 @@ function Dashboard({session,profile}){
       {/* ---------------- SAQUES ---------------- */}
       {view==='saques'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Saques por semana</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Saques por semana</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>O valor autorizado vem do cálculo semanal. Registre aqui só o que foi <b>realmente pago</b> — o valor sai da banca sozinho.</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
             {players.map((p,i)=><span key={p} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:700,fontSize:12.5}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>{p} tem {fmt(aReceber[p])} a receber</span>)}
@@ -2116,7 +2119,7 @@ function Dashboard({session,profile}){
       {view==='banca'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca atual</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:40,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
+          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:40,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
           <div style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
             <div><div style={{fontSize:12.5,opacity:.85}}>Banca inicial</div><div style={{fontWeight:700,fontSize:15}}>{fmt(config.banca_inicial)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</div></div>
@@ -2127,7 +2130,7 @@ function Dashboard({session,profile}){
 
         <Card style={{padding:20}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
-            <div><h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
+            <div><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>Onde o dinheiro está. Atualiza sozinho com torneios, saques e movimentos.</div></div>
             <button onClick={()=>setModal('transfer')} style={{display:'flex',alignItems:'center',gap:6,background:C.plumSoft,color:P,border:`1.5px solid ${P}`,padding:'9px 13px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',flexShrink:0}}><IcoCashOut s={16}/>Transferir</button>
           </div>
@@ -2135,13 +2138,13 @@ function Dashboard({session,profile}){
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <span style={{width:10,height:10,borderRadius:99,background:PLAYER_COLORS[i]}}/>
               <span style={{fontWeight:700,flex:1}}>{p}</span>
-              <span style={{fontFamily:"'Fraunces',serif",fontWeight:600,fontSize:18,color:P}}>{fmt(tot)}</span>
+              <span style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:600,fontSize:18,color:P}}>{fmt(tot)}</span>
             </div>
             <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
               {WALLETS.map(w=>{const wr=wl.find(x=>x.wallet===w); return <button key={w} onClick={()=>setQuickEdit({label:`Saldo inicial · ${p} · ${w}`,hint:'O que o jogador tinha nessa plataforma no começo. O app soma torneios, movimentos e saques em cima disso.',kind:'money',current:walletInicial(p,w),onSave:nv=>saveWallet(p,w,nv)})}
                 style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2,padding:'8px 12px',borderRadius:11,border:`1px solid ${C.border}`,background:wr?C.warm:'transparent',cursor:'pointer',minWidth:96}}>
                 <span style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>{w}</span>
-                <span style={{fontFamily:"'Fraunces',serif",fontSize:15,fontWeight:600,color:wr?(wr.saldo>=0?C.ink:C.red):'#C3BBA9'}}>{wr?fmt(wr.saldo):'definir'}</span>
+                <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:15,fontWeight:600,color:wr?(wr.saldo>=0?C.ink:C.red):'#C3BBA9'}}>{wr?fmt(wr.saldo):'definir'}</span>
               </button>;})}
             </div>
           </div>;})}
@@ -2161,7 +2164,7 @@ function Dashboard({session,profile}){
       {/* ---------------- CONFIG ---------------- */}
       {view==='config'&&<div className="ftfade">
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>Configurações da pool</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>Configurações da pool</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
           {[
             {label:'Jogador 1',val:config.player1_name,kind:'text',key:'player1_name'},
@@ -2185,7 +2188,7 @@ function Dashboard({session,profile}){
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Histórico de alterações</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Histórico de alterações</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>Toda mudança nos Ajustes fica registrada aqui e o outro jogador é avisado na hora. A grade ("fora da grade") julga cada torneio pelo ABI que valia <b>na data dele</b>.</div>
           {chgs.length===0&&<Empty>Nenhuma alteração registrada ainda.</Empty>}
           {chgs.slice(0,12).map(c=><div key={c.id} style={{padding:'10px 0',borderBottom:`1px solid ${C.border}`}}>
@@ -2194,12 +2197,12 @@ function Dashboard({session,profile}){
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
           <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
         </Card>
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Backup (CSV)</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Backup (CSV)</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Baixa os dados brutos pra guardar. Abre direto no Excel/Planilhas.</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             {[['Diário',daily,'diario'],['Torneios',tours,'torneios'],['Banca',ledger,'banca'],['Saques',wds,'saques'],['Configurações',config?[config]:[],'config']].map(([label,rows,file])=>
@@ -2219,7 +2222,7 @@ function Dashboard({session,profile}){
     {menuOpen&&<div onClick={()=>setMenuOpen(false)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(26px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0}}>Todas as telas</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Todas as telas</h3>
           <button onClick={()=>setMenuOpen(false)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
@@ -2233,15 +2236,15 @@ function Dashboard({session,profile}){
       const hoje=todayISO();
       const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
         <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-          <span style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
+          <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
           <span style={{fontSize:12,color:'#6B6455'}}>{isGuest?`estatísticas de ${guestName}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
         </div>
-        <div style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
+        <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
         <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
       </div>;
       const Big=({label,value,tone})=><div className="repcard" style={{padding:'10px 12px',borderRadius:10,background:'#F7F4EA',minWidth:0}}>
         <div style={{fontSize:10,color:'#6B6455',fontWeight:700,textTransform:'uppercase'}}>{label}</div>
-        <div style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,color:tone||'#1E2A24'}}>{value}</div></div>;
+        <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,color:tone||'#1E2A24'}}>{value}</div></div>;
       const Sec=({t,children})=><div className="repcard" style={{marginBottom:18}}><div style={{fontSize:13,fontWeight:800,color:P,margin:'0 0 8px',textTransform:'uppercase',letterSpacing:'.04em'}}>{t}</div>{children}</div>;
       let corpo=null, titulo='', sub='';
       if(report.type==='mensal'){
@@ -2409,7 +2412,7 @@ function Dashboard({session,profile}){
     {alertDetail&&<div onClick={()=>setAlertDetail(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:480,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'80vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
           <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana com buy-in acima do ABI máximo do jogador. Toque no lápis pra corrigir.</div>
@@ -2426,7 +2429,7 @@ function Dashboard({session,profile}){
     {gradeWarn&&<div onClick={()=>setGradeWarn(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.5)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:400,borderRadius:22,padding:24,textAlign:'center'}}>
         <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
-        <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
         <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima do ABI máximo de {gradeWarn.player.split(' ')[0]}</b> ({fmt(abiMaxFor(config,gradeWarn.player,gradeWarn.entry_date))}). Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.</p>
         <button onClick={()=>setGradeWarn(null)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Entendi</button>
       </div>
@@ -2435,7 +2438,7 @@ function Dashboard({session,profile}){
     {/* confirmação de mudança nos Ajustes (fica registrada e o outro jogador é avisado) */}
     {cfgConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(20,18,30,.55)',backdropFilter:'blur(4px)',display:'grid',placeItems:'center',zIndex:60,padding:18}}>
       <Card className="ftfade" style={{padding:26,maxWidth:420,width:'100%'}}>
-        <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 10px'}}>Confirmar alteração</h3>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 10px'}}>Confirmar alteração</h3>
         <div style={{fontWeight:700,fontSize:14.5,marginBottom:6}}>{cfgConfirm.row.label}</div>
         <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:12,background:C.bg,fontSize:15,marginBottom:12}}>
           <span style={{color:C.inkSoft,textDecoration:'line-through'}}>{cfgConfirm.oldShow}</span>
