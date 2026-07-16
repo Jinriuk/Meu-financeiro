@@ -511,6 +511,25 @@ function hhInsights(d){
   }
   const af=d.afC>0?d.afB/d.afC:null;
   if(af!=null&&(d.afB+d.afC)>=60&&af<1.3) add('gold','Passivo pós-flop',`Agressão (AF) ${af.toFixed(1).replace('.',',')} (reg: ~1,5–3). Mais bet/raise, menos call.`);
+  // ---- bb/100 cruzado com a sorte: o lucro/prejuízo é jogo ou variância? ----
+  if(d.hands>=300&&d.bb100!=null){
+    const luck100=d.hands>0?d.sorte/d.hands*100:0, adj=d.bb100-luck100;
+    const par=`bb/100 real ${fmtBB(d.bb100)} · sem a sorte dos all-ins ${fmtBB(adj)}`;
+    if(d.bb100>=0&&adj>=0) add('green','Winrate saudável',`${par}. O lucro não depende de rodar bem — é jogo, não moeda.`);
+    else if(d.bb100>=0&&adj<0) add('gold','Lucro segurado pela sorte',`${par}. Os all-ins estão pagando acima do justo: não suba de grade por esse resultado e revise os spots antes que a variância cobre.`);
+    else if(d.bb100<0&&adj>=0) add('info','Prejuízo com cara de variância',`${par}. O jogo está gerando valor; o resultado é que ainda não mostrou. Mantém o plano, a grade e o volume.`);
+    else add('red','Winrate negativo mesmo sem azar',`${par}. O prejuízo não é (só) variância — prioridade máxima é atacar os vazamentos apontados acima.`);
+  }
+  // ---- leituras COMBINADAS: dois números que, juntos, contam uma história ----
+  if(d.stealOpp>=30&&d.f3bOpp>=15&&p.steal>45&&p.f3b>70)
+    add('gold','Rouba, mas não defende o roubo',`Roubo de blinds ${f(p.steal)} + fold pra 3-bet ${f(p.f3b)}: você abre muito de CO/BTN/SB e desiste quando reagem. Reg atento passa a 3-betar você sem mão — abra um pouco menos ou defenda mais as melhores.`);
+  if(d.cbetOpp>=30&&d.sawflop>=100&&p.cbet>70&&p.wwsf<42)
+    add('gold','Uma bala só',`C-bet ${f(p.cbet)} + WWSF ${f(p.wwsf)}: você atira quase sempre no flop mas raramente leva o pote sem showdown — sinal de barril único que desiste no turn. Planeje a mão inteira antes da primeira aposta.`);
+  if(d.bbdefOpp>=30&&d.fcbOpp>=30&&p.bbdef>50&&p.fcb>60)
+    add('gold','Defende o BB e larga no flop',`Defesa de BB ${f(p.bbdef)} + fold pra c-bet ${f(p.fcb)}: pagar pra ver e desistir na primeira aposta é doação em duas parcelas. Ou defenda menos mãos, ou brigue mais nos flops que tocam seu range.`);
+  {const gap2=(p.vpip!=null&&p.pfr!=null)?p.vpip-p.pfr:null;
+  if(d.hands>=200&&gap2!=null&&gap2>9&&af!=null&&(d.afB+d.afC)>=60&&af<1.3)
+    add('red','Passivo pré e pós-flop',`VPIP−PFR de ${gap2.toFixed(1).replace('.',',')} pontos + AF ${af.toFixed(1).replace('.',',')}: o padrão completo é de jogo de call — entra pagando e segue pagando. É o perfil que mais perde no micro; a correção rende mais que qualquer ajuste fino.`);}
   if(d.allinCnt>=15){
     if(d.sorte<=-15) add('info','Rodando abaixo do EV',`${fmtBB(d.sorte)} de "sorte" em ${d.allinCnt} all-ins: parte do resultado ruim é variância, não erro. Mantenha o plano, a grade e o volume.`);
     if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
@@ -1975,7 +1994,7 @@ function Dashboard({session,profile}){
           </Card>
 
           {/* Leituras automáticas (insights vs faixas de reg) */}
-          {(()=>{ const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos});
+          {(()=>{ const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos,bb100});
             const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
             const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
             const coachTxt=()=>[
@@ -2292,7 +2311,7 @@ function Dashboard({session,profile}){
         const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
         const afb=S2('af_bets'), afc=S2('af_calls');
         const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
-        const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
+        const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2,bb100:hands2>0?S2('net_bb')/hands2*100:0});
         titulo=`Relatório do jogador — ${sp2}`;
         sub=isGuest?`estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
         const MET=[
