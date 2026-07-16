@@ -1158,7 +1158,7 @@ function Dashboard({session,profile}){
         return;
       }
       const [cfg,t,l,pw,w,hhr,cc]=await Promise.all([
-        sb.from('pool_config').select('*').maybeSingle(),
+        sb.from('pool_config').select('*').order('created_at',{ascending:true}),
         sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
         sb.from('bankroll_ledger').select('*').order('entry_date'),
         sb.from('player_wallets').select('*'),
@@ -1166,8 +1166,16 @@ function Dashboard({session,profile}){
         sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false}),
         sb.from('config_changes').select('*').order('created_at',{ascending:false}),
       ]);
-      let c=cfg.data;
-      if(!c){ const r=await sb.from('pool_config').insert({}).select().single(); c=r.data; }
+      // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
+      // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
+      // "cria outra config" (isso já duplicou a tabela e bagunçou a banca uma vez).
+      let c=(cfg.data&&cfg.data[0])||null;
+      if(!c&&!cfg.error){
+        const r=await sb.from('pool_config').insert({}).select().single();
+        c=r.data||null;
+        if(!c){ const r2=await sb.from('pool_config').select('*').order('created_at',{ascending:true}); c=(r2.data&&r2.data[0])||null; }
+      }
+      if(!c){ console.error('pool_config indisponível, tentando de novo…',cfg.error); if(!configRef.current) setTimeout(loadAll,2500); return; }
       setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
     }catch(e){ console.error(e); }
   };
