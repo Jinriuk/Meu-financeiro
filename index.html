@@ -264,17 +264,18 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
-function hhParseHand(block){
+function hhParseHand(block,why){
+  const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   // o transcript por e-mail do PS quebra o cabeçalho em 2 linhas — junta até achar os blinds "(600/1200)"
   let head=lines[0], hi=1;
   while(hi<lines.length&&hi<4&&!/\(\s*[\d,]+\/[\d,]+/.test(head)){ head+=' '+lines[hi]; hi++; }
   const site=head.includes('PokerStars')?'PokerStars':'GG Poker';
-  if(!/Hold'em/.test(head)) return null;                                   // v1: só No-Limit Hold'em
-  const mT=head.match(/(?:Tournament|Torneio) #([^,\s]+)/); if(!mT) return null;  // só torneios
+  if(!/Hold'em/.test(head)) return skip('modalidade');                                   // v1: só No-Limit Hold'em
+  const mT=head.match(/(?:Tournament|Torneio) #([^,\s]+)/); if(!mT) return skip('cash');  // só torneios
   const tid=mT[1];
   // blinds: PS "(35/70)" ou "(50/100/10)" · GG "Level6(150/300(35))" com ante aninhado
-  const mBB=head.match(/\(([\d,]+)\/([\d,]+)(?:[\/(]([\d,]+)\)?)?\)/); const bb=mBB?hhNum(mBB[2]):0; if(!bb) return null;
+  const mBB=head.match(/\(([\d,]+)\/([\d,]+)(?:[\/(]([\d,]+)\)?)?\)/); const bb=mBB?hhNum(mBB[2]):0; if(!bb) return skip('formato');
   const mD=head.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})/); const date=mD?`${mD[1]}-${mD[2]}-${mD[3]}`:null;
   const mH=head.match(/#([^:\s]+):/); const hid=mH?mH[1]:null;   // nº da mão (dedup)
   const seg=head.slice(0,Math.max(0,head.search(/Hold'em/)));
@@ -313,8 +314,8 @@ function hhParseHand(block){
       continue;
     }
   }
-  if(!hero||!heroCards||heroCards.length!==2||heroCards.some(c=>c<0)) return null;
-  if(!seats.some(s=>s.n===hero)) return null;
+  if(!hero||!heroCards||heroCards.length!==2||heroCards.some(c=>c<0)) return skip('incompleta');
+  if(!seats.some(s=>s.n===hero)) return skip('incompleta');
 
   const heroInv=invested[hero]||0, heroCol=collected[hero]||0, net=heroCol-heroInv;
   // posições (relativas ao botão)
@@ -387,17 +388,18 @@ function hhParseHand(block){
 }
 // texto -> mãos parseadas
 function parseHH(text){
-  const issues=[]; let ignored=0; const hands=[];
+  const issues=[]; let ignored=0; const hands=[]; const reasons={};
   // o transcript por e-mail do PS usa form-feed (\f) como quebra em alguns pontos — normaliza pra \n
   text=String(text||'').replace(/[\f]/g,'\n');
   // corta no INÍCIO de cada mão (funciona com o transcript por e-mail, que separa com "*** # N ***")
   const blocks=text.split(/(?=^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #)/m)
     .filter(b=>/^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #/.test(b.trim()));
   for(const b of blocks){
-    try{ const h=hhParseHand(b.trim()); if(h) hands.push(h); else ignored++; }
-    catch(e){ ignored++; if(issues.length<10) issues.push('mão ignorada: '+e.message); }
+    const why={r:null};
+    try{ const h=hhParseHand(b.trim(),why); if(h) hands.push(h); else { ignored++; const r=why.r||'formato'; reasons[r]=(reasons[r]||0)+1; } }
+    catch(e){ ignored++; reasons.formato=(reasons.formato||0)+1; if(issues.length<10) issues.push('mão ignorada: '+e.message); }
   }
-  return {hands,ignored,issues};
+  return {hands,ignored,issues,reasons};
 }
 // agrega mãos -> 1 linha por (site, torneio); player vem do seletor do import
 function hhAggregate(hands,player){
@@ -1254,27 +1256,52 @@ function Dashboard({session,profile}){
     if(!files.length) return;
     setImp({busy:true,prog:'Lendo arquivos…',res:null});
     const issues=[]; const texts=[];
+    // decodifica dando conta de BOM/UTF-16 (arquivo salvo como "Unicode" no Windows/celular)
+    const decodeSmart=u=>{
+      if(u[0]===0xFE&&u[1]===0xFF) return new TextDecoder('utf-16be').decode(u);
+      if(u[0]===0xFF&&u[1]===0xFE) return new TextDecoder('utf-16le').decode(u);
+      let nul=0; const n=Math.min(u.length,400); for(let i=0;i<n;i++) if(u[i]===0) nul++;
+      if(nul>n/4) return new TextDecoder(u[0]===0?'utf-16be':'utf-16le').decode(u);   // UTF-16 sem BOM
+      return new TextDecoder().decode(u);   // UTF-8 (o decoder já tira o BOM)
+    };
+    const isZip=u=>u.length>3&&u[0]===0x50&&u[1]===0x4B&&u[2]<=8;   // "PK…" mesmo se renomearam a extensão
+    const HH_START=/^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #/m;
+    // o export do PokerCraft (GG) às vezes vem com OUTROS zips dentro — abre tudo, até 3 níveis
+    const addZip=(name,u,depth)=>{
+      if(!window.fflate){ issues.push(name+': leitor de ZIP não carregou (recarregue a página e tente de novo)'); return; }
+      let entries; try{ entries=fflate.unzipSync(u); }catch(e){ issues.push(name+': zip inválido ou protegido ('+e.message+')'); return; }
+      let usou=false;
+      for(const [n,b] of Object.entries(entries)){
+        if(!b.length) continue;
+        if(/\.zip$/i.test(n)||isZip(b)){ if(depth<3){ addZip(name+' → '+n,b,depth+1); usou=true; } continue; }
+        const tx=decodeSmart(b);
+        if(/\.txt$/i.test(n)||HH_START.test(tx)){ texts.push({name:n,text:tx}); usou=true; }
+      }
+      if(!usou) issues.push(name+': nenhum arquivo de mãos dentro do zip');
+    };
     for(const f of files){
       try{
-        if(/\.zip$/i.test(f.name)){
-          if(!window.fflate){ issues.push(f.name+': leitor de ZIP não carregou (recarregue a página)'); continue; }
-          const entries=fflate.unzipSync(new Uint8Array(await f.arrayBuffer()));
-          for(const [n,b] of Object.entries(entries)) if(/\.txt$/i.test(n)&&b.length) texts.push({name:n,text:new TextDecoder().decode(b)});
-        } else texts.push({name:f.name,text:await f.text()});
+        const u=new Uint8Array(await f.arrayBuffer());
+        if(/\.zip$/i.test(f.name)||isZip(u)) addZip(f.name,u,0);
+        else texts.push({name:f.name,text:decodeSmart(u)});
       }catch(e){ issues.push(f.name+': '+e.message); }
     }
-    let allHands=[], ignored=0;
+    let allHands=[], ignored=0; const reasons={};
     for(let i=0;i<texts.length;i++){
       setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name}`}));
       await new Promise(r=>setTimeout(r,0));   // deixa a UI respirar entre arquivos
       // arquivos grandes (milhares de mãos) são parseados em fatias pra não travar a tela
       const parts=String(texts[i].text||'').replace(/\f/g,'\n').split(/(?=^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #)/m);
+      let achou=0;
       for(let j=0;j<parts.length;j+=400){
         const r=parseHH(parts.slice(j,j+400).join(''));
-        allHands=allHands.concat(r.hands); ignored+=r.ignored;
+        allHands=allHands.concat(r.hands); ignored+=r.ignored; achou+=r.hands.length+r.ignored;
+        Object.keys(r.reasons||{}).forEach(k=>{ reasons[k]=(reasons[k]||0)+r.reasons[k]; });
         r.issues.forEach(x=>issues.push(texts[i].name+': '+x));
         if(parts.length>400){ setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name} (${Math.min(j+400,parts.length)} de ${parts.length} mãos)`})); await new Promise(rs=>setTimeout(rs,0)); }
       }
+      // arquivo que não rendeu NENHUMA mão: avisa em vez de terminar em silêncio com "0 mãos"
+      if(!achou) issues.push(texts[i].name+': nenhuma mão reconhecida — é um hand history do PokerStars (.txt) ou do PokerCraft (GG)?');
     }
     /* dedup: cada torneio guarda o nº das mãos já importadas (hand_ids). Aqui separamos
        mão NOVA de mão REPETIDA — arquivos sobrepostos (transcript geral + avulsos) podem
@@ -1310,7 +1337,7 @@ function Dashboard({session,profile}){
       setHh(list=>{ const novasKeys=new Set(recs.map(keyOf)); return [...recs,...list.filter(x=>!novasKeys.has(keyOf(x)))]; });
       await new Promise(r=>setTimeout(r,0));
     }
-    setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,tours:Object.keys(grupos).length,saved,ignored,issues:issues.slice(0,8),issuesTotal:issues.length}});
+    setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,tours:Object.keys(grupos).length,saved,ignored,reasons,issues:issues.slice(0,8),issuesTotal:issues.length}});
   };
 
   // Diário derivado dos torneios (fonte da verdade = torneios)
@@ -1814,7 +1841,7 @@ function Dashboard({session,profile}){
             </div>
             {imp.busy&&<div style={{marginTop:10,fontSize:12.5,color:P,fontWeight:600}}>{imp.prog}</div>}
             {imp.res&&<div style={{marginTop:10,padding:'10px 12px',borderRadius:12,background:imp.res.saved||imp.res.repetidas?C.greenSoft:C.redSoft,fontSize:12.5,color:C.ink}}>
-              <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.novas} mão{imp.res.novas!==1?'s':''} nova{imp.res.novas!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.repetidas?` · ${imp.res.repetidas} já importada${imp.res.repetidas!==1?'s':''} (pulada${imp.res.repetidas!==1?'s':''})`:''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)`:''}
+              <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.novas} mão{imp.res.novas!==1?'s':''} nova{imp.res.novas!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.repetidas?` · ${imp.res.repetidas} já importada${imp.res.repetidas!==1?'s':''} (pulada${imp.res.repetidas!==1?'s':''})`:''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)${(r=>{const M={cash:'cash game — só torneios entram',modalidade:"outra modalidade — só Hold'em",incompleta:'incompletas',formato:'formato não reconhecido'};const ps=Object.keys(M).filter(k=>r[k]).map(k=>`${r[k]} ${M[k]}`);return ps.length?` — ${ps.join(' · ')}`:'';})(imp.res.reasons||{})}`:''}
               {imp.res.issues.length>0&&<div style={{marginTop:6,color:C.red}}>{imp.res.issues.map((x,i)=><div key={i}>• {x}</div>)}{imp.res.issuesTotal>imp.res.issues.length&&<div>… e mais {imp.res.issuesTotal-imp.res.issues.length}</div>}</div>}
             </div>}
             <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte pelo PokerCraft (formato em calibragem — beta). Import grande é melhor no computador.</div>
