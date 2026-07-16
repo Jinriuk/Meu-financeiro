@@ -1094,14 +1094,20 @@ function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual}){
 }
 
 /* ---------- app ---------- */
-function Dashboard({session}){
+function Dashboard({session,profile}){
+  /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
+     aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
+  const isGuest=!!(profile&&profile.role==='guest');
+  const guestName=(profile&&profile.nickname)||'Convidado';
+  const GUEST_OK=['stats'];
   const [config,setConfig]=useState(null);
   const [tours,setTours]=useState([]);
   const [ledger,setLedger]=useState([]);
   const [wallets,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
   const [wds,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [view,setView]=useState('painel');
+  const [viewSel,setView]=useState(isGuest?'stats':'painel');
+  const view=isGuest&&!GUEST_OK.includes(viewSel)?'locked':viewSel;  // convidado: telas da pool viram 'locked'
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [changePass,setChangePass]=useState(false);
@@ -1125,6 +1131,17 @@ function Dashboard({session}){
 
   const loadAll=async()=>{
     try{
+      if(isGuest){
+        // convidado só carrega as PRÓPRIAS stats (o RLS devolve só as linhas dele);
+        // config local sintética — ele não enxerga a pool_config real
+        const hhr=await sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false});
+        setHh(hhr.data||[]);
+        setConfig({id:'guest',player1_name:guestName,player2_name:'',player_pct:0.5,abi_max:2,abi_max_player1:2,abi_max_player2:2,
+          piso_minimo:0,makeup_max_recomendado:0,makeup_inicial_player1:0,makeup_inicial_player2:0,stoploss_daily_buyins:0,
+          stoploss_weekly_pct:0,banca_inicial:0,week_start_date:todayISO(),sites_permitidos:['PokerStars','GG Poker'],
+          modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
+        return;
+      }
       const [cfg,t,l,pw,w,hhr]=await Promise.all([
         sb.from('pool_config').select('*').maybeSingle(),
         sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
@@ -1303,7 +1320,7 @@ function Dashboard({session}){
   if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
   /* ---- derivados ---- */
-  const players=[config.player1_name, config.player2_name];
+  const players=isGuest?[guestName]:[config.player1_name, config.player2_name];
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
   const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
@@ -1552,6 +1569,16 @@ function Dashboard({session}){
       </div>
 
       {/* ---------------- PAINEL ---------------- */}
+      {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
+      {view==='locked'&&<div className="ftfade" style={{display:'grid',placeItems:'center',minHeight:'60vh'}}>
+        <Card style={{padding:28,maxWidth:430,textAlign:'center'}}>
+          <div style={{fontSize:42,marginBottom:6}}>🔒</div>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 8px'}}>Área restrita da pool</h3>
+          <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6}}>Oi, {guestName}! Esta parte é exclusiva dos jogadores da pool. O seu acesso é às <b>suas estatísticas</b> e ao <b>seu relatório</b> — importa seus hand histories na aba Stats e aproveita.</div>
+          <button onClick={()=>setView('stats')} style={{marginTop:14,padding:'12px 20px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Ir para minhas Stats</button>
+        </Card>
+      </div>}
+
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca central da pool</div>
@@ -2054,7 +2081,7 @@ function Dashboard({session}){
       const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
         <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
           <span style={{fontFamily:"'Fraunces',serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
-          <span style={{fontSize:12,color:'#6B6455'}}>pool de poker · {config.player1_name} & {config.player2_name}</span>
+          <span style={{fontSize:12,color:'#6B6455'}}>{isGuest?`estatísticas de ${guestName}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
         </div>
         <div style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
         <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
@@ -2133,7 +2160,7 @@ function Dashboard({session}){
         const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
         const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
         titulo=`Relatório do jogador — ${sp2}`;
-        sub=`história completa na pool + estatísticas de jogo (${repPeriodo})`;
+        sub=isGuest?`estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
         const MET=[
           ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
           ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
@@ -2144,7 +2171,7 @@ function Dashboard({session}){
         const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
         const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
         corpo=<>
-          <Sec t="Na pool — história completa">
+          {!isGuest&&<Sec t="Na pool — história completa">
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Na pool desde" value={pDias[0]?`${dLabel(pDias[0])}/${pDias[0].slice(0,4)}`:'—'}/>
               <Big label="Dias jogados" value={String(pDias.length)}/>
@@ -2165,11 +2192,11 @@ function Dashboard({session}){
             <div style={{fontSize:11,color:'#6B6455',marginTop:8,lineHeight:1.5}}>
               Melhor dia: <b>{pBest?`${dLabel(pBest[0])} (${fmt(pBest[1])})`:'—'}</b> · Pior dia: <b>{pWorst?`${dLabel(pWorst[0])} (${fmt(pWorst[1])})`:'—'}</b> · Maior premiação: <b>{pMaior&&num(pMaior.prize)>0?`${pMaior.tournament_name||'torneio'} (${fmt(pMaior.prize)})`:'—'}</b>
             </div>
-          </Sec>
-          <Sec t="Últimas semanas na pool">
+          </Sec>}
+          {!isGuest&&<Sec t="Últimas semanas na pool">
             {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
             <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
-          </Sec>
+          </Sec>}
           <Sec t={`Estatísticas de jogo — hand histories (${repPeriodo})`}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Mãos" value={String(hands2)}/>
@@ -2290,7 +2317,7 @@ function App(){
   if(!session) return <Login/>;
   if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
-  return <Dashboard session={session}/>;
+  return <Dashboard session={session} profile={profile}/>;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
