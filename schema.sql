@@ -35,6 +35,9 @@ create table if not exists public.pool_config (
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
 );
+-- a pool tem UMA config: índice único sobre constante impede segunda linha
+-- (protege contra o app recriar a config padrão numa falha transitória de leitura)
+create unique index if not exists pool_config_single_row on public.pool_config ((true));
 
 -- ---------- Lançamento diário (fonte da verdade) ----------
 create table if not exists public.daily_entries (
