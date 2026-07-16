@@ -1808,18 +1808,36 @@ function Dashboard({session}){
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
           </div>
 
-          {/* Sorte explicada em detalhe */}
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
+              <StatTile label="VPIP" cnt={S('vpip_cnt')} opp={hands} band={HH_BANDS.vpip}/>
+              <StatTile label="PFR" cnt={S('pfr_cnt')} opp={hands} band={HH_BANDS.pfr}/>
+              <StatTile label="3-bet" cnt={S('tb_cnt')} opp={S('tb_opp')} band={HH_BANDS.tb}/>
+              <StatTile label="Fold pra 3-bet" cnt={S('f3b_cnt')} opp={S('f3b_opp')} band={HH_BANDS.f3b}/>
+              <StatTile label="Roubo de blinds" cnt={S('steal_cnt')} opp={S('steal_opp')} band={HH_BANDS.steal}/>
+              <StatTile label="BB defende" cnt={S('bbdef_cnt')} opp={S('bbdef_opp')} band={HH_BANDS.bbdef}/>
             </div>
-            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
-              Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
+          </Card>
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
+              <StatTile label="C-bet flop" cnt={S('cbet_cnt')} opp={S('cbet_opp')} band={HH_BANDS.cbet}/>
+              <StatTile label="Fold pra c-bet" cnt={S('fcbet_cnt')} opp={S('fcbet_opp')} band={HH_BANDS.fcbet}/>
+              <StatTile label="WWSF" cnt={S('wwsf_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wwsf}/>
+              <StatTile label="WTSD" cnt={S('wtsd_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wtsd}/>
+              <StatTile label="W$SD" cnt={S('wsd_cnt')} opp={S('wtsd_cnt')} band={HH_BANDS.wsd}/>
             </div>
-            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
+          </Card>
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
+            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=><div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+              <b style={{width:42}}>{k}</b>
+              <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
+              <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
+              <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
+            </div>)}
           </Card>
 
           {/* Leituras automáticas (insights vs faixas de reg) */}
@@ -1856,37 +1874,20 @@ function Dashboard({session}){
             </Card>;
           })()}
 
+          {/* Sorte explicada em detalhe */}
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
-              <StatTile label="VPIP" cnt={S('vpip_cnt')} opp={hands} band={HH_BANDS.vpip}/>
-              <StatTile label="PFR" cnt={S('pfr_cnt')} opp={hands} band={HH_BANDS.pfr}/>
-              <StatTile label="3-bet" cnt={S('tb_cnt')} opp={S('tb_opp')} band={HH_BANDS.tb}/>
-              <StatTile label="Fold pra 3-bet" cnt={S('f3b_cnt')} opp={S('f3b_opp')} band={HH_BANDS.f3b}/>
-              <StatTile label="Roubo de blinds" cnt={S('steal_cnt')} opp={S('steal_opp')} band={HH_BANDS.steal}/>
-              <StatTile label="BB defende" cnt={S('bbdef_cnt')} opp={S('bbdef_opp')} band={HH_BANDS.bbdef}/>
+            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Fraunces',serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
             </div>
-          </Card>
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
-              <StatTile label="C-bet flop" cnt={S('cbet_cnt')} opp={S('cbet_opp')} band={HH_BANDS.cbet}/>
-              <StatTile label="Fold pra c-bet" cnt={S('fcbet_cnt')} opp={S('fcbet_opp')} band={HH_BANDS.fcbet}/>
-              <StatTile label="WWSF" cnt={S('wwsf_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wwsf}/>
-              <StatTile label="WTSD" cnt={S('wtsd_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wtsd}/>
-              <StatTile label="W$SD" cnt={S('wsd_cnt')} opp={S('wtsd_cnt')} band={HH_BANDS.wsd}/>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
             </div>
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
           </Card>
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
-            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=><div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13}}>
-              <b style={{width:42}}>{k}</b>
-              <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
-              <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
-              <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
-            </div>)}
-          </Card>
+
           </>}
 
           {/* glossário das siglas */}
