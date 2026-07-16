@@ -196,6 +196,26 @@ create policy pool_shared on public.hh_tournament_stats
   using (public.my_role()='pool' or created_by=auth.uid())
   with check (public.my_role()='pool' or created_by=auth.uid());
 
+-- ---------- Histórico de alterações dos Ajustes ----------
+-- Quem mudou o quê, de que valor pra qual, quando. Usado pra avisar o outro
+-- jogador em tempo real e pra julgar "fora da grade" pelo ABI vigente NA DATA
+-- do torneio (mudar o ABI hoje não reprova torneio antigo).
+create table if not exists public.config_changes (
+  id uuid primary key default gen_random_uuid(),
+  field text not null,
+  old_value text,
+  new_value text,
+  resumo text not null,
+  changed_by_name text,
+  created_by uuid references auth.users(id) default auth.uid(),
+  created_at timestamptz not null default now()
+);
+alter table public.config_changes enable row level security;
+drop policy if exists pool_shared on public.config_changes;
+create policy pool_shared on public.config_changes
+  for all to authenticated
+  using (public.my_role()='pool') with check (public.my_role()='pool');
+
 -- ---------- Diagnóstico de import de hand history ----------
 -- 1 linha por TENTATIVA de import, só metadados (nome/tamanho dos arquivos, entradas
 -- do zip, 1ª linha de cada texto, contagens e motivos) — nunca as mãos em si.
@@ -258,7 +278,7 @@ grant execute on function public.email_for_login(text) to anon, authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats'] loop
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats','config_changes'] loop
     if not exists (
       select 1 from pg_publication_tables
       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t

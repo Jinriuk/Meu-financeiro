@@ -158,10 +158,19 @@ function gradeStatus(e, abiMax){
 }
 const totalInvestido = t => num(t.buyin)*(1+num(t.reentries));
 const lucroTorneio   = t => num(t.prize)-totalInvestido(t);
-// ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido
-const abiMaxFor = (config, player) => {
-  const v = player===config.player2_name ? num(config.abi_max_player2) : num(config.abi_max_player1);
-  return v>0 ? v : (num(config.abi_max)||2);
+// ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido.
+// Com `date`, devolve o ABI vigente NAQUELE dia: desfaz as mudanças registradas depois dele —
+// torneio antigo é julgado pela grade da época, não pela atual.
+let CONFIG_CHANGES=[];   // histórico de alterações dos Ajustes (carregado do banco pelo Dashboard)
+const abiMaxFor = (config, player, date) => {
+  const key = player===config.player2_name ? 'abi_max_player2' : 'abi_max_player1';
+  let v = num(config[key]);
+  if(!(v>0)) v = num(config.abi_max)||2;
+  if(date){
+    const hist=CONFIG_CHANGES.filter(c=>c.field===key).sort((a,b)=>a.created_at<b.created_at?1:-1);
+    for(const c of hist){ if(String(c.created_at).slice(0,10)>date && num(c.old_value)>0) v=num(c.old_value); }
+  }
+  return v;
 };
 // monta o "Diário" a partir dos torneios: 1 linha por jogador por dia (fonte da verdade = torneios)
 function deriveDaily(tours){
@@ -952,12 +961,13 @@ function NotConfigured(){
 
 /* ---------- torneios: linha + card de dia (Torneios) + card por jogador (Diário) ---------- */
 function TourRow({t,config,players,onEdit,onDelete}){
-  const st=tourStatus(t,abiMaxFor(config,t.player)), lp=lucroTorneio(t);
+  // só sinaliza o que é grave (fora da grade DA ÉPOCA); OK/ATENÇÃO poluíam a lista
+  const st=tourStatus(t,abiMaxFor(config,t.player,t.entry_date)), lp=lucroTorneio(t);
   const col=PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft;
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
-      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} <Badge text={st}/></div></div></>}
+      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} {st==='FORA DA GRADE'&&<Badge text={st}/>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
@@ -1013,7 +1023,7 @@ function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
 
 function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   const [open,setOpen]=useState(false);
-  const abiMax=abiMaxFor(config,entry.player);
+  const abiMax=abiMaxFor(config,entry.player,entry.entry_date);
   const st=gradeStatus(entry,abiMax), r=resultadoDia(entry), i=players.indexOf(entry.player);
   const ent=num(entry.qtd_entradas)||num(entry.qtd_torneios);
   const premios=dayTours.reduce((s,t)=>s+num(t.prize),0);
@@ -1024,7 +1034,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
       <span style={{width:10,height:10,borderRadius:99,background:PLAYER_COLORS[i]||C.inkSoft,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontWeight:700,fontSize:15}}>{entry.player} <span style={{color:C.inkSoft,fontWeight:600}}>· {dLabel(entry.entry_date)}</span></div>
-        <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>{num(entry.qtd_torneios)} torneios{ent!==num(entry.qtd_torneios)?` (${ent} entradas)`:''} · ABI {fmt(abiMedioDia(entry))} <Badge text={st}/></div>
+        <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>{num(entry.qtd_torneios)} torneios{ent!==num(entry.qtd_torneios)?` (${ent} entradas)`:''} · ABI {fmt(abiMedioDia(entry))} {st==='FORA DA GRADE'&&<Badge text={st}/>}</div>
       </div>
       <span style={{fontWeight:800,fontSize:16,color:r>=0?C.greenMid:C.red}}>{r>=0?'+':'−'}{fmt(Math.abs(r))}</span>
       <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
@@ -1050,7 +1060,7 @@ function WeekRow({w,player,config}){
   const wkTorn=w.entries.reduce((s,e)=>s+num(e.qtd_torneios),0);
   const wkBuyins=w.entries.reduce((s,e)=>s+num(e.total_buyins),0);
   const wkEnt=w.entries.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
-  const wkAbi=wkEnt>0?wkBuyins/wkEnt:0, pAbi=abiMaxFor(config,player);
+  const wkAbi=wkEnt>0?wkBuyins/wkEnt:0, pAbi=abiMaxFor(config,player,w.week);
   return <div style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
       <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
@@ -1121,6 +1131,8 @@ function Dashboard({session,profile}){
   const [diF,setDiF]=useState({player:'Todos',site:'Todos',mod:'Todos',from:'',to:'',days:''}); // filtros do Diário
   const [mensalWho,setMensalWho]=useState('Geral'); // filtro do "Onde vocês lucram"
   const [hh,setHh]=useState([]);                  // agregados de hand history por torneio
+  const [chgs,setChgs]=useState([]);              // histórico de alterações dos Ajustes
+  const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
   const [stF,setStF]=useState({player:'',days:'',from:'',to:''}); // filtros da tela Stats (preset ou intervalo de datas)
@@ -1145,17 +1157,18 @@ function Dashboard({session,profile}){
           modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
         return;
       }
-      const [cfg,t,l,pw,w,hhr]=await Promise.all([
+      const [cfg,t,l,pw,w,hhr,cc]=await Promise.all([
         sb.from('pool_config').select('*').maybeSingle(),
         sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
         sb.from('bankroll_ledger').select('*').order('entry_date'),
         sb.from('player_wallets').select('*'),
         sb.from('withdrawals').select('*').order('week_ending_date',{ascending:false}),
         sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false}),
+        sb.from('config_changes').select('*').order('created_at',{ascending:false}),
       ]);
       let c=cfg.data;
       if(!c){ const r=await sb.from('pool_config').insert({}).select().single(); c=r.data; }
-      setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]);
+      setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
     }catch(e){ console.error(e); }
   };
   useEffect(()=>{(async()=>{ await loadAll(); setLoading(false); })();},[]);
@@ -1180,7 +1193,7 @@ function Dashboard({session,profile}){
     const onTour=p=>{
       apply(setTours)(p);
       if(p.eventType==='INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current){
-        const c=configRef.current, mx=abiMaxFor(c,p.new.player);
+        const c=configRef.current, mx=abiMaxFor(c,p.new.player,p.new.entry_date);
         if(num(p.new.buyin)>mx) pushToast({tone:C.red,title:`${p.new.player} jogou fora da grade`,text:`${p.new.tournament_name||'Torneio'} · buy-in ${fmt(p.new.buyin)} (máx ${fmt(mx)}). Fique atento e verifique com ${p.new.player.split(' ')[0]}.`});
       }
     };
@@ -1191,6 +1204,12 @@ function Dashboard({session,profile}){
       .on('postgres_changes',{event:'*',schema:'public',table:'hh_tournament_stats'},apply(setHh))
       .on('postgres_changes',{event:'*',schema:'public',table:'withdrawals'},apply(setWds))
       .on('postgres_changes',{event:'*',schema:'public',table:'pool_config'},p=>{ if(p.new&&p.new.id) setConfig(prev=>prev&&prev.id===p.new.id?p.new:prev); })
+      // mudança nos Ajustes: registra no histórico local e AVISA quem não fez a mudança
+      .on('postgres_changes',{event:'*',schema:'public',table:'config_changes'},p=>{
+        apply(setChgs)(p);
+        if(p.eventType==='INSERT' && p.new && !localIds.current.has(p.new.id))
+          pushToast({tone:C.gold,title:`${p.new.changed_by_name||'Alguém'} alterou os Ajustes`,text:p.new.resumo});
+      })
       .subscribe();
     return ()=>{ sb.removeChannel(ch); };
   },[]);
@@ -1205,7 +1224,7 @@ function Dashboard({session,profile}){
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
     if(table==='tournaments' && row){
       localIds.current.add(row.id);
-      if(config && num(row.buyin)>abiMaxFor(config,row.player)) setGradeWarn(row); // avisa quem lançou
+      if(config && num(row.buyin)>abiMaxFor(config,row.player,row.entry_date)) setGradeWarn(row); // avisa quem lançou
     }
     setter([row,...list]); setModal(null);
   };
@@ -1224,6 +1243,31 @@ function Dashboard({session,profile}){
     const next={...config,...patch}; setConfig(next); setQuickEdit(null);
     const {error}=await sb.from('pool_config').update(patch).eq('id',config.id);
     if(error){alert('Não consegui salvar a configuração.');console.error(error);}
+  };
+  // mudança nos Ajustes: mostra "de X para Y", pede confirmação, registra no histórico e o
+  // realtime avisa o outro jogador. Nada muda em silêncio.
+  const showCfgVal=(row,v)=>{
+    if(row.key==='stoploss_daily_buyins') return `${num(v)} buy-ins`;
+    if(row.kind==='money') return fmt(v);
+    if(row.kind==='percent') return pctFmt(num(v)*100);
+    if(row.kind==='list') return (Array.isArray(v)?v:[]).join(', ');
+    if(row.kind==='date') return dLabel(v);
+    return String(v);
+  };
+  const askSaveConfig=(row,nv)=>{
+    setQuickEdit(null);
+    const old=config[row.key];
+    if(JSON.stringify(old)===JSON.stringify(nv)) return;   // não mudou nada
+    setCfgConfirm({row,nv,oldShow:showCfgVal(row,old),newShow:showCfgVal(row,nv)});
+  };
+  const confirmSaveConfig=async()=>{
+    const {row,nv,oldShow,newShow}=cfgConfirm; setCfgConfirm(null);
+    const oldRaw=config[row.key];
+    await saveConfig({[row.key]:nv});
+    const resumo=`${row.label}: ${oldShow} → ${newShow}`;
+    const {data,error}=await sb.from('config_changes').insert({field:row.key,old_value:String(oldRaw),new_value:String(nv),resumo,changed_by_name:myName}).select();
+    if(error){ console.error('config_changes',error); return; }
+    if(data&&data[0]){ localIds.current.add(data[0].id); setChgs(l=>l.some(x=>x.id===data[0].id)?l:[data[0],...l]); }
   };
   // saldo inicial de um jogador numa plataforma (upsert por player+wallet)
   const saveWallet = async (player,wallet,saldo_inicial)=>{
@@ -1364,6 +1408,8 @@ function Dashboard({session,profile}){
   if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
   /* ---- derivados ---- */
+  CONFIG_CHANGES=chgs;   // deixa o histórico visível pro abiMaxFor (grade julgada pela época)
+  const myName=(profile&&profile.nickname)||String(session.user.email||'').split('@')[0];
   const players=isGuest?[guestName]:[config.player1_name, config.player2_name];
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
@@ -1424,10 +1470,10 @@ function Dashboard({session,profile}){
   players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
   if(bancaAtual<piso) alerts.push({tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
-  const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player));
+  const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player,t.entry_date));
   if(foraGradeTours.length) alerts.push({tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
   players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
-  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
@@ -2081,7 +2127,16 @@ function Dashboard({session,profile}){
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
           ].map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
-            <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>saveConfig({[row.key]:nv})})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
+            <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
+          </div>)}
+        </Card>
+        <Card style={{padding:20,marginTop:16}}>
+          <h3 style={{fontFamily:"'Fraunces',serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Histórico de alterações</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>Toda mudança nos Ajustes fica registrada aqui e o outro jogador é avisado na hora. A grade ("fora da grade") julga cada torneio pelo ABI que valia <b>na data dele</b>.</div>
+          {chgs.length===0&&<Empty>Nenhuma alteração registrada ainda.</Empty>}
+          {chgs.slice(0,12).map(c=><div key={c.id} style={{padding:'10px 0',borderBottom:`1px solid ${C.border}`}}>
+            <div style={{fontWeight:700,fontSize:13.5}}>{c.resumo}</div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>{c.changed_by_name||'—'} · {dLabel(String(c.created_at).slice(0,10))}</div>
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
@@ -2307,7 +2362,7 @@ function Dashboard({session,profile}){
         {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={()=>{setAlertDetail(null);editTour(t);}} onDelete={()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
           left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
             <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
-            <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>(máx {fmt(abiMaxFor(config,t.player))})</span></div></div></>}
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>(máx {fmt(abiMaxFor(config,t.player,t.entry_date))})</span></div></div></>}
           right={<span style={{fontWeight:800,fontSize:15,color:lucroTorneio(t)>=0?C.greenMid:C.red,flexShrink:0}}>{lucroTorneio(t)>=0?'+':'−'}{fmt(Math.abs(lucroTorneio(t)))}</span>}/>)}
         {(!alertDetail.items||!alertDetail.items.length)&&<Empty>Tudo certo agora — nenhum torneio fora da grade.</Empty>}
       </div>
@@ -2318,9 +2373,27 @@ function Dashboard({session,profile}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:400,borderRadius:22,padding:24,textAlign:'center'}}>
         <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
         <h3 style={{fontFamily:"'Fraunces',serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
-        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima do ABI máximo de {gradeWarn.player.split(' ')[0]}</b> ({fmt(abiMaxFor(config,gradeWarn.player))}). Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.</p>
+        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima do ABI máximo de {gradeWarn.player.split(' ')[0]}</b> ({fmt(abiMaxFor(config,gradeWarn.player,gradeWarn.entry_date))}). Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.</p>
         <button onClick={()=>setGradeWarn(null)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Entendi</button>
       </div>
+    </div>}
+
+    {/* confirmação de mudança nos Ajustes (fica registrada e o outro jogador é avisado) */}
+    {cfgConfirm&&<div style={{position:'fixed',inset:0,background:'rgba(20,18,30,.55)',backdropFilter:'blur(4px)',display:'grid',placeItems:'center',zIndex:60,padding:18}}>
+      <Card className="ftfade" style={{padding:26,maxWidth:420,width:'100%'}}>
+        <h3 style={{fontFamily:"'Fraunces',serif",fontSize:20,fontWeight:600,margin:'0 0 10px'}}>Confirmar alteração</h3>
+        <div style={{fontWeight:700,fontSize:14.5,marginBottom:6}}>{cfgConfirm.row.label}</div>
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:12,background:C.bg,fontSize:15,marginBottom:12}}>
+          <span style={{color:C.inkSoft,textDecoration:'line-through'}}>{cfgConfirm.oldShow}</span>
+          <span style={{color:C.inkSoft}}>→</span>
+          <span style={{fontWeight:800,color:P}}>{cfgConfirm.newShow}</span>
+        </div>
+        <p style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5,margin:'0 0 16px'}}>A mudança fica registrada no <b>histórico de alterações</b> e o outro jogador recebe um aviso na hora. Torneios antigos continuam sendo julgados pela grade da época.</p>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>setCfgConfirm(null)} style={{flex:1,padding:'13px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={confirmSaveConfig} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Confirmar</button>
+        </div>
+      </Card>
     </div>}
 
     {/* toasts flutuantes (avisos de tempo real, ex: fora da grade do outro jogador) */}
