@@ -1114,7 +1114,7 @@ function Dashboard({session}){
   const [hh,setHh]=useState([]);                  // agregados de hand history por torneio
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
-  const [stF,setStF]=useState({player:'',days:''}); // filtros da tela Stats
+  const [stF,setStF]=useState({player:'',days:'',from:'',to:''}); // filtros da tela Stats (preset ou intervalo de datas)
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
   const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
@@ -1759,9 +1759,13 @@ function Dashboard({session}){
       {/* ---------------- STATS (motor de hand history) ---------------- */}
       {view==='stats'&&(()=>{
         const sp=stF.player||players[0];
+        // período: preset (últimos N dias) OU intervalo de datas (de/até) — recalcula a tela INTEIRA
         const n=parseInt(stF.days,10);
-        const from=n>0?addDaysISO(todayISO(),-(n-1)):null;
-        const rows=hh.filter(r=>r.player===sp&&(!from||(r.entry_date&&r.entry_date>=from)));
+        const fFrom=n>0?addDaysISO(todayISO(),-(n-1)):(stF.from||null);
+        const fTo=n>0?null:(stF.to||null);
+        const rangeAtivo=!(n>0)&&!!(stF.from||stF.to);
+        const periodoLabel=n>0?`últimos ${n} dias`:rangeAtivo?`${stF.from?dLabel(stF.from):'início'} a ${stF.to?dLabel(stF.to):'hoje'}`:'todo o histórico';
+        const rows=hh.filter(r=>r.player===sp&&(!fFrom||(r.entry_date&&r.entry_date>=fFrom))&&(!fTo||(r.entry_date&&r.entry_date<=fTo)));
         const S=k=>rows.reduce((s,r)=>s+num(r[k]),0);
         const hands=S('hands');
         const bb100=hands>0?S('net_bb')/hands*100:0;
@@ -1793,10 +1797,15 @@ function Dashboard({session}){
           <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-end'}}>
             <Seg label="Jogador" value={sp} options={players} onChange={v=>setStF(f=>({...f,player:v}))}/>
             <div><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em',marginBottom:4}}>Período</div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                {[['','Tudo'],['30','30 dias'],['90','90 dias'],['365','1 ano']].map(([v,l])=><button key={l} onClick={()=>setStF(f=>({...f,days:v}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${stF.days===v?P:C.border}`,background:stF.days===v?C.plumSoft:C.surface,color:stF.days===v?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{l}</button>)}
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                {[['','Tudo'],['30','30 dias'],['90','90 dias'],['365','1 ano']].map(([v,l])=>{const ativo=stF.days===v&&!rangeAtivo; return <button key={l} onClick={()=>setStF(f=>({...f,days:v,from:'',to:''}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${ativo?P:C.border}`,background:ativo?C.plumSoft:C.surface,color:ativo?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{l}</button>;})}
+                <span style={{fontSize:12,color:C.inkSoft}}>ou</span>
+                <input type="date" value={stF.from} onChange={e=>setStF(f=>({...f,from:e.target.value,days:''}))} style={{padding:'6px 9px',borderRadius:10,border:`1.5px solid ${stF.from?P:C.border}`,fontSize:12.5,color:C.ink,background:C.surface}}/>
+                <span style={{fontSize:12,color:C.inkSoft}}>até</span>
+                <input type="date" value={stF.to} onChange={e=>setStF(f=>({...f,to:e.target.value,days:''}))} style={{padding:'6px 9px',borderRadius:10,border:`1.5px solid ${stF.to?P:C.border}`,fontSize:12.5,color:C.ink,background:C.surface}}/>
+                {rangeAtivo&&<button onClick={()=>setStF(f=>({...f,days:'',from:'',to:''}))} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${C.border}`,background:C.surface,color:C.red,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar</button>}
               </div></div>
-            <button onClick={()=>setReport({type:'jogador',player:sp,days:stF.days})} style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Relatório do jogador (PDF)</button>
+            <button onClick={()=>setReport({type:'jogador',player:sp,days:stF.days,from:stF.from,to:stF.to})} style={{marginLeft:'auto',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Relatório do jogador (PDF)</button>
           </Card>
 
           {rows.length===0?<Empty>Sem dados de {sp} nesse período. Importe os hand histories acima.</Empty>:<>
@@ -1846,7 +1855,7 @@ function Dashboard({session}){
             const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
             const coachTxt=()=>[
               `Análise de poker — ${sp} (PoolGG)`,
-              `Período: ${n>0?`últimos ${n} dias`:'todo o histórico'} · ${hands} mãos · ${rows.length} torneios`,
+              `Período: ${periodoLabel} · ${hands} mãos · ${rows.length} torneios`,
               `bb/100 (fichas): ${fmtBB(bb100)}`,
               `Sorte all-in: ${fmtBB(sorte)} (real ${fmtBB(netbb)} vs EV ${fmtBB(evbb)}) em ${S('allin_cnt')} all-ins`,
               `VPIP ${pctS(S('vpip_cnt'),hands)} · PFR ${pctS(S('pfr_cnt'),hands)}`,
@@ -2113,8 +2122,10 @@ function Dashboard({session}){
         const pWorst=pDR.length?pDR.reduce((a,b)=>b[1]<a[1]?b:a):null;
         const pMaior=pT.length?pT.reduce((a,b)=>num(b.prize)>num(a.prize)?b:a):null;
         const pWk8=pWeeks.slice(-8).reverse();
-        const from=nn>0?addDaysISO(todayISO(),-(nn-1)):null;
-        const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from)));
+        const from=nn>0?addDaysISO(todayISO(),-(nn-1)):(report.from||null);
+        const to=nn>0?null:(report.to||null);
+        const repPeriodo=nn>0?`últimos ${nn} dias`:(report.from||report.to)?`${report.from?dLabel(report.from):'início'} a ${report.to?dLabel(report.to):'hoje'}`:'todo o histórico';
+        const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from))&&(!to||(r.entry_date&&r.entry_date<=to)));
         const S2=k=>rws.reduce((s,r)=>s+num(r[k]),0);
         const hands2=S2('hands'), bb100v=hands2>0?S2('net_bb')/hands2*100:0;
         const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
@@ -2122,7 +2133,7 @@ function Dashboard({session}){
         const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
         const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2});
         titulo=`Relatório do jogador — ${sp2}`;
-        sub=`história completa na pool + estatísticas de jogo (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`;
+        sub=`história completa na pool + estatísticas de jogo (${repPeriodo})`;
         const MET=[
           ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
           ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
@@ -2159,7 +2170,7 @@ function Dashboard({session}){
             {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
             <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
           </Sec>
-          <Sec t={`Estatísticas de jogo — hand histories (${nn>0?`últimos ${nn} dias`:'todo o histórico'})`}>
+          <Sec t={`Estatísticas de jogo — hand histories (${repPeriodo})`}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Mãos" value={String(hands2)}/>
               <Big label="Torneios" value={String(rws.length)}/>
