@@ -264,7 +264,7 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
-const HH_BUILD='2026-07-16.2';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
+const HH_BUILD='2026-07-16.3';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
 function hhParseHand(block,why){
   const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -1295,7 +1295,7 @@ function Dashboard({session,profile}){
         else texts.push({name:f.name,text:decodeSmart(u)});
       }catch(e){ issues.push(f.name+': '+e.message); }
     }
-    let allHands=[], ignored=0; const reasons={};
+    let allHands=[], ignored=0, resumos=0; const reasons={};
     for(let i=0;i<texts.length;i++){
       setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name}`}));
       await new Promise(r=>setTimeout(r,0));   // deixa a UI respirar entre arquivos
@@ -1309,10 +1309,15 @@ function Dashboard({session,profile}){
         r.issues.forEach(x=>issues.push(texts[i].name+': '+x));
         if(parts.length>400){ setImp(s=>({...s,prog:`Analisando ${i+1}/${texts.length}: ${texts[i].name} (${Math.min(j+400,parts.length)} de ${parts.length} mãos)`})); await new Promise(rs=>setTimeout(rs,0)); }
       }
-      // arquivo que não rendeu NENHUMA mão: avisa em vez de terminar em silêncio com "0 mãos"
-      if(!achou) issues.push(texts[i].name+': nenhuma mão reconhecida — é um hand history do PokerStars (.txt) ou do PokerCraft (GG)?');
+      // arquivo que não rendeu NENHUMA mão: avisa em vez de terminar em silêncio com "0 mãos".
+      // Caso clássico: o "Tournament Summary" do PokerCraft (resultado do torneio, SEM as mãos)
+      if(!achou){
+        if(/^\s*Tournament #\S+,/.test(String(texts[i].text||''))) resumos++;
+        else issues.push(texts[i].name+': nenhuma mão reconhecida — é um hand history do PokerStars (.txt) ou do PokerCraft (GG)?');
+      }
       if(diag.texts.length<60) diag.texts.push({name:texts[i].name,head:String(texts[i].text||'').slice(0,200).split(/\r?\n/)[0].slice(0,120),maos:maosArq,ign:achou-maosArq});
     }
+    if(resumos) issues.unshift(`${resumos} arquivo${resumos!==1?'s':''} ${resumos!==1?'são':'é'} o RESUMO do torneio (resultado, sem as mãos). No PokerCraft, baixe o HAND HISTORY do torneio (as mãos jogadas), não o Tournament Summary.`);
     /* dedup: cada torneio guarda o nº das mãos já importadas (hand_ids). Aqui separamos
        mão NOVA de mão REPETIDA — arquivos sobrepostos (transcript geral + avulsos) podem
        ser importados em qualquer ordem sem contar nada 2x nem perder o que já existia. */
