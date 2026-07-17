@@ -546,6 +546,20 @@ function hhInsights(d){
   const ep=d.pos&&d.pos.EP, btn=d.pos&&d.pos.BTN;
   if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`);
   if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`);
+  // ---- bb/100 POR POSIÇÃO (e cruzado com as outras stats) ----
+  const pb=(k,min)=>{ const x=d.pos&&d.pos[k]; return (x&&num(x.hn)>=(min||150)) ? num(x.net)/num(x.hn)*100 : null; };
+  const fB=n=>`${fmtBB(n)}/100`;
+  const btn100=pb('BTN',200);
+  if(btn100!=null&&btn100<0) add('red','Perdendo na melhor cadeira',`BB/100 no BTN em ${fB(btn100)} — o botão é a posição que DEVERIA pagar a conta da mesa (reg: bem positivo). Ou você abre pouco do botão, ou abre e solta demais no pós-flop: cruze com o VPIP de BTN e o WWSF acima.`);
+  const ep100=pb('EP',150);
+  if(ep&&ep.h>=60&&ep100!=null&&ep100<-20&&(ep.v/ep.h*100)>22) add('gold','O prejuízo nasce cedo (EP)',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% + BB/100 de ${fB(ep100)} nessa posição: mão marginal aberta cedo joga a mão inteira fora de posição e a conta aparece aqui. Apertar EP é o ajuste mais barato do poker.`);
+  const bbp100=pb('BB',200);
+  if(bbp100!=null&&bbp100<-50) add('gold','Sangrando demais no BB',`BB/100 no big blind em ${fB(bbp100)}. Perder no BB é normal (o blind sai antes de ver as cartas), mas a faixa saudável fica acima de −40: defesas largas demais ou desistências caras no pós-flop — casa com as leituras de defesa de BB e fold pra c-bet.`);
+  const co100=pb('CO',150), sb100=pb('SB',150);
+  if(btn100!=null&&co100!=null&&sb100!=null&&bbp100!=null){
+    const late=num(d.pos.BTN.net)+num(d.pos.CO.net), blinds=num(d.pos.SB.net)+num(d.pos.BB.net);
+    if(late>0&&late+blinds<0) add('info','Late position ainda não paga as blinds',`CO+BTN somam ${fmtBB(late)}, mas SB+BB custam ${fmtBB(blinds)}: o lucro de posição final não cobre o pedágio das blinds. Mais roubo de CO/BTN e defesas mais seletivas fecham essa conta.`);
+  }
   if(d.hands>=300&&!out.some(i=>i.tone==='red'||i.tone==='gold')) add('green','Perfil sólido','Nenhum vazamento gritante contra as faixas de reg. Agora o ganho está nos spots finos — revisão de mãos no Coach.');
   const ord={red:0,gold:1,green:2,info:3};
   return out.sort((a,b)=>ord[a.tone]-ord[b.tone]);
@@ -1167,6 +1181,8 @@ function Dashboard({session,profile}){
   const [stF,setStF]=useState({player:'',days:'',from:'',to:''}); // filtros da tela Stats (preset ou intervalo de datas)
   const [audF,setAudF]=useState({player:'',days:30});             // filtros da aba Auditoria
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
+  const [leitOpen,setLeitOpen]=useState(false);   // card "Leituras do jogo" expandido?
+  const [sorteOpen,setSorteOpen]=useState(false); // card "Sorte nos all-ins" expandido?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
   const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
   const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
@@ -2036,22 +2052,34 @@ function Dashboard({session,profile}){
               'Contexto: jogador de MTT micro/low numa pool 50/50 com make-up. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.',
             ].join('\n');
             const copiar=async()=>{ const tx=coachTxt(); try{ await navigator.clipboard.writeText(tx); }catch(e){ const ta=document.createElement('textarea'); ta.value=tx; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } setCopied(true); setTimeout(()=>setCopied(false),2500); };
-            return <Card style={{padding:18}}>
-              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:4,flexWrap:'wrap'}}>
-                <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:0,flex:1}}>Leituras do jogo</h3>
-                <button onClick={copiar} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:11,border:`1.5px solid ${copied?C.greenMid:P}`,background:copied?C.greenSoft:C.plumSoft,color:copied?C.greenMid:P,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{copied?'✓ Copiado!':'Copiar resumo pro Coach'}</button>
-              </div>
-              <div style={{fontSize:12,color:C.inkSoft,marginBottom:10}}>Comparação automática com as faixas de um reg de MTT micro/low. Pra análise profunda, copie o resumo e cole no seu projeto <b>Coach de Poker</b> no Claude.</div>
-              {insights.map((i,ix)=><div key={ix} style={{display:'flex',gap:10,padding:'10px 12px',borderRadius:12,background:TONE[i.tone].bg,marginBottom:6,alignItems:'flex-start'}}>
-                <span style={{flexShrink:0,marginTop:1,color:TONE[i.tone].c}}><IcoAlert s={15}/></span>
-                <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
-              </div>)}
+            const worst=insights[0]?TONE[insights[0].tone]:{c:C.inkSoft,bg:C.bg};
+            return <Card style={{padding:0,overflow:'hidden'}}>
+              <button onClick={()=>setLeitOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+                <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600,flex:1}}>Leituras do jogo</span>
+                <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:worst.c,background:worst.bg,whiteSpace:'nowrap'}}>{insights.length} leitura{insights.length!==1?'s':''}</span>
+                <span style={{color:C.inkSoft,fontSize:20,transform:leitOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+              </button>
+              {leitOpen&&<div style={{padding:'0 18px 16px'}}>
+                <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:10,flexWrap:'wrap'}}>
+                  <div style={{fontSize:12,color:C.inkSoft,flex:1,minWidth:180}}>Comparação automática com as faixas de um reg de MTT micro/low. Pra análise profunda, copie o resumo e cole no seu projeto <b>Coach de Poker</b> no Claude.</div>
+                  <button onClick={copiar} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:11,border:`1.5px solid ${copied?C.greenMid:P}`,background:copied?C.greenSoft:C.plumSoft,color:copied?C.greenMid:P,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{copied?'✓ Copiado!':'Copiar resumo pro Coach'}</button>
+                </div>
+                {insights.map((i,ix)=><div key={ix} style={{display:'flex',gap:10,padding:'10px 12px',borderRadius:12,background:TONE[i.tone].bg,marginBottom:6,alignItems:'flex-start'}}>
+                  <span style={{flexShrink:0,marginTop:1,color:TONE[i.tone].c}}><IcoAlert s={15}/></span>
+                  <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
+                </div>)}
+              </div>}
             </Card>;
           })()}
 
-          {/* Sorte explicada em detalhe */}
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Sorte nos all-ins — como ler esse número</h3>
+          {/* Sorte explicada em detalhe (recolhido por padrão; o chip do cabeçalho já mostra o número) */}
+          <Card style={{padding:0,overflow:'hidden'}}>
+            <button onClick={()=>setSorteOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+              <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600,flex:1}}>Sorte nos all-ins — como ler esse número</span>
+              <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:sorte>=0?C.greenMid:C.red,background:sorte>=0?C.greenSoft:C.redSoft,whiteSpace:'nowrap'}}>{fmtBB(sorte)}</span>
+              <span style={{color:C.inkSoft,fontSize:20,transform:sorteOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+            </button>
+            {sorteOpen&&<div style={{padding:'0 18px 16px'}}>
             {/* veredito do período: com sorte ou com azar, quanto acima/abaixo do justo, e o bb/100 sem o fator sorte */}
             {(()=>{
               const allins=S('allin_cnt');
@@ -2088,6 +2116,7 @@ function Dashboard({session,profile}){
               Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
             </div>
             <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
+            </div>}
           </Card>
 
           </>}
