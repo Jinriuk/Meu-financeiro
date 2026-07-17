@@ -276,7 +276,7 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
-const HH_BUILD='2026-07-16.3';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
+const HH_BUILD='2026-07-17.1';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
 function hhParseHand(block,why){
   const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
