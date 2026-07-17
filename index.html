@@ -550,6 +550,7 @@ const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill=
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
 const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
 const IcoTrophy = p => <Svg {...p}><path d="M7 4h10v4a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/><path d="M9 15h6l1 5H8l1-5z"/></Svg>;
+const IcoShield = p => <Svg {...p}><path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/><path d="M9.2 12l2 2 3.6-4.2"/></Svg>;
 const IcoWeek   = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><path d="M7 14h10"/></Svg>;
 const IcoMonth  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4M7 13h3v3H7z"/></Svg>;
 const IcoCashOut= p => <Svg {...p}><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2"/><path d="M12 15V7m0 0l-3 3m3-3l3 3"/></Svg>;
@@ -1158,6 +1159,7 @@ function Dashboard({session,profile}){
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
   const [stF,setStF]=useState({player:'',days:'',from:'',to:''}); // filtros da tela Stats (preset ou intervalo de datas)
+  const [audF,setAudF]=useState({player:'',days:30});             // filtros da aba Auditoria
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
   const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
@@ -1586,6 +1588,7 @@ function Dashboard({session,profile}){
     {id:'semanal',label:'Semanal',Icon:IcoWeek},
     {id:'mensal',label:'Mensal',Icon:IcoMonth},
     {id:'stats',label:'Stats',Icon:IcoStats},
+    {id:'auditoria',label:'Auditoria',Icon:IcoShield},
     {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
@@ -2085,6 +2088,89 @@ function Dashboard({session,profile}){
                 <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5,marginTop:2}}>{v}</div>
               </div>)}
             </div>}
+          </Card>
+        </div>;
+      })()}
+
+      {/* ---------------- AUDITORIA ----------------
+          Cruza o que foi DECLARADO (aba Torneios) com o que as mãos PROVAM (hand history
+          importado da GG/PS) e dá o veredito: bate ou não bate. É a camada de confiança
+          da pool — jogou sem lançar, lançou com buy-in errado e falta de comprovação. */}
+      {view==='auditoria'&&(()=>{
+        const sp=audF.player||players[0];
+        const from=audF.days>0?addDaysISO(todayISO(),-audF.days+1):null;
+        const decl=tours.filter(t=>t.player===sp&&(!from||t.entry_date>=from));
+        const hhr=hh.filter(r=>r.player===sp&&(!from||(r.entry_date&&r.entry_date>=from)));
+        const near2=(a,b)=>Math.abs(a-b)<=0.011;
+        const close2=(a,b)=>Math.max(a,b)>0&&Math.abs(a-b)/Math.max(a,b)<=0.15;
+        const dayDiff=(a,b)=>Math.abs(new Date(a+'T12:00:00Z')-new Date(b+'T12:00:00Z'))/86400000;
+        const usados=new Set(); const linhas=[];
+        for(const r of hhr){
+          const b=num(r.buyin);
+          const cand=decl.filter(t=>!usados.has(t.id)&&walletBucket(t.site)===walletBucket(r.site));
+          const pick=list=>{ let best=null,bd=1e9; for(const t of list){ const df=Math.abs(num(t.buyin)-b); if(df<bd){bd=df;best=t;} } return best; };
+          // 1º tenta o mesmo dia; se não, dia vizinho (sessão virando a madrugada)
+          const m=pick(cand.filter(t=>t.entry_date===r.entry_date))||pick(cand.filter(t=>dayDiff(t.entry_date,r.entry_date)<=1));
+          if(m&&(near2(num(m.buyin),b)||close2(num(m.buyin),b))){ usados.add(m.id); linhas.push({tipo:near2(num(m.buyin),b)?'ok':'buyin',hh:r,t:m,date:r.entry_date}); }
+          else linhas.push({tipo:'semlanc',hh:r,date:r.entry_date});
+        }
+        decl.filter(t=>!usados.has(t.id)).forEach(t=>linhas.push({tipo:'semhh',t,date:t.entry_date}));
+        linhas.sort((a,b)=>a.date<b.date?1:-1);
+        const n=k=>linhas.filter(x=>x.tipo===k).length;
+        const foraHH=hhr.filter(r=>num(r.buyin)>abiMaxFor(config,sp,r.entry_date)+0.011);
+        const temDado=linhas.length>0;
+        const veredito=!temDado?{tone:C.inkSoft,bg:C.bg,t:'Sem dados no período',x:'Lance torneios e importe hand histories pra auditoria comparar os dois.'}
+          :(n('semlanc')||n('buyin'))?{tone:C.red,bg:C.redSoft,t:'Divergências encontradas',x:'Tem diferença entre o que as mãos provam e o que foi lançado — confira as linhas em vermelho/dourado abaixo.'}
+          :n('semhh')?{tone:C.gold,bg:C.goldSoft,t:'Batendo, mas falta comprovação',x:'Nenhuma divergência, porém há torneios lançados sem hand history importado — importe as mãos pra fechar a prova.'}
+          :{tone:C.greenMid,bg:C.greenSoft,t:'Tudo batendo',x:'Cada torneio lançado tem hand history correspondente com o mesmo buy-in. Prova fechada.'};
+        const TIPO={
+          ok:{c:C.greenMid,bg:C.greenSoft,l:'✓ Bate'},
+          buyin:{c:C.gold,bg:C.goldSoft,l:'Buy-in difere'},
+          semlanc:{c:C.red,bg:C.redSoft,l:'Jogado e NÃO lançado'},
+          semhh:{c:C.inkSoft,bg:C.bg,l:'Sem hand history'},
+        };
+        return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>O que as mãos provam vs. o que foi lançado — a prova de que o controle da pool está honesto.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Auditoria</div></div>
+
+          <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-end'}}>
+            <Seg label="Jogador" value={sp} options={players} onChange={v=>setAudF(f=>({...f,player:v}))}/>
+            <Seg label="Período" value={audF.days===7?'7 dias':audF.days===30?'30 dias':audF.days===90?'90 dias':'Tudo'} options={['7 dias','30 dias','90 dias','Tudo']} onChange={v=>setAudF(f=>({...f,days:v==='7 dias'?7:v==='30 dias'?30:v==='90 dias'?90:0}))}/>
+          </Card>
+
+          <Card style={{padding:18,background:veredito.bg,border:`1.5px solid ${veredito.tone}22`}}>
+            <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+              <span style={{color:veredito.tone,flexShrink:0,marginTop:2}}><IcoShield s={22}/></span>
+              <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:700,color:veredito.tone}}>{veredito.t}</div>
+              <div style={{fontSize:12.5,color:C.ink,lineHeight:1.55,marginTop:3}}>{veredito.x}</div></div>
+            </div>
+          </Card>
+
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+            {[['Torneios lançados',decl.length,C.ink],['Com prova (mãos)',n('ok')+n('buyin'),C.greenMid],['Jogados sem lançar',n('semlanc'),n('semlanc')?C.red:C.inkSoft],['Lançados sem mãos',n('semhh'),n('semhh')?C.gold:C.inkSoft]].map(([l,v,c])=>
+              <Card key={l} style={{padding:'14px 16px'}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{l}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,color:c,marginTop:2}}>{v}</div></Card>)}
+          </div>
+
+          {foraHH.length>0&&<Card style={{padding:16,background:C.redSoft}}>
+            <div style={{fontWeight:800,fontSize:13.5,color:C.red,marginBottom:6}}>⚠️ Fora da grade COMPROVADO pelas mãos ({foraHH.length})</div>
+            <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5}}>{foraHH.map(r=>`${r.tournament_name||('#'+r.site_tournament_id)} · ${dLabel(r.entry_date)} · buy-in ${fmt(r.buyin)} (máx da época ${fmt(abiMaxFor(config,sp,r.entry_date))})`).join(' — ')}</div>
+          </Card>}
+
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 4px'}}>Reconciliação torneio a torneio</h3>
+            <div style={{fontSize:12,color:C.inkSoft,marginBottom:10}}>Cada linha casa um torneio do hand history com um lançamento (mesmo site, mesmo dia — ou vizinho — e buy-in igual; até 15% de diferença conta como "quase", acima disso não casa).</div>
+            {!linhas.length&&<Empty>Nada pra reconciliar no período.</Empty>}
+            {linhas.map((x,i)=><div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'11px 0',borderBottom:`1px solid ${C.border}`}}>
+              <span style={{padding:'3px 10px',borderRadius:99,fontSize:10.5,fontWeight:800,color:TIPO[x.tipo].c,background:TIPO[x.tipo].bg,whiteSpace:'nowrap',flexShrink:0,marginTop:1}}>{TIPO[x.tipo].l}</span>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontWeight:700,fontSize:13.5}}>{dLabel(x.date)} · {(x.hh&&(x.hh.tournament_name||('#'+x.hh.site_tournament_id)))||(x.t&&(x.t.tournament_name||'Torneio'))} <span style={{color:C.inkSoft,fontWeight:600}}>· {(x.hh&&x.hh.site)||(x.t&&x.t.site)||''}</span></div>
+                <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>
+                  {x.tipo==='ok'&&`Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${x.hh.hands} mão(s) no arquivo`}
+                  {x.tipo==='buyin'&&`Lançado ${fmt(x.t.buyin)} mas as mãos mostram ${fmt(x.hh.buyin)} — confere qual está certo e corrige o lançamento`}
+                  {x.tipo==='semlanc'&&`As mãos provam que esse torneio foi jogado (${x.hh.hands} mão(s), buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`}
+                  {x.tipo==='semhh'&&`Lançado ${fmt(x.t.buyin)}${num(x.t.prize)>0?` · prêmio ${fmt(x.t.prize)}`:''} — sem hand history importado pra comprovar (importe as mãos na aba Stats)`}
+                </div>
+              </div>
+            </div>)}
           </Card>
         </div>;
       })()}
