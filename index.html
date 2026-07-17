@@ -438,13 +438,19 @@ function hhAggregate(hands,player){
     if(h.sawflop)a.sawflop_cnt++; if(h.wwsf)a.wwsf_cnt++; if(h.wtsd)a.wtsd_cnt++; if(h.wsd)a.wsd_cnt++;
     a.af_bets+=h.afB; a.af_calls+=h.afC;
     if(h.allin){ a.allin_cnt++; a.allin_ev_bb+=h.allin.ev; a.allin_net_bb+=h.allin.net; }
-    if(!a.pos_json[h.pos]) a.pos_json[h.pos]={h:0,v:0,p:0};
+    // net/hn por posição: bb ganhos e nº de mãos COM net rastreado (linhas antigas não têm
+    // esses campos — hn separa o denominador certo do bb/100 por posição)
+    if(!a.pos_json[h.pos]) a.pos_json[h.pos]={h:0,v:0,p:0,net:0,hn:0};
     a.pos_json[h.pos].h++; if(h.vpip)a.pos_json[h.pos].v++; if(h.pfr)a.pos_json[h.pos].p++;
+    a.pos_json[h.pos].net+=h.net_bb; a.pos_json[h.pos].hn++;
     if(!a.stack_json[h.bucket]) a.stack_json[h.bucket]={h:0,v:0,p:0,net:0};
     const sb2=a.stack_json[h.bucket]; sb2.h++; if(h.vpip)sb2.v++; if(h.pfr)sb2.p++; sb2.net+=h.net_bb;
   }
-  // arredonda numéricos pra não estourar precisão no banco
-  return Object.values(agg).map(a=>({...a,net_bb:Math.round(a.net_bb*100)/100,allin_ev_bb:Math.round(a.allin_ev_bb*100)/100,allin_net_bb:Math.round(a.allin_net_bb*100)/100}));
+  // arredonda numéricos UMA vez no fim (arredondar a cada mão acumularia deriva)
+  return Object.values(agg).map(a=>{
+    const pj={}; Object.keys(a.pos_json).forEach(k=>{ pj[k]={...a.pos_json[k],net:Math.round(a.pos_json[k].net*100)/100}; });
+    return {...a,pos_json:pj,net_bb:Math.round(a.net_bb*100)/100,allin_ev_bb:Math.round(a.allin_ev_bb*100)/100,allin_net_bb:Math.round(a.allin_net_bb*100)/100};
+  });
 }
 // soma um agregado de mãos NOVAS numa linha já existente do banco (import incremental sem contar 2x)
 const HH_SUM_KEYS=['hands','net_bb','vpip_cnt','pfr_cnt','tb_cnt','tb_opp','f3b_cnt','f3b_opp','steal_cnt','steal_opp',
@@ -1399,21 +1405,28 @@ function Dashboard({session,profile}){
        ser importados em qualquer ordem sem contar nada 2x nem perder o que já existia. */
     const grupos={};
     for(const h of allHands){ const k=h.site+'|'+h.tid; (grupos[k]=grupos[k]||[]).push(h); }
-    let saved=0, novas=0, repetidas=0; const paraSalvar=[];
+    let saved=0, novas=0, repetidas=0, reproc=0; const paraSalvar=[];
     for(const k of Object.keys(grupos)){
       const g=grupos[k], site=g[0].site, tid=g[0].tid;
       const existente=hh.find(x=>x.player===player&&x.site===site&&x.site_tournament_id===tid);
-      const jaVistas=new Set(existente&&Array.isArray(existente.hand_ids)?existente.hand_ids:[]);
+      // linha antiga SEM os campos novos por posição (net/hn): se o arquivo cobre TODAS as
+      // mãos já importadas, reprocessa o torneio inteiro — reimportar preenche o bb/100
+      // por posição retroativo sem duplicar nada
+      const batchIds=new Set(g.map(h=>h.hid).filter(Boolean));
+      const upgrade=existente&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length
+        &&existente.pos_json&&Object.values(existente.pos_json).some(x=>x&&x.hn==null)
+        &&existente.hand_ids.every(id=>batchIds.has(id));
+      const jaVistas=new Set(existente&&!upgrade&&Array.isArray(existente.hand_ids)?existente.hand_ids:[]);
       const noLote=new Set(); const frescas=[];
       for(const h of g){
         const id=h.hid||`s-n|${h.date||'?'}|${noLote.size}`;   // mão sem nº: não dá pra dedupar entre imports
         if(jaVistas.has(id)||noLote.has(id)){ repetidas++; continue; }
         noLote.add(id); frescas.push(h.hid?h:{...h,hid:id});
       }
-      novas+=frescas.length;
+      if(upgrade){ reproc+=frescas.length; } else { novas+=frescas.length; }
       if(!frescas.length) continue;
       let row=hhAggregate(frescas,player)[0];
-      if(existente&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length) row=mergeHH(existente,row);
+      if(!upgrade&&existente&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length) row=mergeHH(existente,row);
       // linha antiga sem hand_ids (importada antes do dedup): substitui em vez de somar, pra não contar 2x
       paraSalvar.push(row);
     }
@@ -1428,7 +1441,7 @@ function Dashboard({session,profile}){
       setHh(list=>{ const novasKeys=new Set(recs.map(keyOf)); return [...recs,...list.filter(x=>!novasKeys.has(keyOf(x)))]; });
       await new Promise(r=>setTimeout(r,0));
     }
-    setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,tours:Object.keys(grupos).length,saved,ignored,reasons,issues:issues.slice(0,8),issuesTotal:issues.length}});
+    setImp({busy:false,prog:'',res:{files:texts.length,novas,repetidas,reproc,tours:Object.keys(grupos).length,saved,ignored,reasons,issues:issues.slice(0,8),issuesTotal:issues.length}});
     // grava o diagnóstico (só metadados) — se um import "não for", dá pra ver o motivo sem pedir o arquivo
     try{ await sb.from('hh_import_log').insert({player,saved,novas,repetidas,ignored,reasons,issues:issues.slice(0,20),meta:diag}); }catch(e){ console.error('hh_import_log',e); }
   };
@@ -1588,7 +1601,8 @@ function Dashboard({session,profile}){
     {id:'semanal',label:'Semanal',Icon:IcoWeek},
     {id:'mensal',label:'Mensal',Icon:IcoMonth},
     {id:'stats',label:'Stats',Icon:IcoStats},
-    {id:'auditoria',label:'Auditoria',Icon:IcoShield},
+    // Auditoria: em stand-by (fora do menu). A versão certa cruza com o HISTÓRICO OFICIAL
+    // de torneios do site + tempo ativo na pool — espera um documento de exemplo.
     {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
@@ -1921,7 +1935,7 @@ function Dashboard({session,profile}){
         const bb100=hands>0?S('net_bb')/hands*100:0;
         const evbb=S('allin_ev_bb'), netbb=S('allin_net_bb'), sorte=netbb-evbb;
         const afc=S('af_calls'), afb=S('af_bets');
-        const pos={}; rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos[k])pos[k]={h:0,v:0,p:0}; pos[k].h+=num(pj[k].h); pos[k].v+=num(pj[k].v); pos[k].p+=num(pj[k].p); }); });
+        const pos={}; rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos[k])pos[k]={h:0,v:0,p:0,net:0,hn:0}; pos[k].h+=num(pj[k].h); pos[k].v+=num(pj[k].v); pos[k].p+=num(pj[k].p); pos[k].net+=num(pj[k].net); pos[k].hn+=num(pj[k].hn); }); });
         const POS_ORDER=['EP','MP','CO','BTN','SB','BB'];
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories — só agregados sobem pro banco.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
@@ -1937,7 +1951,7 @@ function Dashboard({session,profile}){
             </div>
             {imp.busy&&<div style={{marginTop:10,fontSize:12.5,color:P,fontWeight:600}}>{imp.prog}</div>}
             {imp.res&&<div style={{marginTop:10,padding:'10px 12px',borderRadius:12,background:imp.res.saved||imp.res.repetidas?C.greenSoft:C.redSoft,fontSize:12.5,color:C.ink}}>
-              <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.novas} mão{imp.res.novas!==1?'s':''} nova{imp.res.novas!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.repetidas?` · ${imp.res.repetidas} já importada${imp.res.repetidas!==1?'s':''} (pulada${imp.res.repetidas!==1?'s':''})`:''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)${(r=>{const M={cash:'cash game — só torneios entram',modalidade:"outra modalidade — só Hold'em",incompleta:'incompletas',formato:'formato não reconhecido'};const ps=Object.keys(M).filter(k=>r[k]).map(k=>`${r[k]} ${M[k]}`);return ps.length?` — ${ps.join(' · ')}`:'';})(imp.res.reasons||{})}`:''}
+              <b>{imp.res.saved} torneio{imp.res.saved!==1?'s':''} salvo{imp.res.saved!==1?'s':''}</b> · {imp.res.novas} mão{imp.res.novas!==1?'s':''} nova{imp.res.novas!==1?'s':''} de {imp.res.files} arquivo{imp.res.files!==1?'s':''}{imp.res.repetidas?` · ${imp.res.repetidas} já importada${imp.res.repetidas!==1?'s':''} (pulada${imp.res.repetidas!==1?'s':''})`:''}{imp.res.reproc?` · ${imp.res.reproc} reprocessada${imp.res.reproc!==1?'s':''} (bb/100 por posição preenchido)`:''}{imp.res.ignored?` · ${imp.res.ignored} mão(s) ignorada(s)${(r=>{const M={cash:'cash game — só torneios entram',modalidade:"outra modalidade — só Hold'em",incompleta:'incompletas',formato:'formato não reconhecido'};const ps=Object.keys(M).filter(k=>r[k]).map(k=>`${r[k]} ${M[k]}`);return ps.length?` — ${ps.join(' · ')}`:'';})(imp.res.reasons||{})}`:''}
               {imp.res.issues.length>0&&<div style={{marginTop:6,color:C.red}}>{imp.res.issues.map((x,i)=><div key={i}>• {x}</div>)}{imp.res.issuesTotal>imp.res.issues.length&&<div>… e mais {imp.res.issuesTotal-imp.res.issues.length}</div>}</div>}
             </div>}
             <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte o <b>hand history</b> pelo PokerCraft (pode mandar o .zip direto). Import grande é melhor no computador. <span style={{opacity:.6}}>build {HH_BUILD}</span></div>
@@ -1991,12 +2005,14 @@ function Dashboard({session,profile}){
           </Card>
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
-            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=><div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=>{const b100=pos[k].hn>0?pos[k].net/pos[k].hn*100:null; return <div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13,flexWrap:'wrap'}}>
               <b style={{width:42}}>{k}</b>
               <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
               <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
               <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
-            </div>)}
+              <span>BB/100 <b style={{color:b100==null?C.inkSoft:b100>=0?C.greenMid:C.red}}>{b100==null?'—':fmtBB(b100).replace(' bb','')}</b></span>
+            </div>;})}
+            {POS_ORDER.some(k=>pos[k]&&pos[k].h>0&&!(pos[k].hn>0))&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>ℹ️ BB/100 com "—": mãos importadas antes desse recurso. Reimporte os mesmos arquivos (não duplica nada) que o sistema reprocessa e preenche.</div>}
           </Card>
 
           {/* Leituras automáticas (insights vs faixas de reg) */}
@@ -2014,7 +2030,7 @@ function Dashboard({session,profile}){
               `C-bet flop ${pctS(S('cbet_cnt'),S('cbet_opp'))} · Fold pra c-bet ${pctS(S('fcbet_cnt'),S('fcbet_opp'))}`,
               `WWSF ${pctS(S('wwsf_cnt'),S('sawflop_cnt'))} · WTSD ${pctS(S('wtsd_cnt'),S('sawflop_cnt'))} · W$SD ${pctS(S('wsd_cnt'),S('wtsd_cnt'))}`,
               `AF: ${afc>0?(afb/afc).toFixed(2).replace('.',','):'—'}`,
-              'Por posição (mãos · VPIP · PFR): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%`).join(' | '),
+              'Por posição (mãos · VPIP · PFR · bb/100): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%·${pos[k].hn>0?(pos[k].net/pos[k].hn*100).toFixed(1):'—'}`).join(' | '),
               'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
               '',
               'Contexto: jogador de MTT micro/low numa pool 50/50 com make-up. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.',
@@ -2399,7 +2415,7 @@ function Dashboard({session,profile}){
         const hands2=S2('hands'), bb100v=hands2>0?S2('net_bb')/hands2*100:0;
         const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
         const afb=S2('af_bets'), afc=S2('af_calls');
-        const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); }); });
+        const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0,net:0,hn:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); pos2[k].net+=num(pj[k].net); pos2[k].hn+=num(pj[k].hn); }); });
         const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2,bb100:hands2>0?S2('net_bb')/hands2*100:0});
         titulo=`Relatório do jogador — ${sp2}`;
         sub=isGuest?`estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
@@ -2455,8 +2471,8 @@ function Dashboard({session,profile}){
             <tbody>{MET.map(([nm,c,o,b])=>{ const [lbl,cor]=stOf(c,o,b); return <tr key={nm}><td>{nm}</td><td style={{fontWeight:700}}>{o>0?pctFmt(c/o*100):'—'}</td><td>{c}/{o}</td><td>{b[0]}–{b[1]}%</td><td style={{color:cor,fontWeight:700}}>{lbl}</td></tr>; })}</tbody></table>
           </Sec>
           <Sec t="Por posição">
-            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th></tr></thead>
-            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pctFmt(pos2[k].v/pos2[k].h*100)}</td><td>{pctFmt(pos2[k].p/pos2[k].h*100)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
+            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th><th>BB/100</th></tr></thead>
+            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pctFmt(pos2[k].v/pos2[k].h*100)}</td><td>{pctFmt(pos2[k].p/pos2[k].h*100)}</td><td>{pos2[k].hn>0?fmtBB(pos2[k].net/pos2[k].hn*100).replace(' bb',''):'—'}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
           </Sec>
           <Sec t="Leituras do jogo">
             {insights.length?insights.map((iz,ix)=><div key={ix} style={{marginBottom:8}}><div style={{fontWeight:800,fontSize:12.5,color:TONE2[iz.tone]}}>{iz.t}</div><div style={{fontSize:12,color:'#3d463f',lineHeight:1.5}}>{iz.x}</div></div>):<div style={{fontSize:12,color:'#6B6455'}}>Sem leituras — importe hand histories.</div>}
