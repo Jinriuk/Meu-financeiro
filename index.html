@@ -95,6 +95,9 @@ const C = {
 };
 const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
 const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
+// GrinderBank: planos do produto individual. UPGRADE_URL recebe o checkout (Kiwify) quando a conta existir.
+const UPGRADE_URL='';
+const PLAN_LABEL={free:'Grátis',gestao:'Gestão (R$ 19,90/mês)',pro:'Pro (R$ 49,90/mês)',founder:'Fundador (tudo liberado)',team:'Time'};
 // "Outros" é o coringa: qualquer site/carteira que não seja um dos nomeados (inclusive null/desconhecido)
 // cai em "Outros" — assim nenhum torneio/movimento/saque some da visão por jogador/plataforma.
 const WALLET_NAMED = ['PokerStars','GG Poker','Reserva'];
@@ -976,6 +979,7 @@ function Login(){
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <div style={{fontSize:11.5,color:C.inkSoft,lineHeight:1.5}}>Ao criar a conta você concorda com os <a href="termos.html" target="_blank" style={{color:P}}>Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style={{color:P}}>Política de Privacidade</a>.</div>
         <button onClick={criar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Criando…':'Criar minha conta'}</button>
         <button onClick={()=>{setMode('login');setErr('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}>Já tenho conta</button>
       </div>}
@@ -1552,6 +1556,9 @@ function Dashboard({session,profile}){
   CONFIG_CHANGES=chgs;   // deixa o histórico visível pro abiMaxFor (grade julgada pela época)
   const myName=(profile&&profile.nickname)||String(session.user.email||'').split('@')[0];
   const players=solo?[config.player1_name]:[config.player1_name, config.player2_name];
+  // plano do workspace: quem pode usar as Stats (Pro/fundador/time). Gestão de banca é de todos.
+  const plan=ws?ws.plan:'team';
+  const canStats=!solo||['pro','founder','team'].includes(plan);
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
   const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
@@ -2011,6 +2018,26 @@ function Dashboard({session,profile}){
 
       {/* ---------------- STATS (motor de hand history) ---------------- */}
       {view==='stats'&&(()=>{
+        // bloqueio por plano: Stats (import + leituras + relatório) é do plano PRO.
+        // A aba fica visível com o convite de upgrade — paywall escondida não vende.
+        if(!canStats) return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
+          <Card style={{padding:26,textAlign:'center',maxWidth:560,margin:'0 auto',width:'100%'}}>
+            <div style={{fontSize:40,marginBottom:4}}>📈</div>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:700,margin:'0 0 8px'}}>Desbloqueie suas estatísticas com o plano Pro</h3>
+            <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.7,textAlign:'left',margin:'0 auto 14px',maxWidth:420}}>
+              ✓ Importa suas mãos da <b>GG (PokerCraft)</b> e do <b>PokerStars</b> — pode mandar o zip<br/>
+              ✓ VPIP, PFR, 3-bet, c-bet, WWSF, W$SD, AF e <b>bb/100 por posição</b><br/>
+              ✓ <b>Sorte nos all-ins</b>: quanto do resultado é jogo e quanto é variância<br/>
+              ✓ <b>Leituras automáticas</b> em português comparando com faixas de reg<br/>
+              ✓ <b>Relatório completo em PDF</b> pra revisar ou mandar pro coach
+            </div>
+            <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:26,fontWeight:700,color:P}}>R$ 49,90<span style={{fontSize:14,color:C.inkSoft,fontWeight:600}}>/mês</span></div>
+            <div style={{fontSize:12,color:C.inkSoft,marginBottom:14}}>ou R$ 399/ano (2 meses grátis)</div>
+            <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{padding:'14px 28px',borderRadius:14,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:15.5,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Assinar o Pro':'Vendas abrem em breve'}</button>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10}}>Seu plano atual: <b>{PLAN_LABEL[plan]||plan}</b> — a gestão de banca continua completa e ilimitada.</div>
+          </Card>
+        </div>;
         const sp=stF.player||players[0];
         // período: preset (últimos N dias) OU intervalo de datas (de/até) — recalcula a tela INTEIRA
         const n=parseInt(stF.days,10);
@@ -2409,6 +2436,15 @@ function Dashboard({session,profile}){
             <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>{c.changed_by_name||'—'} · {dLabel(String(c.created_at).slice(0,10))}</div>
           </div>)}
         </Card>
+        {solo&&<Card style={{padding:20,marginTop:16}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Seu plano</h3>
+          <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b></div>
+          <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+            <b>Gestão</b> (R$ 19,90/mês): banca, torneios, diário, semanal e relatórios de banca — ilimitado.<br/>
+            <b>Pro</b> (R$ 49,90/mês): tudo da Gestão + import de mãos GG/PS, estatísticas completas, leituras automáticas e relatório em PDF.
+          </div>
+          {!canStats&&<button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{marginTop:12,padding:'12px 20px',borderRadius:13,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:14,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Fazer upgrade pro Pro':'Vendas abrem em breve'}</button>}
+        </Card>}
         <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
