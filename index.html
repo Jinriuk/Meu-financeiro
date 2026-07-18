@@ -941,7 +941,7 @@ function Login(){
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
   const [mode,setMode]=useState('login'); const [ok,setOk]=useState('');
-  const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
+  const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nZap,setNZap]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
   const criar=async()=>{
     setErr(''); setOk('');
     const nome=nNome.trim();
@@ -950,11 +950,15 @@ function Login(){
     if(nP1.length<8) return setErr('Senha com pelo menos 8 caracteres.');
     if(nP1!==nP2) return setErr('As duas senhas não conferem.');
     setBusy(true);
+    // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
+    try{ const {data:livre}=await sb.rpc('nickname_disponivel',{nick:nome});
+      if(livre===false){ setBusy(false); return setErr('Esse apelido já está em uso — escolhe outro (é único, como numa sala de poker).'); } }catch(e){}
     const {data,error}=await sb.auth.signUp({email:nMail.trim(),password:nP1});
     if(error){ setBusy(false); return setErr(/registered|already/i.test(error.message||'')?'Esse e-mail já tem conta — usa o "Entrar".':'Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
     if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui.'); return; }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
-    await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,password_changed:true,role:'solo'});
+    const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:nZap.replace(/\D/g,'')||null,password_changed:true,role:'solo'});
+    if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
     try{ await sb.rpc('create_solo_workspace',{ws_name:nome}); }catch(e){ console.error(e); }
     window.location.reload();
   };
@@ -986,6 +990,7 @@ function Login(){
         <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5,textAlign:'center'}}>Sua conta individual: banca, torneios e estatísticas — só seus, ninguém mais vê.</div>
         <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nNome} autoCapitalize="none" placeholder="Ex: rafa_grinder" onChange={e=>setNNome(e.target.value)}/></div>
         <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" autoCapitalize="none" autoComplete="email" value={nMail} onChange={e=>setNMail(e.target.value)}/></div>
+        <div><label style={labelStyle}>WhatsApp (opcional)</label><input style={inputStyle} inputMode="tel" placeholder="DDD + número" value={nZap} onChange={e=>setNZap(e.target.value)}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
@@ -1287,6 +1292,8 @@ function Dashboard({session,profile}){
 
   const loadAll=async()=>{
     try{
+      // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
+      try{ await sb.rpc('aplicar_ativacao'); }catch(e){}
       // carga UNIFORME: o RLS por workspace entrega a cada conta só o que é dela
       const [wsr,cfg,t,l,pw,w,hhr,cc]=await Promise.all([
         sb.from('workspaces').select('*'),
