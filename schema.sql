@@ -290,3 +290,81 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ============================================================
+--  FASE 1 (GrinderBank): MULTI-TENANT EM BANCO ÚNICO
+--  Cada conta = um "workspace" (a pool é o único tipo 'team';
+--  clientes são 'solo'). Este bloco SUBSTITUI as políticas
+--  pool/guest acima: rodado por cima delas, derruba pool_shared
+--  e instala o isolamento por associação de workspace.
+-- ============================================================
+create table if not exists public.workspaces (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  kind text not null default 'solo' check (kind in ('team','solo')),
+  plan text not null default 'founder',
+  created_at timestamptz not null default now()
+);
+create table if not exists public.workspace_members (
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'owner',
+  created_at timestamptz not null default now(),
+  primary key (workspace_id, user_id)
+);
+create or replace function public.my_workspaces() returns setof uuid
+language sql stable security definer set search_path=''
+as $$ select workspace_id from public.workspace_members where user_id = auth.uid() $$;
+revoke all on function public.my_workspaces() from public;
+grant execute on function public.my_workspaces() to authenticated;
+alter table public.workspaces enable row level security;
+alter table public.workspace_members enable row level security;
+drop policy if exists ws_self on public.workspaces;
+create policy ws_self on public.workspaces for all to authenticated
+  using (id in (select public.my_workspaces())) with check (id in (select public.my_workspaces()));
+drop policy if exists wsm_self on public.workspace_members;
+create policy wsm_self on public.workspace_members for select to authenticated
+  using (user_id = auth.uid());
+
+-- workspace_id em toda tabela de dados + trigger de preenchimento + RLS por associação
+create or replace function public.set_workspace_id() returns trigger
+language plpgsql security definer set search_path=''
+as $$ begin
+  if new.workspace_id is null then
+    select workspace_id into new.workspace_id from public.workspace_members where user_id=auth.uid() order by created_at limit 1;
+  end if;
+  return new;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats','hh_import_log','config_changes'] loop
+    execute format('alter table public.%I add column if not exists workspace_id uuid references public.workspaces(id);', t);
+    execute format('drop trigger if exists set_ws on public.%I;', t);
+    execute format('create trigger set_ws before insert on public.%I for each row execute function public.set_workspace_id();', t);
+    execute format('drop policy if exists pool_shared on public.%I;', t);
+    execute format('drop policy if exists ws_members on public.%I;', t);
+    execute format(
+      'create policy ws_members on public.%I for all to authenticated
+         using (workspace_id in (select public.my_workspaces()))
+         with check (workspace_id in (select public.my_workspaces()));', t);
+  end loop;
+end $$;
+
+-- únicos por workspace (clientes diferentes podem repetir nome/torneio/carteira)
+drop index if exists pool_config_single_row;
+create unique index if not exists pool_config_one_per_ws on public.pool_config (workspace_id);
+alter table public.hh_tournament_stats drop constraint if exists hh_tournament_stats_player_site_site_tournament_id_key;
+create unique index if not exists hh_stats_ws_key on public.hh_tournament_stats (workspace_id, player, site, site_tournament_id);
+alter table public.player_wallets drop constraint if exists player_wallets_player_wallet_key;
+create unique index if not exists player_wallets_ws_key on public.player_wallets (workspace_id, player, wallet);
+
+-- perfis: o próprio + colegas de workspace
+drop policy if exists pool_shared on public.player_profiles;
+drop policy if exists profile_self_or_teammates on public.player_profiles;
+create policy profile_self_or_teammates on public.player_profiles for all to authenticated
+  using (user_id=auth.uid() or exists (
+    select 1 from public.workspace_members m where m.user_id=player_profiles.user_id and m.workspace_id in (select public.my_workspaces())))
+  with check (user_id=auth.uid());
+-- NOTA: as sementes (workspace da pool com os 2 sócios, workspaces solo) são por instalação —
+-- ver migration workspaces_multitenant no projeto.
