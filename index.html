@@ -276,7 +276,7 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
-const HH_BUILD='2026-07-17.1';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
+const HH_BUILD='2026-07-17.2';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
 function hhParseHand(block,why){
   const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -1326,7 +1326,7 @@ function Dashboard({session,profile}){
   // saldo inicial de um jogador numa plataforma (upsert por player+wallet)
   const saveWallet = async (player,wallet,saldo_inicial)=>{
     setQuickEdit(null);
-    const {data,error}=await sb.from('player_wallets').upsert({player,wallet,saldo_inicial},{onConflict:'player,wallet'}).select().single();
+    const {data,error}=await sb.from('player_wallets').upsert({player,wallet,saldo_inicial},{onConflict:'workspace_id,player,wallet'}).select().single();
     if(error){alert('Não consegui salvar o saldo.');console.error(error);return;}
     setWallets(w=>{ const rest=w.filter(x=>!(x.player===player&&x.wallet===wallet)); return [...rest,data]; });
   };
@@ -1451,7 +1451,7 @@ function Dashboard({session,profile}){
     for(let i=0;i<paraSalvar.length;i+=100){
       const chunk=paraSalvar.slice(i,i+100);
       setImp(s=>({...s,prog:`Salvando torneios ${i+1}–${Math.min(i+100,paraSalvar.length)} de ${paraSalvar.length}…`}));
-      const {data,error}=await sb.from('hh_tournament_stats').upsert(chunk,{onConflict:'player,site,site_tournament_id'}).select();
+      const {data,error}=await sb.from('hh_tournament_stats').upsert(chunk,{onConflict:'workspace_id,player,site,site_tournament_id'}).select();
       if(error){ issues.push(`lote de torneios ${i+1}+: não salvou (${error.message})`); continue; }
       const recs=(data&&data.length===chunk.length)?data:chunk; saved+=chunk.length;
       setHh(list=>{ const novasKeys=new Set(recs.map(keyOf)); return [...recs,...list.filter(x=>!novasKeys.has(keyOf(x)))]; });
