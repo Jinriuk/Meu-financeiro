@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GrinderBank — gestão de banca e estatísticas do grinder brasileiro</title>
+<meta name="description" content="Controle sua banca de poker e veja suas estatísticas reais (GG e PokerStars) em português, em reais. Feito pro grinder de micro e low stakes."/>
+<meta name="theme-color" content="#4C3E92"/>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+  :root{--bg:#F5F0E6;--surface:#fff;--ink:#19231D;--soft:#57645A;--line:#E7DFCC;--p:#4C3E92;--psoft:#EAE7F8;--green:#1F7355;--greensoft:#E5EDE6;--gold:#A5782C;--goldsoft:#F1E6CD}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;line-height:1.65;font-variant-numeric:tabular-nums}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;line-height:1.15}
+  header{padding:18px 0}
+  .brand{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.02em}
+  .mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#5D4DAF,#4C3E92 55%,#332A69);display:grid;place-items:center;color:#fff;font-size:17px;font-weight:700}
+  .hero{padding:44px 0 30px;text-align:center}
+  .hero h1{font-size:clamp(1.9rem,5vw,3rem);margin:.2em auto .35em;max-width:720px}
+  .hero p{font-size:1.08rem;color:var(--soft);max-width:600px;margin:0 auto 22px}
+  .cta{display:inline-block;background:var(--p);color:#fff;font-weight:700;font-size:16px;padding:15px 30px;border-radius:14px;text-decoration:none;box-shadow:0 10px 26px -12px rgba(76,62,146,.55)}
+  .cta.sec{background:transparent;color:var(--p);border:1.5px solid var(--p);box-shadow:none;margin-left:10px}
+  .pill{display:inline-block;background:var(--psoft);color:var(--p);font-weight:700;font-size:12px;padding:5px 13px;border-radius:99px;letter-spacing:.04em}
+  section{padding:36px 0}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 1px 2px rgba(25,35,29,.05),0 12px 32px -20px rgba(25,35,29,.28)}
+  .card h3{margin:0 0 6px;font-size:17px}
+  .card p{margin:0;font-size:14px;color:var(--soft)}
+  .num{font-family:'Space Grotesk',sans-serif;font-weight:700}
+  .planos{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;max-width:720px;margin:0 auto}
+  .plano{background:var(--surface);border:1.5px solid var(--line);border-radius:20px;padding:26px;text-align:center}
+  .plano.pro{border-color:var(--p);position:relative}
+  .plano .tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--p);color:#fff;font-size:11px;font-weight:800;padding:4px 14px;border-radius:99px;letter-spacing:.05em}
+  .preco{font-family:'Space Grotesk',sans-serif;font-size:38px;font-weight:700;color:var(--p)}
+  .preco small{font-size:14px;color:var(--soft);font-weight:600}
+  .anual{font-size:12.5px;color:var(--soft);margin-bottom:14px}
+  ul.check{list-style:none;padding:0;margin:14px 0 20px;text-align:left;font-size:14px}
+  ul.check li{padding:5px 0 5px 26px;position:relative}
+  ul.check li::before{content:'✓';position:absolute;left:2px;color:var(--green);font-weight:800}
+  .btnp{display:block;background:var(--p);color:#fff;font-weight:700;padding:13px 0;border-radius:13px;text-decoration:none}
+  .btnp.off{background:var(--goldsoft);color:var(--gold)}
+  .faq details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:10px}
+  .faq summary{font-weight:700;cursor:pointer;font-size:14.5px}
+  .faq p{font-size:13.5px;color:var(--soft);margin:.6em 0 0}
+  footer{padding:34px 0 50px;border-top:1px solid var(--line);margin-top:30px;font-size:13px;color:var(--soft)}
+  footer a{color:var(--p);text-decoration:none;margin-right:16px}
+  .honesto{background:var(--greensoft);border-radius:16px;padding:18px 22px;max-width:660px;margin:0 auto;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand"><span class="mark">GB</span>GrinderBank</div></header>
+
+  <div class="hero">
+    <span class="pill">EM PORTUGUÊS · EM REAIS · 100% PÓS-SESSÃO (DENTRO DAS REGRAS DOS SITES)</span>
+    <h1>Sua banca sob controle. Suas estatísticas de verdade.</h1>
+    <p>O app do grinder brasileiro de micro e low stakes: gestão de banca profissional + estatísticas das suas mãos da <b>GG</b> e do <b>PokerStars</b> — sem pagar em dólar por ferramenta gringa.</p>
+    <a class="cta" href="index.html">Criar conta grátis</a><a class="cta sec" href="#planos">Ver planos</a>
+  </div>
+
+  <section>
+    <div class="cards">
+      <div class="card"><h3>🎯 Banca com disciplina</h3><p>Banca por site, stop loss diário e semanal, grade de buy-in (ABI) com histórico, resultado por semana e relatórios. O que separa reg de degen.</p></div>
+      <div class="card"><h3>📈 Stats sem mensalidade em dólar</h3><p>Importa o zip do PokerCraft ou os .txt do PokerStars e vê VPIP, PFR, 3-bet, c-bet, W$SD, AF e <b>bb/100 por posição</b> — calculados no seu navegador, as mãos nunca saem do seu controle.</p></div>
+      <div class="card"><h3>🎲 Sorte separada do jogo</h3><p>O EV dos seus all-ins diz quanto do resultado é variância e quanto é jogo. Chega de subir de grade no rush ou desistir no downswing.</p></div>
+      <div class="card"><h3>🧠 Leituras em português</h3><p>O app compara suas stats com faixas de reg e escreve o que precisa de atenção: "jogando mãos demais", "uma bala só", "sangrando no BB" — direto, na sua língua.</p></div>
+    </div>
+  </section>
+
+  <section id="planos">
+    <h2 style="text-align:center;font-size:1.7rem">Planos que cabem na banca de micro</h2>
+    <p style="text-align:center;color:var(--soft);margin:'-6px 0 24px';font-size:14.5px">Pra comparar: só o plano de entrada das ferramentas gringas custa ~R$ 270/mês.</p>
+    <div class="planos">
+      <div class="plano">
+        <h3>Gestão</h3>
+        <div class="preco">R$ 19,90<small>/mês</small></div>
+        <div class="anual">ou R$ 149/ano</div>
+        <ul class="check">
+          <li>Banca por site + movimentos</li>
+          <li>Torneios, diário e semanal</li>
+          <li>Stop loss e grade de buy-in</li>
+          <li>Ilimitado, sem pegadinha</li>
+        </ul>
+        <a class="btnp off" href="index.html">Começar grátis</a>
+      </div>
+      <div class="plano pro">
+        <span class="tag">MAIS ESCOLHIDO</span>
+        <h3>Pro</h3>
+        <div class="preco">R$ 49,90<small>/mês</small></div>
+        <div class="anual">ou R$ 399/ano (2 meses grátis)</div>
+        <ul class="check">
+          <li>Tudo do Gestão</li>
+          <li>Import de mãos GG + PokerStars</li>
+          <li>Estatísticas completas + bb/100 por posição</li>
+          <li>Sorte nos all-ins (EV real)</li>
+          <li>Leituras automáticas em PT-BR</li>
+          <li>Relatório completo em PDF</li>
+        </ul>
+        <a class="btnp off" href="index.html">Entrar na lista de fundadores</a>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:12.5px;color:var(--soft);margin-top:14px">Vendas abrindo em breve — os <b>30 primeiros fundadores</b> travam R$ 15/mês pra sempre.</p>
+  </section>
+
+  <section>
+    <div class="honesto"><b>Honestidade de reg:</b> o GrinderBank não é solver nem HUD em tempo real (isso é proibido na GG — e a gente joga dentro das regras). É a sua gestão e a sua revisão pós-sessão, no preço de um buy-in de micro. Suas mãos são processadas <b>no seu navegador</b>: pro nosso servidor sobem só os números agregados.</div>
+  </section>
+
+  <section class="faq">
+    <h2 style="font-size:1.4rem">Perguntas de quem é do jogo</h2>
+    <details><summary>Funciona com a GG? Como importo as mãos?</summary><p>Sim. No PokerCraft você baixa o hand history dos seus torneios (pode mandar o zip inteiro, até zip dentro de zip) e solta no app. PokerStars: o histórico local ou o transcript por e-mail, em português ou inglês. Reimportar nunca duplica nada.</p></details>
+    <details><summary>Isso é permitido pelos sites?</summary><p>É. Análise pós-sessão das suas próprias mãos é permitida pela GG e pelo PokerStars. O que os sites proíbem é HUD/assistência em tempo real — e o GrinderBank não faz isso.</p></details>
+    <details><summary>Meus dados ficam seguros?</summary><p>Cada conta é isolada no banco de dados (RLS do Postgres): é tecnicamente impossível um usuário ver dados de outro. As mãos brutas nem sobem — só agregados. Detalhes na <a href="privacidade.html">Política de Privacidade</a>.</p></details>
+    <details><summary>Posso cancelar quando quiser?</summary><p>Pode. Sem fidelidade, sem multa. Cancela e o acesso vale até o fim do período pago.</p></details>
+    <details><summary>Sou de time/pool. Serve pra nós?</summary><p>O modo time (banca compartilhada, make-up, split e saques) já existe e roda em produção. Fala com a gente que a gente libera pro seu time.</p></details>
+  </section>
+
+  <footer>
+    <div class="brand" style="font-size:16px;margin-bottom:10px"><span class="mark" style="width:28px;height:28px;font-size:13px">GB</span>GrinderBank</div>
+    <a href="termos.html">Termos de Uso</a><a href="privacidade.html">Privacidade</a><a href="index.html">Entrar</a>
+    <div style="margin-top:10px">GrinderBank — gestão de banca e estatísticas de poker. Não somos site de apostas e não movimentamos dinheiro de jogo.</div>
+  </footer>
+</div>
+</body>
+</html>
