@@ -98,6 +98,16 @@ const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
 // GrinderBank: planos do produto individual. UPGRADE_URL recebe o checkout (Kiwify) quando a conta existir.
 const UPGRADE_URL='';
 const PLAN_LABEL={free:'Grátis',gestao:'Gestão (R$ 19,90/mês)',pro:'Pro (R$ 49,90/mês)',founder:'Fundador (tudo liberado)',team:'Time'};
+// tour guiado do 1º acesso: navega tela a tela com um cartão explicando cada parte
+const TOUR_STEPS=[
+  {v:'painel',t:'Painel — a foto geral',x:'Sua banca atual, o resultado da semana e o lucro acumulado. É a primeira tela de todo dia.'},
+  {v:'torneios',t:'Torneios — a fonte de tudo',x:'Lança cada torneio aqui (buy-in, posição, prêmio). Diário, Semanal e a banca se atualizam sozinhos a partir disso.'},
+  {v:'diario',t:'Diário — o dia consolidado',x:'Quantos torneios, ABI médio e resultado de cada dia — com alerta de stop loss quando o dia passa do limite que você definiu.'},
+  {v:'semanal',t:'Semanal — o fechamento',x:'Resultado semana a semana e a régua do ABI: a disciplina que separa reg de degen.'},
+  {v:'banca',t:'Banca — o dinheiro',x:'Saldos separados por sala (adicione as salas que você joga nos Ajustes), aportes, retiradas e transferências.'},
+  {v:'stats',t:'Stats — suas estatísticas',x:'Importa suas mãos (zip do PokerCraft da GG ou .txt do PokerStars) e vê VPIP, bb/100 por posição, a sorte nos all-ins e as leituras automáticas em português.'},
+  {v:'config',t:'Ajustes — suas regras',x:'Seu nome, grade de buy-in, stop loss, salas e seu plano. Toda mudança fica registrada no histórico. Fim do tour — bom grind! 🃏'},
+];
 // "Outros" é o coringa: qualquer site/carteira que não seja um dos nomeados (inclusive null/desconhecido)
 // cai em "Outros" — assim nenhum torneio/movimento/saque some da visão por jogador/plataforma.
 const WALLET_NAMED = ['PokerStars','GG Poker','Reserva'];
@@ -1237,6 +1247,8 @@ function Dashboard({session,profile}){
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
   const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
+  const [askTour,setAskTour]=useState(false);      // convite pro tour guiado (1º acesso)
+  const [tour,setTour]=useState(0);                // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
   const solo = ws ? ws.kind==='solo' : !!(profile&&(profile.role==='guest'||profile.role==='solo'));
   const [config,setConfig]=useState(null);
@@ -1549,7 +1561,7 @@ function Dashboard({session,profile}){
   const daily = useMemo(()=>deriveDaily(tours),[tours]);
   const weeksByPlayer = useMemo(()=>config?computeWeeks(daily,config):{},[daily,config]);
 
-  if(needsSetup&&!config) return <SetupSolo profile={profile} ws={ws} onDone={()=>{setNeedsSetup(false); loadAll();}}/>;
+  if(needsSetup&&!config) return <SetupSolo profile={profile} ws={ws} onDone={()=>{setNeedsSetup(false); if(!localStorage.getItem('gb_tour')) setAskTour(true); loadAll();}}/>;
   if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
   /* ---- derivados ---- */
@@ -2444,6 +2456,7 @@ function Dashboard({session,profile}){
             <b>Pro</b> (R$ 49,90/mês): tudo da Gestão + import de mãos GG/PS, estatísticas completas, leituras automáticas e relatório em PDF.
           </div>
           {!canStats&&<button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{marginTop:12,padding:'12px 20px',borderRadius:13,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:14,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Fazer upgrade pro Pro':'Vendas abrem em breve'}</button>}
+          <button onClick={()=>{setTour(1); setView(TOUR_STEPS[0].v);}} style={{marginTop:12,marginLeft:8,padding:'12px 20px',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Rever o tour do sistema</button>
         </Card>}
         <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
@@ -2701,6 +2714,39 @@ function Dashboard({session,profile}){
         </div>
       </Card>
     </div>}
+
+    {/* convite pro tour guiado (1º acesso do solo) */}
+    {askTour&&<div style={{position:'fixed',inset:0,background:'rgba(20,18,30,.55)',backdropFilter:'blur(4px)',display:'grid',placeItems:'center',zIndex:65,padding:18}}>
+      <Card className="ftfade" style={{padding:26,maxWidth:400,width:'100%',textAlign:'center'}}>
+        <div style={{fontSize:38,marginBottom:4}}>👋</div>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:700,margin:'0 0 8px'}}>Quer um tour rápido?</h3>
+        <p style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6,margin:'0 0 16px'}}>Em 1 minuto eu te mostro cada tela e o que ela faz. Dá pra rever depois nos Ajustes.</p>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={()=>{setAskTour(false); localStorage.setItem('gb_tour','1');}} style={{flex:1,padding:'13px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}>Agora não</button>
+          <button onClick={()=>{setAskTour(false); setTour(1); setView(TOUR_STEPS[0].v);}} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Sim, me guia!</button>
+        </div>
+      </Card>
+    </div>}
+
+    {/* tour guiado: cartão fixo que navega tela a tela */}
+    {tour>0&&(()=>{ const i=tour-1, st=TOUR_STEPS[i], last=i===TOUR_STEPS.length-1;
+      const fim=()=>{ setTour(0); localStorage.setItem('gb_tour','1'); };
+      return <div style={{position:'fixed',left:0,right:0,bottom:'calc(84px + env(safe-area-inset-bottom))',display:'flex',justifyContent:'center',zIndex:66,padding:'0 14px',pointerEvents:'none'}}>
+        <Card className="ftfade" style={{pointerEvents:'auto',padding:'16px 18px',maxWidth:440,width:'100%',border:`1.5px solid ${P}`,boxShadow:'0 14px 40px -14px rgba(76,62,146,.5)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+            <span style={{fontSize:10.5,fontWeight:800,color:P,background:C.plumSoft,padding:'2px 9px',borderRadius:99}}>TOUR · {tour} de {TOUR_STEPS.length}</span>
+            <button onClick={fim} style={{marginLeft:'auto',border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:12,cursor:'pointer'}}>Pular tour</button>
+          </div>
+          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16.5,fontWeight:700}}>{st.t}</div>
+          <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.55,margin:'4px 0 12px'}}>{st.x}</div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{display:'flex',gap:4,flex:1}}>{TOUR_STEPS.map((_,d)=><span key={d} style={{width:7,height:7,borderRadius:99,background:d<=i?P:C.border}}/>)}</div>
+            {i>0&&<button onClick={()=>{setTour(tour-1); setView(TOUR_STEPS[i-1].v);}} style={{padding:'10px 16px',borderRadius:11,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>Voltar</button>}
+            <button onClick={()=>{ if(last){fim();} else {setTour(tour+1); setView(TOUR_STEPS[i+1].v);} }} style={{padding:'10px 20px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>{last?'Concluir ✓':'Próximo'}</button>
+          </div>
+        </Card>
+      </div>;
+    })()}
 
     {/* toasts flutuantes (avisos de tempo real, ex: fora da grade do outro jogador) */}
     {toasts.length>0&&<div style={{position:'fixed',top:'calc(12px + env(safe-area-inset-top))',left:0,right:0,display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:70,pointerEvents:'none',padding:'0 12px'}}>
