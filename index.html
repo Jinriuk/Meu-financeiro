@@ -926,6 +926,25 @@ function ChangePassModal({onClose}){
 function Login(){
   const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
+  // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
+  const [mode,setMode]=useState('login'); const [ok,setOk]=useState('');
+  const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
+  const criar=async()=>{
+    setErr(''); setOk('');
+    const nome=nNome.trim();
+    if(nome.length<2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
+    if(!nMail.includes('@')) return setErr('E-mail inválido.');
+    if(nP1.length<8) return setErr('Senha com pelo menos 8 caracteres.');
+    if(nP1!==nP2) return setErr('As duas senhas não conferem.');
+    setBusy(true);
+    const {data,error}=await sb.auth.signUp({email:nMail.trim(),password:nP1});
+    if(error){ setBusy(false); return setErr(/registered|already/i.test(error.message||'')?'Esse e-mail já tem conta — usa o "Entrar".':'Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
+    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui.'); return; }
+    // sessão já veio: cria perfil + workspace solo e recarrega limpo
+    await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,password_changed:true,role:'solo'});
+    try{ await sb.rpc('create_solo_workspace',{ws_name:nome}); }catch(e){ console.error(e); }
+    window.location.reload();
+  };
   const entrar=async()=>{
     setErr(''); setBusy(true);
     let mail=ident.trim();
@@ -942,12 +961,71 @@ function Login(){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
-      <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      {mode==='login'?<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        {ok&&<div style={{color:C.greenMid,fontSize:13.5,fontWeight:600,background:C.greenSoft,padding:'10px 12px',borderRadius:11}}>{ok}</div>}
         <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
+        <button onClick={()=>{setMode('signup');setErr('');setOk('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Criar conta grátis</button>
       </div>
+      :<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5,textAlign:'center'}}>Sua conta individual: banca, torneios e estatísticas — só seus, ninguém mais vê.</div>
+        <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nNome} autoCapitalize="none" placeholder="Ex: rafa_grinder" onChange={e=>setNNome(e.target.value)}/></div>
+        <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" autoCapitalize="none" autoComplete="email" value={nMail} onChange={e=>setNMail(e.target.value)}/></div>
+        <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
+        <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
+        {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <button onClick={criar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Criando…':'Criar minha conta'}</button>
+        <button onClick={()=>{setMode('login');setErr('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}>Já tenho conta</button>
+      </div>}
+    </Card>
+  </div>;
+}
+/* ---------- onboarding do usuário SOLO (3 passos: nome -> banca/sites -> pronto) ---------- */
+function SetupSolo({profile,ws,onDone}){
+  const [step,setStep]=useState(1);
+  const [nome,setNome]=useState((profile&&profile.nickname)||'');
+  const [banca,setBanca]=useState('');
+  const [sites,setSites]=useState(['GG Poker','PokerStars']);
+  const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
+  const toggleSite=s=>setSites(x=>x.includes(s)?x.filter(y=>y!==s):[...x,s]);
+  const concluir=async()=>{
+    setBusy(true); setErr('');
+    try{
+      if(!ws) await sb.rpc('create_solo_workspace',{ws_name:nome.trim()});
+      const {error}=await sb.from('pool_config').insert({player1_name:nome.trim(),player2_name:'',player_pct:1,
+        banca_inicial:parseValor(banca)||0,piso_minimo:0,makeup_max_recomendado:0,abi_max:2,abi_max_player1:2,abi_max_player2:0,
+        week_start_date:todayISO(),sites_permitidos:sites.length?sites:['GG Poker'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
+      if(error) throw error;
+      onDone();
+    }catch(e){ console.error(e); setBusy(false); setErr('Não consegui salvar. Tenta de novo.'); }
+  };
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
+      <div style={{fontSize:11,fontWeight:700,color:C.inkSoft,textTransform:'uppercase',letterSpacing:'.06em',textAlign:'center',marginBottom:6}}>Passo {step} de 3</div>
+      {step===1&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Como te chamamos?</h3>
+        <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nome} placeholder="Ex: rafa_grinder" onChange={e=>setNome(e.target.value)} autoFocus/></div>
+        {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <button onClick={()=>{ if(nome.trim().length<2){setErr('Pelo menos 2 letras.');return;} setErr(''); setStep(2); }} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Continuar</button>
+      </div>}
+      {step===2&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Sua banca hoje</h3>
+        <div><label style={labelStyle}>Banca inicial (US$) — pode ser 0</label><input style={inputStyle} inputMode="decimal" value={banca} placeholder="Ex: 150" onChange={e=>setBanca(e.target.value)}/></div>
+        <div><label style={labelStyle}>Onde você joga</label>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:6}}>
+            {['GG Poker','PokerStars','Outros'].map(s=><button key={s} onClick={()=>toggleSite(s)} style={{padding:'8px 13px',borderRadius:99,border:`1.5px solid ${sites.includes(s)?P:C.border}`,background:sites.includes(s)?C.plumSoft:'transparent',color:sites.includes(s)?P:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>{s}</button>)}
+          </div></div>
+        <button onClick={()=>setStep(3)} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Continuar</button>
+      </div>}
+      {step===3&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Tudo pronto, {nome.trim().split(' ')[0]}!</h3>
+        <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.7}}>✓ Lança seus torneios na aba <b>Torneios</b><br/>✓ Acompanha banca e semana no <b>Painel</b><br/>✓ Importa suas mãos na aba <b>Stats</b> pra ver suas estatísticas e leituras</div>
+        {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        <button onClick={concluir} disabled={busy} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Preparando…':'Começar a usar'}</button>
+      </div>}
     </Card>
   </div>;
 }
@@ -1099,7 +1177,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
 }
 
 // linha de uma semana (por jogador) no Semanal — SEM status de saque (isso só aparece na aba Saques)
-function WeekRow({w,player,config}){
+function WeekRow({w,player,config,solo}){
   const wkTorn=w.entries.reduce((s,e)=>s+num(e.qtd_torneios),0);
   const wkBuyins=w.entries.reduce((s,e)=>s+num(e.total_buyins),0);
   const wkEnt=w.entries.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
@@ -1109,12 +1187,12 @@ function WeekRow({w,player,config}){
       <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
       <span style={{fontWeight:800,fontSize:15,color:w.resultado>=0?C.greenMid:C.red}}>{w.resultado>=0?'+':'−'}{fmt(Math.abs(w.resultado))}</span>
     </div>
-    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
+    {!solo&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
       <div style={{color:C.inkSoft}}>Make-up: <b style={{color:C.ink}}>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</b></div>
       <div style={{color:C.inkSoft}}>Lucro divisível: <b style={{color:C.ink}}>{fmt(w.lucroDiv)}</b></div>
       <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
       <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
-    </div>
+    </div>}
     {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>}
   </div>;
 }
@@ -1138,14 +1216,14 @@ function SemanalGeral({geral,curMonth}){
   </Card>;
 }
 // card por jogador — semanas do mês atual abertas; meses anteriores em histórico recolhível
-function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual}){
+function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual,solo}){
   const [hist,setHist]=useState(false);
   const arr=[...weeks].reverse();
   const atuais=arr.filter(w=>w.week.slice(0,7)===curMonth), antigas=arr.filter(w=>w.week.slice(0,7)!==curMonth);
   return <Card style={{padding:20}}>
-    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3><span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span></div>
-    {atuais.length?atuais.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>):<Empty>Sem semanas neste mês ainda.</Empty>}
-    {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(w=><WeekRow key={w.week} w={w} player={player} config={config}/>)}</div>}</>}
+    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3>{!solo&&<span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span>}</div>
+    {atuais.length?atuais.map(w=><WeekRow key={w.week} w={w} player={player} config={config} solo={solo}/>):<Empty>Sem semanas neste mês ainda.</Empty>}
+    {antigas.length>0&&<><HistToggle n={antigas.length} open={hist} onClick={()=>setHist(h=>!h)}/>{hist&&<div style={{marginTop:4}}>{antigas.map(w=><WeekRow key={w.week} w={w} player={player} config={config} solo={solo}/>)}</div>}</>}
   </Card>;
 }
 
@@ -1153,17 +1231,18 @@ function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual}){
 function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
-  const isGuest=!!(profile&&profile.role==='guest');
-  const guestName=(profile&&profile.nickname)||'Convidado';
-  const GUEST_OK=['stats'];
+  const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
+  const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
+  // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
+  const solo = ws ? ws.kind==='solo' : !!(profile&&(profile.role==='guest'||profile.role==='solo'));
   const [config,setConfig]=useState(null);
   const [tours,setTours]=useState([]);
   const [ledger,setLedger]=useState([]);
   const [wallets,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
   const [wds,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [viewSel,setView]=useState(isGuest?'stats':'painel');
-  const view=isGuest&&!GUEST_OK.includes(viewSel)?'locked':viewSel;  // convidado: telas da pool viram 'locked'
+  const [viewSel,setView]=useState('painel');
+  const view=viewSel;
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [changePass,setChangePass]=useState(false);
@@ -1192,18 +1271,9 @@ function Dashboard({session,profile}){
 
   const loadAll=async()=>{
     try{
-      if(isGuest){
-        // convidado só carrega as PRÓPRIAS stats (o RLS devolve só as linhas dele);
-        // config local sintética — ele não enxerga a pool_config real
-        const hhr=await sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false});
-        setHh(hhr.data||[]);
-        setConfig({id:'guest',player1_name:guestName,player2_name:'',player_pct:0.5,abi_max:2,abi_max_player1:2,abi_max_player2:2,
-          piso_minimo:0,makeup_max_recomendado:0,makeup_inicial_player1:0,makeup_inicial_player2:0,stoploss_daily_buyins:0,
-          stoploss_weekly_pct:0,banca_inicial:0,week_start_date:todayISO(),sites_permitidos:['PokerStars','GG Poker'],
-          modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
-        return;
-      }
-      const [cfg,t,l,pw,w,hhr,cc]=await Promise.all([
+      // carga UNIFORME: o RLS por workspace entrega a cada conta só o que é dela
+      const [wsr,cfg,t,l,pw,w,hhr,cc]=await Promise.all([
+        sb.from('workspaces').select('*'),
         sb.from('pool_config').select('*').order('created_at',{ascending:true}),
         sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
         sb.from('bankroll_ledger').select('*').order('entry_date'),
@@ -1212,16 +1282,25 @@ function Dashboard({session,profile}){
         sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false}),
         sb.from('config_changes').select('*').order('created_at',{ascending:false}),
       ]);
+      const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
+      const ehSolo=myWs?myWs.kind==='solo':!!(profile&&(profile.role==='guest'||profile.role==='solo'));
       // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
       // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
       // "cria outra config" (isso já duplicou a tabela e bagunçou a banca uma vez).
       let c=(cfg.data&&cfg.data[0])||null;
+      if(!c&&!cfg.error&&ehSolo){
+        // solo sem config = primeiro uso: onboarding de 3 passos cria a config com o nome da pessoa
+        setNeedsSetup(true);
+        setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
+        return;
+      }
       if(!c&&!cfg.error){
         const r=await sb.from('pool_config').insert({}).select().single();
         c=r.data||null;
         if(!c){ const r2=await sb.from('pool_config').select('*').order('created_at',{ascending:true}); c=(r2.data&&r2.data[0])||null; }
       }
       if(!c){ console.error('pool_config indisponível, tentando de novo…',cfg.error); if(!configRef.current) setTimeout(loadAll,2500); return; }
+      setNeedsSetup(false);
       setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
     }catch(e){ console.error(e); }
   };
@@ -1466,12 +1545,13 @@ function Dashboard({session,profile}){
   const daily = useMemo(()=>deriveDaily(tours),[tours]);
   const weeksByPlayer = useMemo(()=>config?computeWeeks(daily,config):{},[daily,config]);
 
+  if(needsSetup&&!config) return <SetupSolo profile={profile} ws={ws} onDone={()=>{setNeedsSetup(false); loadAll();}}/>;
   if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
   /* ---- derivados ---- */
   CONFIG_CHANGES=chgs;   // deixa o histórico visível pro abiMaxFor (grade julgada pela época)
   const myName=(profile&&profile.nickname)||String(session.user.email||'').split('@')[0];
-  const players=isGuest?[guestName]:[config.player1_name, config.player2_name];
+  const players=solo?[config.player1_name]:[config.player1_name, config.player2_name];
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
   const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
@@ -1513,6 +1593,7 @@ function Dashboard({session,profile}){
   }).reverse();
 
   const lucroPoolAcum = players.reduce((s,p)=>s+(weeksByPlayer[p]||[]).reduce((a,w)=>a+w.partePool,0),0);
+  const resTotalGeral = players.reduce((s,p)=>s+(weeksByPlayer[p]||[]).reduce((a,w)=>a+w.resultado,0),0);  // lucro total (modo solo)
   const totalPago = sacadoTotal;
   /* a receber por jogador = tudo que já foi autorizado nas semanas − o que já foi pago */
   const aReceber={};
@@ -1622,7 +1703,7 @@ function Dashboard({session,profile}){
     {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
-  ];
+  ].filter(n=>!solo||!['saques','mensal'].includes(n.id));  // solo: só as abas essenciais (make-up/split/saques são coisa de pool)
 
   /* ---------- mensal ---------- */
   const monthList=[...new Set(allWeeks.map(w=>w.slice(0,7)).concat([todayISO().slice(0,7)]))].sort();
@@ -1723,18 +1804,9 @@ function Dashboard({session,profile}){
 
       {/* ---------------- PAINEL ---------------- */}
       {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
-      {view==='locked'&&<div className="ftfade" style={{display:'grid',placeItems:'center',minHeight:'60vh'}}>
-        <Card style={{padding:28,maxWidth:430,textAlign:'center'}}>
-          <div style={{fontSize:42,marginBottom:6}}>🔒</div>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 8px'}}>Área restrita da pool</h3>
-          <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6}}>Oi, {guestName}! Esta parte é exclusiva dos jogadores da pool. O seu acesso é às <b>suas estatísticas</b> e ao <b>seu relatório</b> — importa seus hand histories na aba Stats e aproveita.</div>
-          <button onClick={()=>setView('stats')} style={{marginTop:14,padding:'12px 20px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Ir para minhas Stats</button>
-        </Card>
-      </div>}
-
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca central da pool</div>
+          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>{solo?'Minha banca':'Banca central da pool'}</div>
           <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
           <div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Inicial {fmt(config.banca_inicial)}</span>
@@ -1759,12 +1831,13 @@ function Dashboard({session,profile}){
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={`semana até ${dLabel(CURWK)}`}/>
-          <Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>
-          <Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>
-          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro da pool (acum.)" value={fmt(lucroPoolAcum)} sub={`pago em saques: ${fmt(totalPago)}`}/>
+          {!solo&&<Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>}
+          {!solo&&<Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>}
+          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Lucro acumulado':'Lucro da pool (acum.)'} value={fmt(solo?resTotalGeral:lucroPoolAcum)} sub={solo?'desde o começo':`pago em saques: ${fmt(totalPago)}`}/>
+          {solo&&<Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios jogados" value={String(tours.length)} sub={`ABI médio ${fmt(tours.length?tours.reduce((s,t)=>s+totalInvestido(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0)}`}/>}
         </div>
 
-        <Card style={{padding:20}}>
+        {!solo&&<Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool. <b>"A receber"</b> é o acumulado (autorizado − pago); o quanto dá pra sacar <b>agora</b> respeita o piso — veja "Saque autorizado" acima.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
@@ -1777,7 +1850,7 @@ function Dashboard({session,profile}){
               <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
             </div>
           </div>
-        </Card>
+        </Card>}
 
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
@@ -1794,10 +1867,10 @@ function Dashboard({session,profile}){
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Resultado semanal por jogador</h3>
             <MultiBars data={resChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
           </Card>
-          <Card style={{padding:20}}>
+          {!solo&&<Card style={{padding:20}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Make-up por jogador</h3>
             <MultiBars data={makeChart} series={players.map((p,i)=>({name:p,color:PLAYER_COLORS[i]}))}/>
-          </Card>
+          </Card>}
           <Card style={{padding:20}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 14px'}}>Volume de torneios por semana</h3>
             <MultiBars data={volChart} series={[{name:'Torneios',color:C.greenMid}]}/>
@@ -1876,8 +1949,8 @@ function Dashboard({session,profile}){
             <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
           </div>
         </Card>
-        <SemanalGeral geral={geralSemana} curMonth={curMonthISO}/>
-        {players.map(p=><SemanalPlayer key={p} player={p} weeks={weeksByPlayer[p]||[]} config={config} curMonth={curMonthISO} makeUpAtual={curMakeUp[p]}/>)}
+        {!solo&&<SemanalGeral geral={geralSemana} curMonth={curMonthISO}/>}
+        {players.map(p=><SemanalPlayer key={p} player={p} weeks={weeksByPlayer[p]||[]} config={config} curMonth={curMonthISO} makeUpAtual={curMakeUp[p]} solo={solo}/>)}
       </div>}
 
       {/* ---------------- MENSAL ---------------- */}
@@ -2297,7 +2370,16 @@ function Dashboard({session,profile}){
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>Configurações da pool</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
-          {[
+          {(solo?[
+            {label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'},
+            {label:'ABI máximo',val:config.abi_max_player1,kind:'money',key:'abi_max_player1',show:fmt(config.abi_max_player1)},
+            {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
+            {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
+            {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
+            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
+          ]:[
             {label:'Jogador 1',val:config.player1_name,kind:'text',key:'player1_name'},
             {label:'Jogador 2',val:config.player2_name,kind:'text',key:'player2_name'},
             {label:'Fatia do jogador no lucro',val:config.player_pct,kind:'percent',key:'player_pct',show:pctFmt(num(config.player_pct)*100)},
@@ -2313,7 +2395,7 @@ function Dashboard({session,profile}){
             {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
-          ].map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
+          ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
             <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
           </div>)}
@@ -2368,7 +2450,7 @@ function Dashboard({session,profile}){
       const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
         <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
           <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
-          <span style={{fontSize:12,color:'#6B6455'}}>{isGuest?`estatísticas de ${guestName}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
+          <span style={{fontSize:12,color:'#6B6455'}}>{solo?`banca de ${config.player1_name}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
         </div>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
         <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
@@ -2447,7 +2529,7 @@ function Dashboard({session,profile}){
         const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0,net:0,hn:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); pos2[k].net+=num(pj[k].net); pos2[k].hn+=num(pj[k].hn); }); });
         const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2,bb100:hands2>0?S2('net_bb')/hands2*100:0});
         titulo=`Relatório do jogador — ${sp2}`;
-        sub=isGuest?`estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
+        sub=solo?`banca + estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
         const MET=[
           ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
           ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
@@ -2458,7 +2540,7 @@ function Dashboard({session,profile}){
         const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
         const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
         corpo=<>
-          {!isGuest&&<Sec t="Na pool — história completa">
+          {!solo&&<Sec t="Na pool — história completa">
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Na pool desde" value={pDias[0]?`${dLabel(pDias[0])}/${pDias[0].slice(0,4)}`:'—'}/>
               <Big label="Dias jogados" value={String(pDias.length)}/>
@@ -2480,7 +2562,7 @@ function Dashboard({session,profile}){
               Melhor dia: <b>{pBest?`${dLabel(pBest[0])} (${fmt(pBest[1])})`:'—'}</b> · Pior dia: <b>{pWorst?`${dLabel(pWorst[0])} (${fmt(pWorst[1])})`:'—'}</b> · Maior premiação: <b>{pMaior&&num(pMaior.prize)>0?`${pMaior.tournament_name||'torneio'} (${fmt(pMaior.prize)})`:'—'}</b>
             </div>
           </Sec>}
-          {!isGuest&&<Sec t="Últimas semanas na pool">
+          {!solo&&<Sec t="Últimas semanas na pool">
             {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
             <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
           </Sec>}
