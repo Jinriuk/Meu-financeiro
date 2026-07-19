@@ -1,8 +1,8 @@
 {
-  "name": "PoolGG — Pool de Poker",
-  "short_name": "PoolGG",
+  "name": "GrinderBank — banca e stats de poker",
+  "short_name": "GrinderBank",
   "lang": "pt-BR",
-  "description": "Pool de poker do Gabriel & Guedes: banca, make-up, split e saques.",
+  "description": "Gestão de banca e estatísticas de poker: torneios, stop loss, stats das mãos e leituras em português.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
