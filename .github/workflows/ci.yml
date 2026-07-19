@@ -1,0 +1,40 @@
+name: CI
+
+# Rede de proteção: em todo push/PR pro main, garante que o build compila e que o app
+# realmente inicia (sob a CSP de produção, sem erro de runtime). Sem isso, uma regressão
+# subia direto pro Vercel.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instala dependências
+        run: npm ci
+
+      - name: Compila o app (app.jsx -> app.js)
+        run: node build.js
+
+      - name: Confere que o app.js commitado está em dia com o app.jsx
+        run: |
+          git diff --exit-code app.js || {
+            echo "::error::app.js está desatualizado. Rode 'node build.js' e commite o app.js.";
+            exit 1;
+          }
+
+      - name: Instala o Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Teste de fumaça (build + CSP estrita)
+        run: node test/smoke.mjs

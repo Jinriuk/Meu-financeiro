@@ -6,8 +6,9 @@
 //      KIWIFY_PLAN_MAP      = JSON {"<product_id_ou_offer>":"gestao","<outro>":"pro"}
 //   Enquanto os secrets não existirem, o webhook responde 503 e não faz nada (fail-closed).
 //
-// Verificação: confere o ?token= contra KIWIFY_WEBHOOK_TOKEN (a Kiwify manda o token que
-// você definiu na URL). Idempotência: cada order_id+status entra uma vez em webhook_events.
+// Verificação: preferimos a ASSINATURA HMAC-SHA1 do corpo (?signature=, chave = KIWIFY_WEBHOOK_TOKEN)
+// — mais segura que token na URL, que vaza em log/referer. Se a Kiwify mandar só ?token=, cai nele.
+// Idempotência: cada order_id+status entra uma vez em webhook_events.
 // Deploy: supabase functions deploy kiwify-webhook --no-verify-jwt
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
@@ -23,16 +24,40 @@ const json = (b: unknown, s = 200) =>
 const ATIVA = ['order_approved', 'paid', 'approved', 'subscription_renewed', 'pix_paid'];
 const REVOGA = ['order_refunded', 'refunded', 'chargeback', 'subscription_canceled', 'canceled', 'subscription_late'];
 
+// HMAC-SHA1 do corpo com o token como chave (esquema de assinatura da Kiwify), em hex.
+async function hmacSha1Hex(key: string, msg: string): Promise<string> {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(key),
+    { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(msg));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+// comparação em tempo constante (evita timing attack)
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
   // fail-closed: sem os secrets configurados, não processa nada
   if (!TOKEN) return json({ error: 'webhook não configurado (defina KIWIFY_WEBHOOK_TOKEN)' }, 503);
   const url = new URL(req.url);
-  const token = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
-  if (token !== TOKEN) return json({ error: 'unauthorized' }, 401);
+  const raw = await req.text();
+
+  // Preferência: HMAC do CORPO (assinatura da Kiwify em ?signature=) — não vaza em log/referer
+  // como o token na URL. Se não vier assinatura, cai no token (?token=) como MVP.
+  const signature = url.searchParams.get('signature') || req.headers.get('x-kiwify-signature') || '';
+  if (signature) {
+    const expected = await hmacSha1Hex(TOKEN, raw);
+    if (!safeEqual(signature.toLowerCase(), expected)) return json({ error: 'assinatura inválida' }, 401);
+  } else {
+    const token = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
+    if (!safeEqual(token, TOKEN)) return json({ error: 'unauthorized' }, 401);
+  }
 
   let ev: any;
-  try { ev = await req.json(); } catch { return json({ error: 'json' }, 400); }
+  try { ev = JSON.parse(raw); } catch { return json({ error: 'json' }, 400); }
 
   // extração defensiva (a Kiwify varia o shape entre produtos; ajuste os caminhos se preciso)
   const status = String(ev?.order_status || ev?.webhook_event_type || ev?.event || ev?.status || '').toLowerCase();

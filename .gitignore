@@ -9,3 +9,7 @@ Thumbs.db
 # Segredos locais (caso um dia separe as chaves)
 .env
 .env.local
+
+# Dependências (instaladas via npm ci no CI e no build)
+node_modules/
+*.log

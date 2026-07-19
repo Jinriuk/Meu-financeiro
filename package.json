@@ -1,0 +1,21 @@
+{
+  "name": "grinderbank",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GrinderBank — gestão de banca e estatísticas de poker",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/run.js"
+  },
+  "devDependencies": {
+    "@babel/core": "7.26.0",
+    "@babel/preset-react": "7.26.3",
+    "@babel/standalone": "7.26.4",
+    "@supabase/supabase-js": "2.47.10",
+    "esbuild": "0.24.0",
+    "fflate": "0.8.2",
+    "playwright": "1.49.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
