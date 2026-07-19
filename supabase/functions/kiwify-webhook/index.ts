@@ -1,0 +1,68 @@
+// #2: webhook de cobrança da Kiwify. ESQUELETO PRONTO — falta só você:
+//   1) criar os produtos na Kiwify e configurar o webhook apontando pra esta URL
+//      https://pegrfpsyddzdvvuliugr.functions.supabase.co/kiwify-webhook?token=SEU_TOKEN
+//   2) definir os secrets no Supabase (Edge Functions -> Secrets):
+//      KIWIFY_WEBHOOK_TOKEN = o mesmo token que você põe na URL do webhook
+//      KIWIFY_PLAN_MAP      = JSON {"<product_id_ou_offer>":"gestao","<outro>":"pro"}
+//   Enquanto os secrets não existirem, o webhook responde 503 e não faz nada (fail-closed).
+//
+// Verificação: confere o ?token= contra KIWIFY_WEBHOOK_TOKEN (a Kiwify manda o token que
+// você definiu na URL). Idempotência: cada order_id+status entra uma vez em webhook_events.
+// Deploy: supabase functions deploy kiwify-webhook --no-verify-jwt
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const URL = Deno.env.get('SUPABASE_URL')!;
+const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const TOKEN = Deno.env.get('KIWIFY_WEBHOOK_TOKEN') || '';
+const PLAN_MAP = (() => { try { return JSON.parse(Deno.env.get('KIWIFY_PLAN_MAP') || '{}'); } catch { return {}; } })();
+
+const json = (b: unknown, s = 200) =>
+  new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
+
+// eventos que ATIVAM vs REVOGAM (nomes comuns da Kiwify; confirme no seu painel e ajuste)
+const ATIVA = ['order_approved', 'paid', 'approved', 'subscription_renewed', 'pix_paid'];
+const REVOGA = ['order_refunded', 'refunded', 'chargeback', 'subscription_canceled', 'canceled', 'subscription_late'];
+
+Deno.serve(async (req) => {
+  if (req.method !== 'POST') return json({ error: 'method' }, 405);
+  // fail-closed: sem os secrets configurados, não processa nada
+  if (!TOKEN) return json({ error: 'webhook não configurado (defina KIWIFY_WEBHOOK_TOKEN)' }, 503);
+  const url = new URL(req.url);
+  const token = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
+  if (token !== TOKEN) return json({ error: 'unauthorized' }, 401);
+
+  let ev: any;
+  try { ev = await req.json(); } catch { return json({ error: 'json' }, 400); }
+
+  // extração defensiva (a Kiwify varia o shape entre produtos; ajuste os caminhos se preciso)
+  const status = String(ev?.order_status || ev?.webhook_event_type || ev?.event || ev?.status || '').toLowerCase();
+  const email = String(ev?.Customer?.email || ev?.customer?.email || ev?.buyer?.email || ev?.email || '').toLowerCase();
+  const orderId = String(ev?.order_id || ev?.order_ref || ev?.id || ev?.subscription_id || '');
+  const productId = String(ev?.Product?.product_id || ev?.product_id || ev?.offer_id || ev?.plan_id || '');
+
+  if (!email || !orderId) return json({ error: 'payload sem email/order_id' }, 400);
+
+  const admin = createClient(URL, SERVICE);
+
+  // idempotência: order+status só processa uma vez
+  const eid = orderId + '|' + status;
+  const { error: dup } = await admin.from('webhook_events').insert({ provider: 'kiwify', event_id: eid });
+  if (dup) return json({ ok: true, deduped: true });   // conflito de PK = já processado
+
+  const ativa = ATIVA.some((s) => status.includes(s));
+  const revoga = REVOGA.some((s) => status.includes(s));
+
+  if (ativa) {
+    const plan = PLAN_MAP[productId] || PLAN_MAP['default'];
+    if (!plan) return json({ error: 'produto sem plano no KIWIFY_PLAN_MAP', productId }, 202);
+    const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true, action: 'ativado', plan });
+  }
+  if (revoga) {
+    const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true, action: 'revogado' });
+  }
+  return json({ ok: true, ignored: status });
+});

@@ -15,16 +15,17 @@
 <meta name="apple-mobile-web-app-title" content="GrinderBank" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
-<script>
-  window.SUPABASE_URL = "https://pegrfpsyddzdvvuliugr.supabase.co";
-  window.SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlZ3JmcHN5ZGR6ZHZ2dWxpdWdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0ODg1MDcsImV4cCI6MjA5OTA2NDUwN30.mOf0sFLmpQZ4I4Idi4xUg1bUuwwGSjZ3UPG_ag2Tneg";
-</script>
+<script src="config.js"></script>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/fflate@0.8.2/umd/index.js"></script><!-- lê os ZIPs de hand history -->
+<!-- libs HOSPEDADAS NO PRÓPRIO DOMÍNIO (vendor/): sem unpkg, sem ponto único de falha
+     externo nem risco de supply-chain (um pacote comprometido na CDN roubaria a sessão
+     de todos). Versões congeladas: react 18.3.1, react-dom 18.3.1, @babel/standalone
+     7.26.4, @supabase/supabase-js 2.47.10 (bundle único), fflate 0.8.2. -->
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/babel.min.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="vendor/fflate.js"></script><!-- lê os ZIPs de hand history -->
 
 
 <style>
@@ -936,6 +937,32 @@ function ChangePassModal({onClose}){
   );
 }
 
+/* ---------- excluir conta (LGPD): apaga TUDO no servidor e desloga ---------- */
+function DeleteAccountModal({nickname,onClose}){
+  const [txt,setTxt]=useState(''); const [busy,setBusy]=useState(false); const [err,setErr]=useState('');
+  const alvo='EXCLUIR';
+  const go=async()=>{
+    setErr(''); setBusy(true);
+    const {error}=await sb.rpc('excluir_minha_conta');
+    if(error){ setBusy(false); return setErr('Não consegui excluir agora. Tenta de novo em instantes.'); }
+    try{ localStorage.removeItem('gb_signup'); localStorage.removeItem('gb_tour'); }catch(e){}
+    await sb.auth.signOut(); window.location.reload();
+  };
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.55)',backdropFilter:'blur(3px)',display:'grid',placeItems:'center',zIndex:70,padding:18}}>
+    <Card onClick={e=>e.stopPropagation()} className="ftfade" style={{padding:26,maxWidth:420,width:'100%'}}>
+      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 8px',color:C.red}}>Excluir minha conta</h3>
+      <p style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6,margin:'0 0 14px'}}>Isso apaga <b>de forma definitiva</b> tudo que é seu: banca, torneios, estatísticas, mãos importadas e o cadastro. <b>Não dá pra desfazer.</b> Se você paga um plano, cancele antes na Kiwify.</p>
+      <label style={labelStyle}>Digite <b>{alvo}</b> pra confirmar</label>
+      <input style={{...inputStyle,marginBottom:12}} value={txt} onChange={e=>setTxt(e.target.value)} autoCapitalize="characters" placeholder={alvo}/>
+      {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600,marginBottom:10}}>{err}</div>}
+      <div style={{display:'flex',gap:10}}>
+        <button onClick={onClose} style={{flex:1,padding:'13px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Cancelar</button>
+        <button onClick={go} disabled={busy||txt.trim().toUpperCase()!==alvo} style={{flex:1,padding:'13px 0',borderRadius:13,border:'none',background:txt.trim().toUpperCase()===alvo?C.red:C.bg,color:txt.trim().toUpperCase()===alvo?'#fff':'#C3BBA9',fontWeight:700,fontSize:14.5,cursor:busy?'default':'pointer',opacity:busy?.7:1}}>{busy?'Excluindo…':'Excluir tudo'}</button>
+      </div>
+    </Card>
+  </div>;
+}
+
 /* ---------- login / não configurado ---------- */
 function Login(){
   const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
@@ -976,36 +1003,45 @@ function Login(){
   };
   const entrar=async()=>{
     setErr(''); setBusy(true);
-    let mail=ident.trim();
-    if(mail && !mail.includes('@')){
-      // nickname ou CPF -> resolve o e-mail no banco antes de autenticar
-      const {data,error}=await sb.rpc('email_for_login',{identifier:mail});
-      if(error||!data){ setBusy(false); setErr('Não encontrei esse usuário. Tenta com o e-mail.'); return; }
-      mail=data;
+    const id=ident.trim();
+    if(id.includes('@')){
+      const {error}=await sb.auth.signInWithPassword({email:id.toLowerCase(),password:pass});
+      setBusy(false);
+      if(error) setErr('Usuário ou senha incorretos.');
+      return;
     }
-    const {error}=await sb.auth.signInWithPassword({email:mail.toLowerCase(),password:pass});
+    // login por apelido: a resolução apelido->e-mail e a autenticação acontecem NO SERVIDOR
+    // (Edge Function) — o e-mail nunca volta pro navegador. Fecha a deanonimização apelido→e-mail.
+    let data,error;
+    try{ ({data,error}=await sb.functions.invoke('auth-alias',{body:{action:'login',identifier:id,password:pass}})); }
+    catch(e){ error=e; }
+    if(error||!data||!data.access_token){ setBusy(false); setErr('Usuário ou senha incorretos.'); return; }
+    const {error:se}=await sb.auth.setSession({access_token:data.access_token,refresh_token:data.refresh_token});
     setBusy(false);
-    if(error) setErr('Usuário ou senha incorretos.');
+    if(se) setErr('Não consegui abrir a sessão. Tenta de novo.');
   };
-  // esqueci a senha: manda o link de redefinição pro e-mail (aceita apelido/CPF no campo)
+  // esqueci a senha: manda o link de redefinição. Com apelido, a resolução é no servidor
+  // (Edge Function) e a resposta é sempre genérica — não confirma se a conta existe.
   const esqueci=async()=>{
     setErr(''); setOk('');
-    let mail=ident.trim().toLowerCase();
-    if(mail && !mail.includes('@')){
-      try{ const {data}=await sb.rpc('email_for_login',{identifier:mail}); if(data) mail=String(data).toLowerCase(); }catch(e){}
-    }
-    if(!/^\S+@\S+\.\S+$/.test(mail)) return setErr('Digita teu e-mail (ou apelido) no campo acima que eu mando o link.');
+    const id=ident.trim();
+    if(!id) return setErr('Digita teu e-mail ou apelido no campo acima que eu mando o link.');
     setBusy(true);
-    try{ await sb.auth.resetPasswordForEmail(mail,{redirectTo:window.location.origin+window.location.pathname}); }catch(e){}
+    const redirectTo=window.location.origin+window.location.pathname;
+    if(id.includes('@')){
+      try{ await sb.auth.resetPasswordForEmail(id.toLowerCase(),{redirectTo}); }catch(e){}
+    }else{
+      try{ await sb.functions.invoke('auth-alias',{body:{action:'reset',identifier:id,redirectTo}}); }catch(e){}
+    }
     setBusy(false);
-    setOk('Se esse e-mail tiver conta, o link de redefinição chega em instantes. Abre ele e escolhe a senha nova.');
+    setOk('Se esse cadastro existir, o link de redefinição chega em instantes. Abre ele e escolhe a senha nova.');
   };
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
       {mode==='login'?<div style={{display:'flex',flexDirection:'column',gap:14}}>
         {ok&&<div style={{color:C.greenMid,fontSize:13.5,fontWeight:600,background:C.greenSoft,padding:'10px 12px',borderRadius:11}}>{ok}</div>}
-        <div><label style={labelStyle}>E-mail, nickname ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>E-mail ou apelido</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
@@ -1115,7 +1151,7 @@ function Onboarding({session,profile,onDone}){
     <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
       <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 6px',textAlign:'center'}}>Primeiro acesso</h3>
-      <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail, nickname ou CPF</b>.</p>
+      <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail ou apelido</b>.</p>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
         <div><label style={labelStyle}>CPF (opcional, só números)</label><input style={inputStyle} inputMode="numeric" value={cpf} placeholder="00000000000" onChange={e=>setCpf(e.target.value)}/></div>
@@ -1306,6 +1342,7 @@ function Dashboard({session,profile}){
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [changePass,setChangePass]=useState(false);
+  const [delAcc,setDelAcc]=useState(false);       // modal de excluir conta (LGPD)
   const [alertDetail,setAlertDetail]=useState(null);
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
@@ -1328,6 +1365,8 @@ function Dashboard({session,profile}){
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
   const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...l,{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
+  // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
+  const sair=()=>{ try{ localStorage.removeItem('gb_signup'); }catch(e){} sb.auth.signOut(); };
 
   const loadAll=async()=>{
     try{
@@ -1859,7 +1898,7 @@ function Dashboard({session,profile}){
           <div style={{fontSize:12.5,color:P,fontWeight:700}}>Banca atual</div>
           <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
         </div>
-        <button onClick={()=>sb.auth.signOut()} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
+        <button onClick={sair} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
       </div>
     </aside>
 
@@ -1867,7 +1906,7 @@ function Dashboard({session,profile}){
       {/* header mobile */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
         <div className="bottomnav"><Brand small team={!solo}/></div>
-        <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
+        <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
       </div>
 
       {/* ---------------- PAINEL ---------------- */}
@@ -2511,6 +2550,10 @@ function Dashboard({session,profile}){
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
           <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
+          {solo&&<div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+            <div style={{fontSize:13,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Quer sair de vez? Você pode <b>excluir sua conta</b> e apagar todos os seus dados definitivamente (direito garantido pela LGPD).</div>
+            <button onClick={()=>setDelAcc(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.redSoft}`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5,cursor:'pointer'}}><IcoTrash s={17}/>Excluir minha conta</button>
+          </div>}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Backup (CSV)</h3>
@@ -2718,6 +2761,9 @@ function Dashboard({session,profile}){
 
     {/* modal trocar senha */}
     {changePass&&<ChangePassModal onClose={()=>setChangePass(false)}/>}
+
+    {/* modal excluir conta (LGPD) */}
+    {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
 
     {/* detalhe do alerta (fora da grade: quais torneios e de quem) */}
     {alertDetail&&<div onClick={()=>setAlertDetail(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
