@@ -1,5 +1,9 @@
 {
   "cleanUrls": true,
+  "framework": null,
+  "installCommand": "echo skip-install",
+  "buildCommand": "echo skip-build",
+  "outputDirectory": ".",
   "headers": [
     {
       "source": "/(.*)",

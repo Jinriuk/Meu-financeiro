@@ -1,2 +1,12 @@
-# não publicar o app antigo (legado) no deploy da pool
+# O deploy é 100% estático (app.js já vai commitado). Nada de build no Vercel.
+# Exclui as ferramentas de dev pra não virarem arquivos públicos nem pesar o deploy.
 legado
+node_modules
+package.json
+package-lock.json
+build.js
+app.jsx
+test
+supabase
+.github
+.gitignore
