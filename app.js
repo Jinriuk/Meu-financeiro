@@ -2810,6 +2810,7 @@ function Login() {
   const [nZap, setNZap] = useState('');
   const [nP1, setNP1] = useState('');
   const [nP2, setNP2] = useState('');
+  const [nPlan, setNPlan] = useState('pro'); // plano escolhido pro teste grátis de 15 dias
   const criar = async () => {
     setErr('');
     setOk('');
@@ -2839,11 +2840,13 @@ function Login() {
       }
     } catch (e) {}
     // guarda o cadastro pendente ANTES: se a conta só ativar depois (confirmação de e-mail)
-    // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho
+    // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho.
+    // Inclui o plano escolhido: o teste grátis de 15 dias é DESSE plano.
     try {
       localStorage.setItem('gb_signup', JSON.stringify({
         nickname: nome,
-        whatsapp: zap || null
+        whatsapp: zap || null,
+        plan: nPlan
       }));
     } catch (e) {}
     const {
@@ -2892,7 +2895,8 @@ function Login() {
     }
     try {
       await sb.rpc('create_solo_workspace', {
-        ws_name: nome
+        ws_name: nome,
+        plan_escolhido: nPlan
       });
     } catch (e) {
       console.error(e);
@@ -3126,7 +3130,70 @@ function Login() {
     value: nP2,
     onChange: e => setNP2(e.target.value),
     onEnter: criar
-  })), err && /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "Escolha seu plano \xB7 15 dias gr\xE1tis"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, [['gestao', 'Gestão', 'R$ 19,90/mês', 'banca, torneios e relatórios'], ['pro', 'Pro', 'R$ 49,90/mês', 'tudo + stats das mãos e leituras']].map(([v, nm, pr, desc]) => /*#__PURE__*/React.createElement("button", {
+    key: v,
+    type: "button",
+    onClick: () => setNPlan(v),
+    style: {
+      flex: 1,
+      padding: '12px 11px',
+      borderRadius: 13,
+      border: `1.5px solid ${nPlan === v ? P : C.border}`,
+      background: nPlan === v ? C.plumSoft : 'transparent',
+      cursor: 'pointer',
+      textAlign: 'left'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 14,
+      height: 14,
+      borderRadius: 99,
+      border: `2px solid ${nPlan === v ? P : C.border}`,
+      background: nPlan === v ? P : 'transparent',
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 800,
+      fontSize: 14.5,
+      color: nPlan === v ? P : C.ink
+    }
+  }, nm)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontWeight: 700,
+      fontSize: 13,
+      color: C.ink,
+      marginTop: 4
+    }
+  }, pr), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: C.inkSoft,
+      lineHeight: 1.3,
+      marginTop: 2
+    }
+  }, desc)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.inkSoft,
+      marginTop: 7,
+      lineHeight: 1.45
+    }
+  }, "Voc\xEA testa ", /*#__PURE__*/React.createElement("b", null, "15 dias gr\xE1tis"), ". Pra continuar depois disso, \xE9 s\xF3 assinar \u2014 a gente te avisa antes de acabar. Sem assinar, o acesso \xE9 bloqueado ao fim do teste.")), err && /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.red,
       fontSize: 13.5,
@@ -3198,10 +3265,17 @@ function SetupSolo({
     setBusy(true);
     setErr('');
     try {
-      // rpc pode acusar "já tem workspace" num retry após falha parcial — segue em frente
+      // rpc pode acusar "já tem workspace" num retry após falha parcial — segue em frente.
+      // plano do teste vem do cadastro (gb_signup); fallback 'gestao'.
+      let plano = 'gestao';
+      try {
+        const s = JSON.parse(localStorage.getItem('gb_signup') || 'null');
+        if (s && s.plan) plano = s.plan;
+      } catch (e) {}
       if (!ws) try {
         await sb.rpc('create_solo_workspace', {
-          ws_name: nome.trim()
+          ws_name: nome.trim(),
+          plan_escolhido: plano
         });
       } catch (e) {
         console.error(e);
@@ -3576,6 +3650,112 @@ function Onboarding({
       opacity: busy ? .7 : 1
     }
   }, busy ? 'Salvando...' : 'Salvar e entrar'))));
+}
+// teste grátis de 15 dias acabou: bloqueia o app inteiro até assinar (dados ficam guardados)
+function TrialBlocked({
+  planLabel,
+  onLogout,
+  onDelete
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center',
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 30,
+      width: '100%',
+      maxWidth: 430,
+      textAlign: 'center'
+    },
+    className: "ftfade"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(Brand, null)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 42,
+      marginBottom: 6
+    }
+  }, "\u23F3"), /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 22,
+      fontWeight: 700,
+      margin: '0 0 8px'
+    }
+  }, "Seu teste gr\xE1tis de 15 dias acabou"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft,
+      lineHeight: 1.65,
+      margin: '0 0 18px'
+    }
+  }, "Pra continuar com sua banca, torneios", planLabel === 'pro' ? ' e estatísticas' : '', ", \xE9 s\xF3 assinar. ", /*#__PURE__*/React.createElement("b", null, "Seus dados est\xE3o guardados"), " \u2014 voltam na hora que a assinatura entrar."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');
+    },
+    style: {
+      width: '100%',
+      padding: '15px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: UPGRADE_URL ? P : C.bg,
+      color: UPGRADE_URL ? '#fff' : C.inkSoft,
+      fontWeight: 700,
+      fontSize: 16,
+      cursor: UPGRADE_URL ? 'pointer' : 'default'
+    }
+  }, UPGRADE_URL ? 'Assinar e voltar' : 'Assinatura abre em breve'), /*#__PURE__*/React.createElement("button", {
+    onClick: () => window.location.reload(),
+    style: {
+      width: '100%',
+      marginTop: 10,
+      padding: '12px 0',
+      borderRadius: 13,
+      border: `1.5px solid ${C.border}`,
+      background: 'transparent',
+      color: P,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, "J\xE1 paguei \u2014 atualizar"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 16,
+      justifyContent: 'center',
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onLogout,
+    style: {
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: 'pointer',
+      textDecoration: 'underline'
+    }
+  }, "Sair"), /*#__PURE__*/React.createElement("button", {
+    onClick: onDelete,
+    style: {
+      border: 'none',
+      background: 'transparent',
+      color: C.red,
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: 'pointer',
+      textDecoration: 'underline'
+    }
+  }, "Excluir minha conta"))));
 }
 function NotConfigured() {
   return /*#__PURE__*/React.createElement("div", {
@@ -5098,6 +5278,11 @@ function Dashboard({
   // Sem workspace carregado, conta solo assume 'free' — falha de leitura nunca destrava paywall.
   const plan = ws ? ws.plan : solo ? 'free' : 'team';
   const canStats = !solo || ['pro', 'founder', 'team'].includes(plan);
+  // teste grátis de 15 dias: trial_ends_at no futuro = em teste; no passado = bloqueado.
+  // null = pool/fundador/assinatura ativa (nunca bloqueia).
+  const trialEnds = ws && ws.trial_ends_at ? Date.parse(ws.trial_ends_at) : null;
+  const trialDaysLeft = trialEnds != null ? Math.max(0, Math.ceil((trialEnds - Date.now()) / 86400000)) : null;
+  const trialExpired = trialEnds != null && Date.now() > trialEnds;
   const makeInit = {
     [players[0]]: num(config.makeup_inicial_player1),
     [players[1]]: num(config.makeup_inicial_player2)
@@ -5637,6 +5822,16 @@ function Dashboard({
       dias: [...new Set(dd.map(e => e.entry_date))].length
     };
   })();
+
+  // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
+  if (trialExpired) return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TrialBlocked, {
+    planLabel: plan,
+    onLogout: sair,
+    onDelete: () => setDelAcc(true)
+  }), delAcc && /*#__PURE__*/React.createElement(DeleteAccountModal, {
+    nickname: myName,
+    onClose: () => setDelAcc(false)
+  }));
   return /*#__PURE__*/React.createElement("div", {
     className: "wrap"
   }, /*#__PURE__*/React.createElement("aside", {
@@ -5746,7 +5941,53 @@ function Dashboard({
       flexDirection: 'column',
       gap: 16
     }
-  }, installCard && /*#__PURE__*/React.createElement(Card, {
+  }, trialDaysLeft != null && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: '13px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      border: `1.5px solid ${trialDaysLeft <= 3 ? C.gold : P}`,
+      background: trialDaysLeft <= 3 ? C.goldSoft : C.plumSoft
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 22,
+      flexShrink: 0
+    }
+  }, "\u23F3"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 14,
+      color: C.ink
+    }
+  }, "Teste gr\xE1tis \xB7 ", trialDaysLeft === 0 ? 'último dia' : `faltam ${trialDaysLeft} dia${trialDaysLeft !== 1 ? 's' : ''}`), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.4
+    }
+  }, "Assine o plano ", /*#__PURE__*/React.createElement("b", null, PLAN_LABEL[plan] ? PLAN_LABEL[plan].split(' (')[0] : plan), " pra n\xE3o perder o acesso quando o teste acabar.")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');else setView('config');
+    },
+    style: {
+      padding: '9px 14px',
+      borderRadius: 11,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: 'pointer',
+      flexShrink: 0
+    }
+  }, UPGRADE_URL ? 'Assinar' : 'Ver plano')), installCard && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: '14px 16px',
       display: 'flex',
@@ -8869,7 +9110,24 @@ function Dashboard({
     style: {
       color: P
     }
-  }, PLAN_LABEL[plan] || plan)), /*#__PURE__*/React.createElement("div", {
+  }, PLAN_LABEL[plan] || plan), trialDaysLeft != null && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 8,
+      padding: '3px 9px',
+      borderRadius: 99,
+      fontSize: 11.5,
+      fontWeight: 800,
+      color: trialDaysLeft <= 3 ? C.gold : P,
+      background: trialDaysLeft <= 3 ? C.goldSoft : C.plumSoft
+    }
+  }, "teste gr\xE1tis \xB7 ", trialDaysLeft === 0 ? 'último dia' : `${trialDaysLeft} dia${trialDaysLeft !== 1 ? 's' : ''}`)), trialDaysLeft != null && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginBottom: 8,
+      lineHeight: 1.5
+    }
+  }, "Seu teste gr\xE1tis dura ", /*#__PURE__*/React.createElement("b", null, "15 dias"), ". Quando acabar, o acesso \xE9 bloqueado at\xE9 voc\xEA assinar \u2014 seus dados ficam guardados."), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -10420,7 +10678,8 @@ function App() {
             } catch (e) {}
             try {
               await sb.rpc('create_solo_workspace', {
-                ws_name: pend.nickname
+                ws_name: pend.nickname,
+                plan_escolhido: pend.plan || 'gestao'
               });
             } catch (e) {
               console.error(e);

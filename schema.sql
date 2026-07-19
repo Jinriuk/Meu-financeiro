@@ -545,3 +545,35 @@ revoke all on function public.webhook_revogar_plano(text,text) from public, anon
 -- Edge Functions (código em supabase/functions/, deploy pelo painel/CLI):
 --   auth-alias     : login/reset por apelido resolvido no servidor (não vaza e-mail)  [#4]
 --   kiwify-webhook : recebe a cobrança da Kiwify, chama os RPCs acima                 [#2]
+
+-- ============================================================
+-- Teste grátis de 15 dias (2026-07-19). trial_ends_at:
+--   null = pool/fundador/assinatura ativa (nunca bloqueia)
+--   data = conta em teste -> app bloqueia quando now() passa da data
+-- ============================================================
+alter table public.workspaces add column if not exists trial_ends_at timestamptz;
+
+-- cria o workspace solo já com 15 dias de teste do plano escolhido
+drop function if exists public.create_solo_workspace(text);
+create or replace function public.create_solo_workspace(ws_name text, plan_escolhido text default 'gestao')
+returns uuid language plpgsql security definer set search_path='' as $$
+declare wid uuid; pl text;
+begin
+  if auth.uid() is null then raise exception 'não autenticado'; end if;
+  if exists (select 1 from public.workspace_members where user_id=auth.uid()) then
+    raise exception 'usuário já tem workspace';
+  end if;
+  pl := case when plan_escolhido in ('gestao','pro') then plan_escolhido else 'gestao' end;
+  insert into public.workspaces (name,kind,plan,trial_ends_at)
+    values (coalesce(nullif(trim(ws_name),''),'Meu grind'),'solo',pl, now() + interval '15 days')
+    returning id into wid;
+  insert into public.workspace_members (workspace_id,user_id,role) values (wid,auth.uid(),'owner');
+  return wid;
+end $$;
+revoke all on function public.create_solo_workspace(text,text) from public, anon;
+grant execute on function public.create_solo_workspace(text,text) to authenticated;
+
+-- ativar plano (manual/Kiwify) zera o trial (assinatura ativa); revogar expira na hora (bloqueia).
+-- Corpo completo em supabase/migrations/20260719_trial_15_dias.sql — aqui só a regra do trial:
+--   aplicar_ativacao / webhook_ativar_plano  -> update workspaces set plan=..., trial_ends_at=null
+--   webhook_revogar_plano                     -> update workspaces set plan='free', trial_ends_at=now()
