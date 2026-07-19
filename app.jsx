@@ -534,9 +534,11 @@ function NavBtn({Icon,label,active,onClick,mobile}){
 }
 const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
-// marca: clientes (solo) veem GrinderBank; a pool interna (team) mantém a identidade dela
+// marca: clientes (solo) veem a logo GrinderBank; a pool interna (team) mantém a ficha genérica
 const Brand = ({small,team}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
-  <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
+  {team
+    ? <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
+    : <img src="icon-192.png" alt="GrinderBank" width={small?34:38} height={small?34:38} style={{borderRadius:11,display:'block',boxShadow:'0 4px 12px -6px rgba(76,62,146,.5)'}}/>}
   <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?17:19,lineHeight:1,letterSpacing:'-0.02em'}}>{team?'Pool de Poker':'GrinderBank'}</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'staking · make-up · saques':'seu grind sob controle'}</div></div>
 </div>;
 function Badge({text}){

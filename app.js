@@ -1292,7 +1292,7 @@ const Empty = ({
     fontSize: 14
   }
 }, children);
-// marca: clientes (solo) veem GrinderBank; a pool interna (team) mantém a identidade dela
+// marca: clientes (solo) veem a logo GrinderBank; a pool interna (team) mantém a ficha genérica
 const Brand = ({
   small,
   team
@@ -1302,7 +1302,7 @@ const Brand = ({
     alignItems: 'center',
     gap: 10
   }
-}, /*#__PURE__*/React.createElement("div", {
+}, team ? /*#__PURE__*/React.createElement("div", {
   style: {
     width: small ? 34 : 38,
     height: small ? 34 : 38,
@@ -1315,7 +1315,17 @@ const Brand = ({
   }
 }, /*#__PURE__*/React.createElement(IcoChip, {
   s: small ? 19 : 21
-})), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+})) : /*#__PURE__*/React.createElement("img", {
+  src: "icon-192.png",
+  alt: "GrinderBank",
+  width: small ? 34 : 38,
+  height: small ? 34 : 38,
+  style: {
+    borderRadius: 11,
+    display: 'block',
+    boxShadow: '0 4px 12px -6px rgba(76,62,146,.5)'
+  }
+}), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
   style: {
     fontFamily: "'Space Grotesk',sans-serif",
     fontWeight: 700,
