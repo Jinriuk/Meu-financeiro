@@ -259,7 +259,8 @@ create policy pool_shared on public.player_profiles
   using (public.my_role()='pool' or user_id=auth.uid())
   with check (public.my_role()='pool' or user_id=auth.uid());
 
--- Traduz nickname/CPF/e-mail -> e-mail do auth; a tela de login chama como anon
+-- Traduz nickname/CPF/e-mail -> e-mail do auth. Mantida por compat, mas NÃO exposta:
+-- o login por apelido é resolvido no servidor pela Edge Function auth-alias (não vaza e-mail).
 create or replace function public.email_for_login(identifier text)
 returns text
 language sql stable security definer
@@ -271,8 +272,8 @@ as $$
      or (p.cpf is not null and p.cpf = regexp_replace(identifier, '\D', '', 'g'))
   limit 1;
 $$;
-revoke all on function public.email_for_login(text) from public;
-grant execute on function public.email_for_login(text) to anon, authenticated;
+-- #4 (P1): fora do alcance de anon/authenticated — fecha deanonimização apelido/CPF->e-mail
+revoke all on function public.email_for_login(text) from public, anon, authenticated;
 
 -- ============================================================
 --  Tempo real: o lançamento de um jogador aparece na hora
@@ -302,7 +303,7 @@ create table if not exists public.workspaces (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   kind text not null default 'solo' check (kind in ('team','solo')),
-  plan text not null default 'founder',
+  plan text not null default 'free',   -- fail-closed: workspace fora do RPC nasce sem plano pago
   created_at timestamptz not null default now()
 );
 create table if not exists public.workspace_members (
@@ -317,6 +318,27 @@ language sql stable security definer set search_path=''
 as $$ select workspace_id from public.workspace_members where user_id = auth.uid() $$;
 revoke all on function public.my_workspaces() from public;
 grant execute on function public.my_workspaces() to authenticated;
+
+-- porta de entrada do cadastro self-service: cria o workspace SOLO do usuário logado.
+-- security definer (o usuário novo ainda não é membro de nada); trava: 1 conta = 1 workspace.
+create or replace function public.create_solo_workspace(ws_name text) returns uuid
+language plpgsql security definer set search_path=''
+as $$
+declare wid uuid;
+begin
+  if auth.uid() is null then raise exception 'não autenticado'; end if;
+  if exists (select 1 from public.workspace_members where user_id=auth.uid()) then
+    raise exception 'usuário já tem workspace';
+  end if;
+  insert into public.workspaces (name,kind,plan)
+    values (coalesce(nullif(trim(ws_name),''),'Meu grind'),'solo','free')
+    returning id into wid;
+  insert into public.workspace_members (workspace_id,user_id,role) values (wid,auth.uid(),'owner');
+  return wid;
+end $$;
+revoke all on function public.create_solo_workspace(text) from public, anon;
+grant execute on function public.create_solo_workspace(text) to authenticated;
+
 alter table public.workspaces enable row level security;
 alter table public.workspace_members enable row level security;
 drop policy if exists ws_self on public.workspaces;
