@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<title>Pool de Poker · Gabriel & Guedes</title>
+<title>GrinderBank — gestão de banca e stats de poker</title>
 <meta name="theme-color" content="#4C3E92" />
 
 <!-- PWA: na tela inicial vira o app "PoolGG", abrindo em tela cheia -->
@@ -12,7 +12,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-title" content="PoolGG" />
+<meta name="apple-mobile-web-app-title" content="GrinderBank" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
 <script>
@@ -613,9 +613,10 @@ function NavBtn({Icon,label,active,onClick,mobile}){
 }
 const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
-const Brand = ({small}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
+// marca: clientes (solo) veem GrinderBank; a pool interna (team) mantém a identidade dela
+const Brand = ({small,team}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
   <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
-  <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?17:19,lineHeight:1,letterSpacing:'-0.02em'}}>Pool de Poker</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>staking · make-up · saques</div></div>
+  <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?17:19,lineHeight:1,letterSpacing:'-0.02em'}}>{team?'Pool de Poker':'GrinderBank'}</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'staking · make-up · saques':'seu grind sob controle'}</div></div>
 </div>;
 function Badge({text}){
   const t=STATUS_TONE[text]||{tone:C.inkSoft,bg:C.bg};
@@ -945,20 +946,31 @@ function Login(){
   const criar=async()=>{
     setErr(''); setOk('');
     const nome=nNome.trim();
+    const mail=nMail.trim().toLowerCase();
+    const zap=nZap.replace(/\D/g,'');
     if(nome.length<2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
-    if(!nMail.includes('@')) return setErr('E-mail inválido.');
+    if(nome.length>30) return setErr('Apelido muito longo — no máximo 30 caracteres.');
+    // o apelido também é login: com @ confundiria com e-mail, e só números com CPF
+    if(nome.includes('@')) return setErr('O apelido não pode ter @ (é ele que você usa pra entrar).');
+    if(/^\d+$/.test(nome)) return setErr('O apelido não pode ser só números — mistura com letras.');
+    if(!/^\S+@\S+\.\S+$/.test(mail)) return setErr('E-mail inválido.');
+    if(zap&&(zap.length<10||zap.length>13)) return setErr('WhatsApp incompleto — usa DDD + número (ou deixa em branco).');
     if(nP1.length<8) return setErr('Senha com pelo menos 8 caracteres.');
     if(nP1!==nP2) return setErr('As duas senhas não conferem.');
     setBusy(true);
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
     try{ const {data:livre}=await sb.rpc('nickname_disponivel',{nick:nome});
       if(livre===false){ setBusy(false); return setErr('Esse apelido já está em uso — escolhe outro (é único, como numa sala de poker).'); } }catch(e){}
-    const {data,error}=await sb.auth.signUp({email:nMail.trim(),password:nP1});
+    // guarda o cadastro pendente ANTES: se a conta só ativar depois (confirmação de e-mail)
+    // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho
+    try{ localStorage.setItem('gb_signup',JSON.stringify({nickname:nome,whatsapp:zap||null})); }catch(e){}
+    const {data,error}=await sb.auth.signUp({email:mail,password:nP1});
     if(error){ setBusy(false); return setErr(/registered|already/i.test(error.message||'')?'Esse e-mail já tem conta — usa o "Entrar".':'Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
-    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui.'); return; }
+    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.'); return; }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
-    const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:nZap.replace(/\D/g,'')||null,password_changed:true,role:'solo'});
+    const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
     if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
+    if(!pe){ try{ localStorage.removeItem('gb_signup'); }catch(e){} }
     try{ await sb.rpc('create_solo_workspace',{ws_name:nome}); }catch(e){ console.error(e); }
     window.location.reload();
   };
@@ -971,9 +983,22 @@ function Login(){
       if(error||!data){ setBusy(false); setErr('Não encontrei esse usuário. Tenta com o e-mail.'); return; }
       mail=data;
     }
-    const {error}=await sb.auth.signInWithPassword({email:mail,password:pass});
+    const {error}=await sb.auth.signInWithPassword({email:mail.toLowerCase(),password:pass});
     setBusy(false);
     if(error) setErr('Usuário ou senha incorretos.');
+  };
+  // esqueci a senha: manda o link de redefinição pro e-mail (aceita apelido/CPF no campo)
+  const esqueci=async()=>{
+    setErr(''); setOk('');
+    let mail=ident.trim().toLowerCase();
+    if(mail && !mail.includes('@')){
+      try{ const {data}=await sb.rpc('email_for_login',{identifier:mail}); if(data) mail=String(data).toLowerCase(); }catch(e){}
+    }
+    if(!/^\S+@\S+\.\S+$/.test(mail)) return setErr('Digita teu e-mail (ou apelido) no campo acima que eu mando o link.');
+    setBusy(true);
+    try{ await sb.auth.resetPasswordForEmail(mail,{redirectTo:window.location.origin+window.location.pathname}); }catch(e){}
+    setBusy(false);
+    setOk('Se esse e-mail tiver conta, o link de redefinição chega em instantes. Abre ele e escolhe a senha nova.');
   };
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
@@ -984,6 +1009,7 @@ function Login(){
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
+        <button onClick={esqueci} disabled={busy} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:13,cursor:'pointer',padding:'2px 0',textDecoration:'underline'}}>Esqueci minha senha</button>
         <button onClick={()=>{setMode('signup');setErr('');setOk('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Criar conta grátis</button>
       </div>
       :<div style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -1012,11 +1038,16 @@ function SetupSolo({profile,ws,onDone}){
   const concluir=async()=>{
     setBusy(true); setErr('');
     try{
-      if(!ws) await sb.rpc('create_solo_workspace',{ws_name:nome.trim()});
-      const {error}=await sb.from('pool_config').insert({player1_name:nome.trim(),player2_name:'',player_pct:1,
-        banca_inicial:parseValor(banca)||0,piso_minimo:0,makeup_max_recomendado:0,abi_max:2,abi_max_player1:2,abi_max_player2:0,
-        week_start_date:todayISO(),sites_permitidos:sites.length?sites:['GG Poker'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
-      if(error) throw error;
+      // rpc pode acusar "já tem workspace" num retry após falha parcial — segue em frente
+      if(!ws) try{ await sb.rpc('create_solo_workspace',{ws_name:nome.trim()}); }catch(e){ console.error(e); }
+      // NUNCA cria uma segunda config: se um retry chegar aqui com a config já salva, só conclui
+      const {data:jaTem}=await sb.from('pool_config').select('id').limit(1);
+      if(!jaTem||!jaTem.length){
+        const {error}=await sb.from('pool_config').insert({player1_name:nome.trim(),player2_name:'',player_pct:1,
+          banca_inicial:parseValor(banca)||0,piso_minimo:0,makeup_max_recomendado:0,abi_max:2,abi_max_player1:2,abi_max_player2:0,
+          week_start_date:todayISO(),sites_permitidos:sites.length?sites:['GG Poker'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
+        if(error) throw error;
+      }
       onDone();
     }catch(e){ console.error(e); setBusy(false); setErr('Não consegui salvar. Tenta de novo.'); }
   };
@@ -1060,16 +1091,24 @@ function Onboarding({session,profile,onDone}){
     const nickname=nick.trim();
     const cpfDigits=cpf.replace(/\D/g,'');
     if(nickname.length<2) return setErr('Escolhe um nickname com pelo menos 2 letras.');
+    if(nickname.length>30) return setErr('Nickname muito longo — no máximo 30 caracteres.');
+    if(nickname.includes('@')) return setErr('O nickname não pode ter @ (é ele que você usa pra entrar).');
+    if(/^\d+$/.test(nickname)) return setErr('O nickname não pode ser só números — mistura com letras.');
     if(cpfDigits && cpfDigits.length!==11) return setErr('CPF precisa ter 11 números (ou deixa em branco).');
     if(p1.length<8) return setErr('A senha nova precisa de pelo menos 8 caracteres.');
     if(p1!==p2) return setErr('As duas senhas não conferem.');
     setBusy(true);
+    // nickname é único como numa sala de poker — só checa se está trocando (o próprio não conta)
+    if(!(profile&&profile.nickname&&profile.nickname.toLowerCase()===nickname.toLowerCase())){
+      try{ const {data:livre}=await sb.rpc('nickname_disponivel',{nick:nickname});
+        if(livre===false){ setBusy(false); return setErr('Esse nickname já está em uso — escolhe outro (é único, como numa sala de poker).'); } }catch(e){}
+    }
     const {error:e1}=await sb.auth.updateUser({password:p1});
     if(e1){ setBusy(false); return setErr('Não consegui trocar a senha. Tenta de novo.'); }
-    const row={user_id:session.user.id,email:session.user.email,nickname,cpf:cpfDigits||null,password_changed:true};
+    const row={user_id:session.user.id,email:session.user.email,nickname,cpf:cpfDigits||null,password_changed:true,...(profile?{}:{role:'solo'})};
     const {data,error:e2}=await sb.from('player_profiles').upsert(row).select().single();
     setBusy(false);
-    if(e2) return setErr(e2.code==='23505'?'Esse nickname ou CPF já é do outro jogador.':'Não consegui salvar o cadastro. Tenta de novo.');
+    if(e2) return setErr(e2.code==='23505'?'Esse nickname ou CPF já está em uso — confere e tenta outro.':'Não consegui salvar o cadastro. Tenta de novo.');
     onDone(data);
   };
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
@@ -1396,9 +1435,10 @@ function Dashboard({session,profile}){
     setter(list.map(x=>x.id===id?updated:x)); setEditing(null);
   };
   const saveConfig = async patch=>{
-    const next={...config,...patch}; setConfig(next); setQuickEdit(null);
+    const prev=config, next={...config,...patch}; setConfig(next); setQuickEdit(null);
     const {error}=await sb.from('pool_config').update(patch).eq('id',config.id);
-    if(error){alert('Não consegui salvar a configuração.');console.error(error);}
+    if(error){alert('Não consegui salvar a configuração — nada foi alterado.');console.error(error);setConfig(prev);return false;}
+    return true;
   };
   // mudança nos Ajustes: mostra "de X para Y", pede confirmação, registra no histórico e o
   // realtime avisa o outro jogador. Nada muda em silêncio.
@@ -1419,7 +1459,8 @@ function Dashboard({session,profile}){
   const confirmSaveConfig=async()=>{
     const {row,nv,oldShow,newShow}=cfgConfirm; setCfgConfirm(null);
     const oldRaw=config[row.key];
-    await saveConfig({[row.key]:nv});
+    const salvou=await saveConfig({[row.key]:nv});
+    if(!salvou) return;   // não registra no histórico uma mudança que o banco não aceitou
     const resumo=`${row.label}: ${oldShow} → ${newShow}`;
     const {data,error}=await sb.from('config_changes').insert({field:row.key,old_value:String(oldRaw),new_value:String(nv),resumo,changed_by_name:myName}).select();
     if(error){ console.error('config_changes',error); return; }
@@ -1576,7 +1617,8 @@ function Dashboard({session,profile}){
   const myName=(profile&&profile.nickname)||String(session.user.email||'').split('@')[0];
   const players=solo?[config.player1_name]:[config.player1_name, config.player2_name];
   // plano do workspace: quem pode usar as Stats (Pro/fundador/time). Gestão de banca é de todos.
-  const plan=ws?ws.plan:'team';
+  // Sem workspace carregado, conta solo assume 'free' — falha de leitura nunca destrava paywall.
+  const plan=ws?ws.plan:(solo?'free':'team');
   const canStats=!solo||['pro','founder','team'].includes(plan);
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
@@ -1810,7 +1852,7 @@ function Dashboard({session,profile}){
   return <div className="wrap">
     {/* sidebar desktop */}
     <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
-      <Brand/><div style={{height:6}}/>
+      <Brand team={!solo}/><div style={{height:6}}/>
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)}/>)}
       <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
         <div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
@@ -1824,7 +1866,7 @@ function Dashboard({session,profile}){
     <main style={{flex:1,padding:'22px 16px calc(112px + env(safe-area-inset-bottom))',maxWidth:'100%',minWidth:0}}>
       {/* header mobile */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
-        <div className="bottomnav"><Brand small/></div>
+        <div className="bottomnav"><Brand small team={!solo}/></div>
         <button className="mobile-only" onClick={()=>sb.auth.signOut()} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
       </div>
 
@@ -2155,7 +2197,7 @@ function Dashboard({session,profile}){
             const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
             const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
             const coachTxt=()=>[
-              `Análise de poker — ${sp} (PoolGG)`,
+              `Análise de poker — ${sp} (${solo?'GrinderBank':'PoolGG'})`,
               `Período: ${periodoLabel} · ${hands} mãos · ${rows.length} torneios`,
               `bb/100 (fichas): ${fmtBB(bb100)}`,
               `Sorte all-in: ${fmtBB(sorte)} (real ${fmtBB(netbb)} vs EV ${fmtBB(evbb)}) em ${S('allin_cnt')} all-ins`,
@@ -2168,7 +2210,7 @@ function Dashboard({session,profile}){
               'Por posição (mãos · VPIP · PFR · bb/100): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%·${pos[k].hn>0?(pos[k].net/pos[k].hn*100).toFixed(1):'—'}`).join(' | '),
               'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
               '',
-              'Contexto: jogador de MTT micro/low numa pool 50/50 com make-up. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.',
+              `Contexto: jogador de MTT micro/low ${solo?'com banca própria':'numa pool 50/50 com make-up'}. Analise como coach: os 3 maiores vazamentos, o que treinar primeiro e o impacto esperado no winrate.`,
             ].join('\n');
             const copiar=async()=>{ const tx=coachTxt(); try{ await navigator.clipboard.writeText(tx); }catch(e){ const ta=document.createElement('textarea'); ta.value=tx; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } setCopied(true); setTimeout(()=>setCopied(false),2500); };
             const worst=insights[0]?TONE[insights[0].tone]:{c:C.inkSoft,bg:C.bg};
@@ -2505,7 +2547,7 @@ function Dashboard({session,profile}){
       const hoje=todayISO();
       const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
         <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-          <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>PoolGG</span>
+          <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>{solo?'GrinderBank':'PoolGG'}</span>
           <span style={{fontSize:12,color:'#6B6455'}}>{solo?`banca de ${config.player1_name}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
         </div>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
@@ -2654,7 +2696,7 @@ function Dashboard({session,profile}){
         <div style={{maxWidth:820,margin:'0 auto',padding:'22px 20px 60px',color:'#1E2A24'}}>
           <Hdr title={titulo} sub={sub}/>
           {corpo}
-          <div style={{marginTop:22,paddingTop:10,borderTop:'1px solid #E7E1D2',fontSize:10.5,color:'#6B6455'}}>PoolGG · gerado pelo app · valores financeiros vêm dos lançamentos; estatísticas de jogo vêm dos hand histories importados.</div>
+          <div style={{marginTop:22,paddingTop:10,borderTop:'1px solid #E7E1D2',fontSize:10.5,color:'#6B6455'}}>{solo?'GrinderBank':'PoolGG'} · gerado pelo app · valores financeiros vêm dos lançamentos; estatísticas de jogo vêm dos hand histories importados.</div>
         </div>
       </div>;
     })()}
@@ -2769,10 +2811,11 @@ function Dashboard({session,profile}){
 function App(){
   const [session,setSession]=useState(undefined);
   const [profile,setProfile]=useState(undefined);
+  const [recovery,setRecovery]=useState(false);   // veio pelo link "esqueci minha senha"
   useEffect(()=>{
     if(!sb) return;
     sb.auth.getSession().then(({data})=>setSession(data.session));
-    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s));
+    const {data:sub}=sb.auth.onAuthStateChange((e,s)=>{ setSession(s); if(e==='PASSWORD_RECOVERY') setRecovery(true); });
     return ()=>sub.subscription.unsubscribe();
   },[]);
   // primeiro acesso: carrega o perfil do jogador; sem senha trocada, cai no cadastro
@@ -2784,6 +2827,22 @@ function App(){
       if(!on) return;
       // se o e-mail foi trocado no painel do Supabase, atualiza o espelho usado pelo login
       if(data && data.email!==session.user.email) sb.from('player_profiles').update({email:session.user.email}).eq('user_id',session.user.id).then(()=>{});
+      // cadastro pendente (conta confirmada por e-mail, ou passo do cadastro que falhou):
+      // completa perfil + workspace sozinho com o apelido/WhatsApp guardados no aparelho
+      if(!data){
+        let pend=null; try{ pend=JSON.parse(localStorage.getItem('gb_signup')||'null'); }catch(e){}
+        if(pend&&pend.nickname){
+          const {data:novo,error:pe}=await sb.from('player_profiles').insert({user_id:session.user.id,email:session.user.email,nickname:pend.nickname,whatsapp:pend.whatsapp||null,password_changed:true,role:'solo'}).select().single();
+          if(!pe&&novo){
+            try{ localStorage.removeItem('gb_signup'); }catch(e){}
+            try{ await sb.rpc('create_solo_workspace',{ws_name:pend.nickname}); }catch(e){ console.error(e); }
+            if(on) setProfile(novo);
+            return;
+          }
+          // apelido foi levado nesse meio-tempo: solta o pendente e deixa a pessoa escolher outro
+          if(pe&&pe.code==='23505'){ try{ localStorage.removeItem('gb_signup'); }catch(e){} } else if(pe) console.error(pe);
+        }
+      }
       setProfile(data||null);
     })();
     return ()=>{on=false;};
@@ -2791,9 +2850,11 @@ function App(){
   if(!CONFIGURED) return <NotConfigured/>;
   if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!session) return <Login/>;
-  if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
-  if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
-  return <Dashboard session={session} profile={profile}/>;
+  let body;
+  if(profile===undefined) body=<div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  else if(!profile || !profile.password_changed) body=<Onboarding session={session} profile={profile} onDone={setProfile}/>;
+  else body=<Dashboard session={session} profile={profile}/>;
+  return <>{body}{recovery&&<ChangePassModal onClose={()=>setRecovery(false)}/>}</>;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>

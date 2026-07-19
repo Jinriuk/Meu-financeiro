@@ -404,4 +404,6 @@ begin
   return act.plan;
 end $$;
 revoke all on function public.aplicar_ativacao() from public;
+-- os default privileges do Supabase concedem execute a anon em função nova — revoga explícito
+revoke execute on function public.aplicar_ativacao() from anon;
 grant execute on function public.aplicar_ativacao() to authenticated;
