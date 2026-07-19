@@ -95,6 +95,15 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
+// PWA: já está rodando instalado na tela inicial? · é iPhone/iPad (instalação é manual)?
+const isStandalone = () => {
+  try {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  } catch (e) {
+    return false;
+  }
+};
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent || '') && !window.MSStream;
 // soma n dias a uma data ISO (via UTC, sem depender do relógio) — usado no filtro "últimos N dias" do Diário
 const addDaysISO = (iso, n) => {
   const [y, m, d] = (iso || todayISO()).split('-').map(Number);
@@ -4342,6 +4351,8 @@ function Dashboard({
   const [menuOpen, setMenuOpen] = useState(false); // gaveta "Mais" do nav mobile
   const [changePass, setChangePass] = useState(false);
   const [delAcc, setDelAcc] = useState(false); // modal de excluir conta (LGPD)
+  const [installCard, setInstallCard] = useState(false); // convite "instalar na tela inicial"
+  const [iosHelp, setIosHelp] = useState(false); // modal com o passo a passo do iPhone
   const [alertDetail, setAlertDetail] = useState(null);
   const [editing, setEditing] = useState(null); // {type, item}
   const [quickEdit, setQuickEdit] = useState(null);
@@ -4396,6 +4407,65 @@ function Dashboard({
       localStorage.removeItem('gb_signup');
     } catch (e) {}
     sb.auth.signOut();
+  };
+
+  /* PWA "instalar na tela inicial": mostra o convite se dá pra instalar (Android/desktop via
+     beforeinstallprompt) ou se é iPhone (instrução manual). Some quando já está instalado
+     ou quando a pessoa dispensa. */
+  useEffect(() => {
+    if (isStandalone()) {
+      return;
+    }
+    let dismiss = false;
+    try {
+      dismiss = localStorage.getItem('gb_install') === '1';
+    } catch (e) {}
+    if (dismiss) return;
+    if (window.__deferredInstall || isIOS()) setInstallCard(true);
+    const onBip = () => {
+      let d = false;
+      try {
+        d = localStorage.getItem('gb_install') === '1';
+      } catch (e) {}
+      if (!isStandalone() && !d) setInstallCard(true);
+    };
+    const onInstalled = () => {
+      setInstallCard(false);
+      try {
+        localStorage.setItem('gb_install', '1');
+      } catch (e) {}
+    };
+    window.addEventListener('beforeinstallprompt', onBip);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBip);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+  const marcarInstall = () => {
+    try {
+      localStorage.setItem('gb_install', '1');
+    } catch (e) {}
+  };
+  const instalar = async () => {
+    const dp = window.__deferredInstall;
+    if (dp) {
+      // Android / Chrome / Edge / desktop: dispara o prompt nativo de instalar
+      dp.prompt();
+      try {
+        await dp.userChoice;
+      } catch (e) {}
+      window.__deferredInstall = null;
+      setInstallCard(false);
+      marcarInstall();
+    } else if (isIOS()) {
+      // iPhone/iPad: não dá pra instalar por código — mostra o passo a passo
+      setIosHelp(true);
+    }
+  };
+  const dispensarInstall = () => {
+    setInstallCard(false);
+    marcarInstall();
   };
   const loadAll = async () => {
     try {
@@ -5130,6 +5200,21 @@ function Dashboard({
       text: `${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`
     });
   });
+  // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
+  // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
+  if (tours.length > 0) {
+    const ultimo = tours.reduce((m, t) => {
+      const d = String(t.created_at || t.entry_date || '').slice(0, 10);
+      return d > m ? d : m;
+    }, '');
+    if (ultimo) {
+      const dias = Math.round((Date.parse(todayISO()) - Date.parse(ultimo)) / 86400000);
+      if (dias >= 2) alerts.push({
+        tone: C.gold,
+        text: `Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`
+      });
+    }
+  }
 
   /* dados dos gráficos */
   const chartWeeks = allWeeks.slice(-8);
@@ -5644,7 +5729,76 @@ function Dashboard({
       flexDirection: 'column',
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement(Card, {
+  }, installCard && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: '14px 16px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      border: `1.5px solid ${P}`,
+      background: C.plumSoft
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      background: '#fff',
+      display: 'grid',
+      placeItems: 'center',
+      color: P,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(IcoChip, {
+    s: 22
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 14,
+      color: C.ink
+    }
+  }, "Deixe o GrinderBank na tela inicial"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.4
+    }
+  }, "Abre em tela cheia, como um app de celular \u2014 ", isIOS() ? 'toque pra ver como' : 'um toque e pronto', ".")), /*#__PURE__*/React.createElement("button", {
+    onClick: instalar,
+    style: {
+      padding: '9px 14px',
+      borderRadius: 11,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: 'pointer',
+      flexShrink: 0
+    }
+  }, isIOS() ? 'Como instalar' : 'Adicionar'), /*#__PURE__*/React.createElement("button", {
+    onClick: dispensarInstall,
+    "aria-label": "Dispensar",
+    style: {
+      width: 30,
+      height: 30,
+      borderRadius: 9,
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 16
+  }))), /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 22,
       background: `linear-gradient(135deg,${P},#3B305E)`,
@@ -8754,7 +8908,13 @@ function Dashboard({
       color: C.inkSoft,
       marginBottom: 14
     }
-  }, "Troca a tua senha quando quiser. S\xF3 afeta o teu login."), /*#__PURE__*/React.createElement("button", {
+  }, "Troca a tua senha quando quiser. S\xF3 afeta o teu login."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setChangePass(true),
     style: {
       display: 'flex',
@@ -8771,7 +8931,24 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement(IcoLogout, {
     s: 18
-  }), "Trocar minha senha"), solo && /*#__PURE__*/React.createElement("div", {
+  }), "Trocar minha senha"), !isStandalone() && /*#__PURE__*/React.createElement("button", {
+    onClick: instalar,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '12px 18px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: C.surface,
+      color: P,
+      fontWeight: 700,
+      fontSize: 14.5,
+      cursor: 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement(IcoChip, {
+    s: 18
+  }), "Instalar na tela inicial")), solo && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 16,
       paddingTop: 16,
@@ -9517,7 +9694,105 @@ function Dashboard({
   }), delAcc && /*#__PURE__*/React.createElement(DeleteAccountModal, {
     nickname: myName,
     onClose: () => setDelAcc(false)
-  }), alertDetail && /*#__PURE__*/React.createElement("div", {
+  }), iosHelp && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setIosHelp(false),
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.55)',
+      backdropFilter: 'blur(3px)',
+      display: 'grid',
+      placeItems: 'center',
+      zIndex: 70,
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    onClick: e => e.stopPropagation(),
+    className: "ftfade",
+    style: {
+      padding: 26,
+      maxWidth: 400,
+      width: '100%'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 52,
+      height: 52,
+      borderRadius: 16,
+      background: C.plumSoft,
+      display: 'grid',
+      placeItems: 'center',
+      color: P
+    }
+  }, /*#__PURE__*/React.createElement(IcoChip, {
+    s: 28
+  }))), /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 700,
+      margin: '0 0 12px',
+      textAlign: 'center'
+    }
+  }, "Instalar no iPhone"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.ink,
+      lineHeight: 1.7
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: P
+    }
+  }, "1."), /*#__PURE__*/React.createElement("span", null, "No Safari, toque no bot\xE3o ", /*#__PURE__*/React.createElement("b", null, "Compartilhar"), " (o quadrado com a seta pra cima \u2191), na barra de baixo.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: P
+    }
+  }, "2."), /*#__PURE__*/React.createElement("span", null, "Role e toque em ", /*#__PURE__*/React.createElement("b", null, "\u201CAdicionar \xE0 Tela de In\xEDcio\u201D"), ".")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: P
+    }
+  }, "3."), /*#__PURE__*/React.createElement("span", null, "Confirme em ", /*#__PURE__*/React.createElement("b", null, "\u201CAdicionar\u201D"), ". Pronto \u2014 o GrinderBank vira um \xEDcone e abre em tela cheia."))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setIosHelp(false);
+      dispensarInstall();
+    },
+    style: {
+      marginTop: 18,
+      width: '100%',
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer'
+    }
+  }, "Entendi"))), alertDetail && /*#__PURE__*/React.createElement("div", {
     onClick: () => setAlertDetail(null),
     style: {
       position: 'fixed',
