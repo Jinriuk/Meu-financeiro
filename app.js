@@ -10251,7 +10251,7 @@ function Dashboard({
     style: {
       color: C.red
     }
-  }, "acima do ABI m\xE1ximo de ", gradeWarn.player.split(' ')[0]), " (", fmt(abiMaxFor(config, gradeWarn.player, gradeWarn.entry_date)), "). Evite jogar fora da grade \u2014 isso fura a gest\xE3o da pool. O outro jogador foi avisado."), /*#__PURE__*/React.createElement("button", {
+  }, "acima ", solo ? 'do teu ABI máximo' : `do ABI máximo de ${gradeWarn.player.split(' ')[0]}`), " (", fmt(abiMaxFor(config, gradeWarn.player, gradeWarn.entry_date)), "). ", solo ? 'Manter a grade é o que segura tua banca no longo prazo — evita subir de stake no impulso.' : 'Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.'), /*#__PURE__*/React.createElement("button", {
     onClick: () => setGradeWarn(null),
     style: {
       width: '100%',

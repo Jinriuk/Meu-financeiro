@@ -2832,7 +2832,7 @@ function Dashboard({session,profile}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:400,borderRadius:22,padding:24,textAlign:'center'}}>
         <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
-        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima do ABI máximo de {gradeWarn.player.split(' ')[0]}</b> ({fmt(abiMaxFor(config,gradeWarn.player,gradeWarn.entry_date))}). Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.</p>
+        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima {solo?'do teu ABI máximo':`do ABI máximo de ${gradeWarn.player.split(' ')[0]}`}</b> ({fmt(abiMaxFor(config,gradeWarn.player,gradeWarn.entry_date))}). {solo?'Manter a grade é o que segura tua banca no longo prazo — evita subir de stake no impulso.':'Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.'}</p>
         <button onClick={()=>setGradeWarn(null)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Entendi</button>
       </div>
     </div>}
