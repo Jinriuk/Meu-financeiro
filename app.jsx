@@ -954,7 +954,7 @@ function Login(){
   const esqueci=async()=>{
     setErr(''); setOk('');
     const id=ident.trim();
-    if(!id) return setErr('Digita teu e-mail ou apelido no campo acima que eu mando o link.');
+    if(!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
     setBusy(true);
     const redirectTo=window.location.origin+window.location.pathname;
     if(id.includes('@')){
@@ -970,7 +970,7 @@ function Login(){
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
       {mode==='login'?<div style={{display:'flex',flexDirection:'column',gap:14}}>
         {ok&&<div style={{color:C.greenMid,fontSize:13.5,fontWeight:600,background:C.greenSoft,padding:'10px 12px',borderRadius:11}}>{ok}</div>}
-        <div><label style={labelStyle}>E-mail ou apelido</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
+        <div><label style={labelStyle}>E-mail, apelido ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
@@ -1095,7 +1095,7 @@ function Onboarding({session,profile,onDone}){
     <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
       <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 6px',textAlign:'center'}}>Primeiro acesso</h3>
-      <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail ou apelido</b>.</p>
+      <p style={{fontSize:13.5,color:C.inkSoft,textAlign:'center',margin:'0 0 18px',lineHeight:1.6}}>Troca a senha padrão e completa o cadastro. Depois dá pra entrar com <b>e-mail, apelido ou CPF</b>.</p>
       <div style={{display:'flex',flexDirection:'column',gap:14}}>
         <div><label style={labelStyle}>Nickname</label><input style={inputStyle} value={nick} autoCapitalize="none" placeholder="Ex: gab_gg" onChange={e=>setNick(e.target.value)}/></div>
         <div><label style={labelStyle}>CPF (opcional, só números)</label><input style={inputStyle} inputMode="numeric" value={cpf} placeholder="00000000000" onChange={e=>setCpf(e.target.value)}/></div>

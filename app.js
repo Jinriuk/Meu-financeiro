@@ -2955,7 +2955,7 @@ function Login() {
     setErr('');
     setOk('');
     const id = ident.trim();
-    if (!id) return setErr('Digita teu e-mail ou apelido no campo acima que eu mando o link.');
+    if (!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
     setBusy(true);
     const redirectTo = window.location.origin + window.location.pathname;
     if (id.includes('@')) {
@@ -3015,7 +3015,7 @@ function Login() {
     }
   }, ok), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
-  }, "E-mail ou apelido"), /*#__PURE__*/React.createElement("input", {
+  }, "E-mail, apelido ou CPF"), /*#__PURE__*/React.createElement("input", {
     style: inputStyle,
     type: "text",
     autoCapitalize: "none",
@@ -3587,7 +3587,7 @@ function Onboarding({
       margin: '0 0 18px',
       lineHeight: 1.6
     }
-  }, "Troca a senha padr\xE3o e completa o cadastro. Depois d\xE1 pra entrar com ", /*#__PURE__*/React.createElement("b", null, "e-mail ou apelido"), "."), /*#__PURE__*/React.createElement("div", {
+  }, "Troca a senha padr\xE3o e completa o cadastro. Depois d\xE1 pra entrar com ", /*#__PURE__*/React.createElement("b", null, "e-mail, apelido ou CPF"), "."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
