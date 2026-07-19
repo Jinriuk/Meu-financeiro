@@ -41,6 +41,9 @@ const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`
 const dLabel = d => { if(!d) return ''; const [,m,day]=d.split('-'); return `${day}/${m}`; };
 // data LOCAL (não UTC): no Brasil, depois das 21h o toISOString() já viraria "amanhã"
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+// PWA: já está rodando instalado na tela inicial? · é iPhone/iPad (instalação é manual)?
+const isStandalone = () => { try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true; } catch(e){ return false; } };
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent||'') && !window.MSStream;
 // soma n dias a uma data ISO (via UTC, sem depender do relógio) — usado no filtro "últimos N dias" do Diário
 const addDaysISO = (iso,n) => { const [y,m,d]=(iso||todayISO()).split('-').map(Number); const dt=new Date(Date.UTC(y,m-1,d)); dt.setUTCDate(dt.getUTCDate()+n); return dt.toISOString().slice(0,10); };
 function parseValor(s){
@@ -1260,6 +1263,8 @@ function Dashboard({session,profile}){
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
   const [changePass,setChangePass]=useState(false);
   const [delAcc,setDelAcc]=useState(false);       // modal de excluir conta (LGPD)
+  const [installCard,setInstallCard]=useState(false); // convite "instalar na tela inicial"
+  const [iosHelp,setIosHelp]=useState(false);     // modal com o passo a passo do iPhone
   const [alertDetail,setAlertDetail]=useState(null);
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
@@ -1284,6 +1289,33 @@ function Dashboard({session,profile}){
   const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...l,{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair=()=>{ try{ localStorage.removeItem('gb_signup'); }catch(e){} sb.auth.signOut(); };
+
+  /* PWA "instalar na tela inicial": mostra o convite se dá pra instalar (Android/desktop via
+     beforeinstallprompt) ou se é iPhone (instrução manual). Some quando já está instalado
+     ou quando a pessoa dispensa. */
+  useEffect(()=>{
+    if(isStandalone()){ return; }
+    let dismiss=false; try{ dismiss=localStorage.getItem('gb_install')==='1'; }catch(e){}
+    if(dismiss) return;
+    if(window.__deferredInstall || isIOS()) setInstallCard(true);
+    const onBip=()=>{ let d=false; try{ d=localStorage.getItem('gb_install')==='1'; }catch(e){} if(!isStandalone()&&!d) setInstallCard(true); };
+    const onInstalled=()=>{ setInstallCard(false); try{ localStorage.setItem('gb_install','1'); }catch(e){} };
+    window.addEventListener('beforeinstallprompt',onBip);
+    window.addEventListener('appinstalled',onInstalled);
+    return ()=>{ window.removeEventListener('beforeinstallprompt',onBip); window.removeEventListener('appinstalled',onInstalled); };
+  },[]);
+  const marcarInstall=()=>{ try{ localStorage.setItem('gb_install','1'); }catch(e){} };
+  const instalar=async()=>{
+    const dp=window.__deferredInstall;
+    if(dp){ // Android / Chrome / Edge / desktop: dispara o prompt nativo de instalar
+      dp.prompt();
+      try{ await dp.userChoice; }catch(e){}
+      window.__deferredInstall=null; setInstallCard(false); marcarInstall();
+    } else if(isIOS()){ // iPhone/iPad: não dá pra instalar por código — mostra o passo a passo
+      setIosHelp(true);
+    }
+  };
+  const dispensarInstall=()=>{ setInstallCard(false); marcarInstall(); };
 
   const loadAll=async()=>{
     try{
@@ -1640,6 +1672,13 @@ function Dashboard({session,profile}){
   if(foraGradeTours.length) alerts.push({tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
   players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
   daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
+  // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
+  if(tours.length>0){
+    const ultimo=tours.reduce((m,t)=>{ const d=String(t.created_at||t.entry_date||'').slice(0,10); return d>m?d:m; },'');
+    if(ultimo){ const dias=Math.round((Date.parse(todayISO())-Date.parse(ultimo))/86400000);
+      if(dias>=2) alerts.push({tone:C.gold,text:`Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
+  }
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
@@ -1829,6 +1868,16 @@ function Dashboard({session,profile}){
       {/* ---------------- PAINEL ---------------- */}
       {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        {/* convite pra instalar na tela inicial (some quando já instalado ou dispensado) */}
+        {installCard&&<Card style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${P}`,background:C.plumSoft}}>
+          <span style={{width:40,height:40,borderRadius:12,background:'#fff',display:'grid',placeItems:'center',color:P,flexShrink:0}}><IcoChip s={22}/></span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:14,color:C.ink}}>Deixe o GrinderBank na tela inicial</div>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.4}}>Abre em tela cheia, como um app de celular — {isIOS()?'toque pra ver como':'um toque e pronto'}.</div>
+          </div>
+          <button onClick={instalar} style={{padding:'9px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>{isIOS()?'Como instalar':'Adicionar'}</button>
+          <button onClick={dispensarInstall} aria-label="Dispensar" style={{width:30,height:30,borderRadius:9,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoX s={16}/></button>
+        </Card>}
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>{solo?'Minha banca':'Banca central da pool'}</div>
           <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
@@ -2466,7 +2515,10 @@ function Dashboard({session,profile}){
         <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
-          <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
+            {!isStandalone()&&<button onClick={instalar} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoChip s={18}/>Instalar na tela inicial</button>}
+          </div>
           {solo&&<div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:13,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Quer sair de vez? Você pode <b>excluir sua conta</b> e apagar todos os seus dados definitivamente (direito garantido pela LGPD).</div>
             <button onClick={()=>setDelAcc(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.redSoft}`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5,cursor:'pointer'}}><IcoTrash s={17}/>Excluir minha conta</button>
@@ -2681,6 +2733,20 @@ function Dashboard({session,profile}){
 
     {/* modal excluir conta (LGPD) */}
     {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
+
+    {/* iPhone/iPad: passo a passo pra adicionar à tela inicial (não dá pra instalar por código) */}
+    {iosHelp&&<div onClick={()=>setIosHelp(false)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.55)',backdropFilter:'blur(3px)',display:'grid',placeItems:'center',zIndex:70,padding:18}}>
+      <Card onClick={e=>e.stopPropagation()} className="ftfade" style={{padding:26,maxWidth:400,width:'100%'}}>
+        <div style={{display:'flex',justifyContent:'center',marginBottom:6}}><span style={{width:52,height:52,borderRadius:16,background:C.plumSoft,display:'grid',placeItems:'center',color:P}}><IcoChip s={28}/></span></div>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:700,margin:'0 0 12px',textAlign:'center'}}>Instalar no iPhone</h3>
+        <div style={{fontSize:13.5,color:C.ink,lineHeight:1.7}}>
+          <div style={{display:'flex',gap:10,marginBottom:10}}><b style={{color:P}}>1.</b><span>No Safari, toque no botão <b>Compartilhar</b> (o quadrado com a seta pra cima ↑), na barra de baixo.</span></div>
+          <div style={{display:'flex',gap:10,marginBottom:10}}><b style={{color:P}}>2.</b><span>Role e toque em <b>“Adicionar à Tela de Início”</b>.</span></div>
+          <div style={{display:'flex',gap:10}}><b style={{color:P}}>3.</b><span>Confirme em <b>“Adicionar”</b>. Pronto — o GrinderBank vira um ícone e abre em tela cheia.</span></div>
+        </div>
+        <button onClick={()=>{setIosHelp(false); dispensarInstall();}} style={{marginTop:18,width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Entendi</button>
+      </Card>
+    </div>}
 
     {/* detalhe do alerta (fora da grade: quais torneios e de quem) */}
     {alertDetail&&<div onClick={()=>setAlertDetail(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:55}}>
