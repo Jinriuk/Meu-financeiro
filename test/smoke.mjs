@@ -49,7 +49,7 @@ const R = []; const ck = (n, c) => R.push([n, c]);
 ck('config.js carregou', cfg);
 ck('supabase-js self-hosted expõe createClient', hasCreate);
 ck('app.js compilado renderizou a tela de login', t.includes('GrinderBank') && t.includes('Entrar'));
-ck('campo de login presente', t.toUpperCase().includes('E-MAIL OU APELIDO'));
+ck('campo de login presente', t.toUpperCase().includes('E-MAIL, APELIDO OU CPF'));
 ck('SEM violação de CSP', csp.length === 0);
 ck('SEM erro de página', perr.length === 0);
 
