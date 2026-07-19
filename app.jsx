@@ -892,6 +892,7 @@ function Login(){
   // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
   const [mode,setMode]=useState('login'); const [ok,setOk]=useState('');
   const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nZap,setNZap]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
+  const [nPlan,setNPlan]=useState('pro');   // plano escolhido pro teste grátis de 15 dias
   const criar=async()=>{
     setErr(''); setOk('');
     const nome=nNome.trim();
@@ -911,8 +912,9 @@ function Login(){
     try{ const {data:livre}=await sb.rpc('nickname_disponivel',{nick:nome});
       if(livre===false){ setBusy(false); return setErr('Esse apelido já está em uso — escolhe outro (é único, como numa sala de poker).'); } }catch(e){}
     // guarda o cadastro pendente ANTES: se a conta só ativar depois (confirmação de e-mail)
-    // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho
-    try{ localStorage.setItem('gb_signup',JSON.stringify({nickname:nome,whatsapp:zap||null})); }catch(e){}
+    // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho.
+    // Inclui o plano escolhido: o teste grátis de 15 dias é DESSE plano.
+    try{ localStorage.setItem('gb_signup',JSON.stringify({nickname:nome,whatsapp:zap||null,plan:nPlan})); }catch(e){}
     const {data,error}=await sb.auth.signUp({email:mail,password:nP1});
     if(error){ setBusy(false); try{ localStorage.removeItem('gb_signup'); }catch(e){}
       const m=`${error.message||''} ${error.code||''}`.toLowerCase();
@@ -925,7 +927,7 @@ function Login(){
     const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
     if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
     if(!pe){ try{ localStorage.removeItem('gb_signup'); }catch(e){} }
-    try{ await sb.rpc('create_solo_workspace',{ws_name:nome}); }catch(e){ console.error(e); }
+    try{ await sb.rpc('create_solo_workspace',{ws_name:nome,plan_escolhido:nPlan}); }catch(e){ console.error(e); }
     window.location.reload();
   };
   const entrar=async()=>{
@@ -982,6 +984,19 @@ function Login(){
         <div><label style={labelStyle}>WhatsApp (opcional)</label><input style={inputStyle} inputMode="tel" placeholder="DDD + número" value={nZap} onChange={e=>setNZap(e.target.value)}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
+        {/* escolha de plano: o teste grátis de 15 dias é do plano escolhido */}
+        <div>
+          <label style={labelStyle}>Escolha seu plano · 15 dias grátis</label>
+          <div style={{display:'flex',gap:8}}>
+            {[['gestao','Gestão','R$ 19,90/mês','banca, torneios e relatórios'],['pro','Pro','R$ 49,90/mês','tudo + stats das mãos e leituras']].map(([v,nm,pr,desc])=>
+              <button key={v} type="button" onClick={()=>setNPlan(v)} style={{flex:1,padding:'12px 11px',borderRadius:13,border:`1.5px solid ${nPlan===v?P:C.border}`,background:nPlan===v?C.plumSoft:'transparent',cursor:'pointer',textAlign:'left'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{width:14,height:14,borderRadius:99,border:`2px solid ${nPlan===v?P:C.border}`,background:nPlan===v?P:'transparent',flexShrink:0}}/><span style={{fontWeight:800,fontSize:14.5,color:nPlan===v?P:C.ink}}>{nm}</span></div>
+                <div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:13,color:C.ink,marginTop:4}}>{pr}</div>
+                <div style={{fontSize:10.5,color:C.inkSoft,lineHeight:1.3,marginTop:2}}>{desc}</div>
+              </button>)}
+          </div>
+          <div style={{fontSize:11,color:C.inkSoft,marginTop:7,lineHeight:1.45}}>Você testa <b>15 dias grátis</b>. Pra continuar depois disso, é só assinar — a gente te avisa antes de acabar. Sem assinar, o acesso é bloqueado ao fim do teste.</div>
+        </div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <div style={{fontSize:11.5,color:C.inkSoft,lineHeight:1.5}}>Ao criar a conta você concorda com os <a href="termos.html" target="_blank" style={{color:P}}>Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style={{color:P}}>Política de Privacidade</a>.</div>
         <button onClick={criar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Criando…':'Criar minha conta'}</button>
@@ -1001,8 +1016,10 @@ function SetupSolo({profile,ws,onDone}){
   const concluir=async()=>{
     setBusy(true); setErr('');
     try{
-      // rpc pode acusar "já tem workspace" num retry após falha parcial — segue em frente
-      if(!ws) try{ await sb.rpc('create_solo_workspace',{ws_name:nome.trim()}); }catch(e){ console.error(e); }
+      // rpc pode acusar "já tem workspace" num retry após falha parcial — segue em frente.
+      // plano do teste vem do cadastro (gb_signup); fallback 'gestao'.
+      let plano='gestao'; try{ const s=JSON.parse(localStorage.getItem('gb_signup')||'null'); if(s&&s.plan) plano=s.plan; }catch(e){}
+      if(!ws) try{ await sb.rpc('create_solo_workspace',{ws_name:nome.trim(),plan_escolhido:plano}); }catch(e){ console.error(e); }
       // NUNCA cria uma segunda config: se um retry chegar aqui com a config já salva, só conclui
       const {data:jaTem}=await sb.from('pool_config').select('id').limit(1);
       if(!jaTem||!jaTem.length){
@@ -1087,6 +1104,23 @@ function Onboarding({session,profile,onDone}){
         <div style={{fontSize:12,color:C.inkSoft,marginTop:-6,lineHeight:1.5}}>Toque no 👁 pra conferir a senha antes de salvar. Anote ou salve num lugar seguro.</div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar e entrar'}</button>
+      </div>
+    </Card>
+  </div>;
+}
+// teste grátis de 15 dias acabou: bloqueia o app inteiro até assinar (dados ficam guardados)
+function TrialBlocked({planLabel,onLogout,onDelete}){
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:430,textAlign:'center'}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
+      <div style={{fontSize:42,marginBottom:6}}>⏳</div>
+      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,margin:'0 0 8px'}}>Seu teste grátis de 15 dias acabou</h3>
+      <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.65,margin:'0 0 18px'}}>Pra continuar com sua banca, torneios{planLabel==='pro'?' e estatísticas':''}, é só assinar. <b>Seus dados estão guardados</b> — voltam na hora que a assinatura entrar.</p>
+      <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:16,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Assinar e voltar':'Assinatura abre em breve'}</button>
+      <button onClick={()=>window.location.reload()} style={{width:'100%',marginTop:10,padding:'12px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Já paguei — atualizar</button>
+      <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:16}}>
+        <button onClick={onLogout} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:13,cursor:'pointer',textDecoration:'underline'}}>Sair</button>
+        <button onClick={onDelete} style={{border:'none',background:'transparent',color:C.red,fontWeight:600,fontSize:13,cursor:'pointer',textDecoration:'underline'}}>Excluir minha conta</button>
       </div>
     </Card>
   </div>;
@@ -1615,6 +1649,11 @@ function Dashboard({session,profile}){
   // Sem workspace carregado, conta solo assume 'free' — falha de leitura nunca destrava paywall.
   const plan=ws?ws.plan:(solo?'free':'team');
   const canStats=!solo||['pro','founder','team'].includes(plan);
+  // teste grátis de 15 dias: trial_ends_at no futuro = em teste; no passado = bloqueado.
+  // null = pool/fundador/assinatura ativa (nunca bloqueia).
+  const trialEnds=(ws&&ws.trial_ends_at)?Date.parse(ws.trial_ends_at):null;
+  const trialDaysLeft=trialEnds!=null?Math.max(0,Math.ceil((trialEnds-Date.now())/86400000)):null;
+  const trialExpired=trialEnds!=null&&Date.now()>trialEnds;
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
   const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
@@ -1851,6 +1890,12 @@ function Dashboard({session,profile}){
       dias:[...new Set(dd.map(e=>e.entry_date))].length};
   })();
 
+  // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
+  if(trialExpired) return <>
+    <TrialBlocked planLabel={plan} onLogout={sair} onDelete={()=>setDelAcc(true)}/>
+    {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
+  </>;
+
   return <div className="wrap">
     {/* sidebar desktop */}
     <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
@@ -1875,6 +1920,15 @@ function Dashboard({session,profile}){
       {/* ---------------- PAINEL ---------------- */}
       {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
       {view==='painel'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+        {/* teste grátis: contagem regressiva + convite pra assinar (só conta em teste) */}
+        {trialDaysLeft!=null&&<Card style={{padding:'13px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${trialDaysLeft<=3?C.gold:P}`,background:trialDaysLeft<=3?C.goldSoft:C.plumSoft}}>
+          <span style={{fontSize:22,flexShrink:0}}>⏳</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:14,color:C.ink}}>Teste grátis · {trialDaysLeft===0?'último dia':`faltam ${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</div>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.4}}>Assine o plano <b>{PLAN_LABEL[plan]?PLAN_LABEL[plan].split(' (')[0]:plan}</b> pra não perder o acesso quando o teste acabar.</div>
+          </div>
+          <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); else setView('config'); }} style={{padding:'9px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>{UPGRADE_URL?'Assinar':'Ver plano'}</button>
+        </Card>}
         {/* convite pra instalar na tela inicial (some quando já instalado ou dispensado) */}
         {installCard&&<Card style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${P}`,background:C.plumSoft}}>
           <span style={{width:40,height:40,borderRadius:12,background:'#fff',display:'grid',placeItems:'center',color:P,flexShrink:0}}><IcoChip s={22}/></span>
@@ -2511,7 +2565,8 @@ function Dashboard({session,profile}){
         </Card>
         {solo&&<Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Seu plano</h3>
-          <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b></div>
+          <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b>{trialDaysLeft!=null&&<span style={{marginLeft:8,padding:'3px 9px',borderRadius:99,fontSize:11.5,fontWeight:800,color:trialDaysLeft<=3?C.gold:P,background:trialDaysLeft<=3?C.goldSoft:C.plumSoft}}>teste grátis · {trialDaysLeft===0?'último dia':`${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</span>}</div>
+          {trialDaysLeft!=null&&<div style={{fontSize:12.5,color:C.inkSoft,marginBottom:8,lineHeight:1.5}}>Seu teste grátis dura <b>15 dias</b>. Quando acabar, o acesso é bloqueado até você assinar — seus dados ficam guardados.</div>}
           <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
             <b>Gestão</b> (R$ 19,90/mês): banca, torneios, diário, semanal e relatórios de banca — ilimitado.<br/>
             <b>Pro</b> (R$ 49,90/mês): tudo da Gestão + import de mãos GG/PS, estatísticas completas, leituras automáticas e relatório em PDF.
@@ -2871,7 +2926,7 @@ function App(){
           const {data:novo,error:pe}=await sb.from('player_profiles').insert({user_id:session.user.id,email:session.user.email,nickname:pend.nickname,whatsapp:pend.whatsapp||null,password_changed:true,role:'solo'}).select().single();
           if(!pe&&novo){
             try{ localStorage.removeItem('gb_signup'); }catch(e){}
-            try{ await sb.rpc('create_solo_workspace',{ws_name:pend.nickname}); }catch(e){ console.error(e); }
+            try{ await sb.rpc('create_solo_workspace',{ws_name:pend.nickname,plan_escolhido:pend.plan||'gestao'}); }catch(e){ console.error(e); }
             if(on) setProfile(novo);
             return;
           }
