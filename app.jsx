@@ -821,6 +821,46 @@ function PassInput({value,onChange,onEnter,autoComplete,placeholder}){
 }
 
 /* ---------- trocar senha (Ajustes) ---------- */
+/* ---------- redefinição de senha (veio do link do e-mail) ----------
+   Tela CHEIA e OBRIGATÓRIA: não dá pra fechar nem acessar o sistema sem criar a senha nova.
+   Ao concluir, desloga — pra entrar, a pessoa tem que logar com a senha nova. Fecha a brecha
+   de "clicou no link e entrou sem senha". */
+function RecoveryReset(){
+  const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
+  const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
+  const save=async()=>{
+    setErr('');
+    if(p1.length<8) return setErr('A senha precisa de pelo menos 8 caracteres.');
+    if(p1!==p2) return setErr('As duas senhas não conferem.');
+    setBusy(true);
+    const {error}=await sb.auth.updateUser({password:p1});
+    if(error){ setBusy(false); return setErr('Não consegui trocar a senha. O link pode ter expirado — peça outro pelo "Esqueci minha senha".'); }
+    // encerra a sessão de recuperação: só entra quem souber a senha nova
+    try{ await sb.auth.signOut(); }catch(e){}
+    setBusy(false); setOk(true);
+  };
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:400}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
+      {ok
+        ? <div style={{textAlign:'center'}}>
+            <div style={{fontSize:40,marginBottom:6}}>🔒</div>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:700,margin:'0 0 8px'}}>Senha alterada!</h3>
+            <p style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.6,margin:'0 0 16px'}}>Agora entra com a <b>senha nova</b>. Por segurança, o acesso pelo link foi encerrado.</p>
+            <button onClick={()=>window.location.replace(window.location.origin+window.location.pathname)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Ir para o login</button>
+          </div>
+        : <div style={{display:'flex',flexDirection:'column',gap:14}}>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:700,margin:0,textAlign:'center'}}>Crie sua nova senha</h3>
+            <p style={{fontSize:13,color:C.inkSoft,textAlign:'center',margin:0,lineHeight:1.6}}>Pra proteger a conta, você precisa definir uma senha nova antes de entrar. Mínimo 8 caracteres.</p>
+            <div><label style={labelStyle}>Nova senha</label><PassInput autoComplete="new-password" value={p1} onChange={e=>setP1(e.target.value)}/></div>
+            <div><label style={labelStyle}>Confirmar nova senha</label><PassInput autoComplete="new-password" value={p2} onChange={e=>setP2(e.target.value)} onEnter={save}/></div>
+            {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+            <button onClick={save} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Salvando...':'Salvar e continuar'}</button>
+          </div>}
+    </Card>
+  </div>;
+}
+
 function ChangePassModal({onClose}){
   const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
@@ -1331,15 +1371,20 @@ function Dashboard({session,profile}){
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair=()=>{ try{ localStorage.removeItem('gb_signup'); }catch(e){} sb.auth.signOut(); };
 
-  /* PWA "instalar na tela inicial": mostra o convite se dá pra instalar (Android/desktop via
-     beforeinstallprompt) ou se é iPhone (instrução manual). Some quando já está instalado
-     ou quando a pessoa dispensa. */
+  /* PWA "instalar na tela inicial": convite pra instalar (Android/desktop via beforeinstallprompt)
+     ou instrução no iPhone. No iOS o site (Safari) NÃO tem como saber que já foi instalado, então
+     em vez de insistir pra sempre, mostramos no MÁXIMO 2 vezes e paramos. Já instalado (standalone)
+     ou dispensado no X = nunca mais. */
   useEffect(()=>{
-    if(isStandalone()){ return; }
-    let dismiss=false; try{ dismiss=localStorage.getItem('gb_install')==='1'; }catch(e){}
-    if(dismiss) return;
-    if(window.__deferredInstall || isIOS()) setInstallCard(true);
-    const onBip=()=>{ let d=false; try{ d=localStorage.getItem('gb_install')==='1'; }catch(e){} if(!isStandalone()&&!d) setInstallCard(true); };
+    if(isStandalone()){ try{ localStorage.setItem('gb_install','1'); }catch(e){} return; }  // rodando como app: some de vez
+    let v=''; try{ v=localStorage.getItem('gb_install')||''; }catch(e){}
+    if(v==='1') return;                          // dispensado / já instalado
+    const podeMostrar=()=>{ let x=''; try{ x=localStorage.getItem('gb_install')||''; }catch(e){} return x!=='1' && (parseInt(x,10)||0) < 2; };
+    if((window.__deferredInstall || isIOS()) && podeMostrar()){
+      setInstallCard(true);
+      try{ localStorage.setItem('gb_install', String((parseInt(v,10)||0)+1)); }catch(e){}  // conta esta exibição (para de mostrar após 2)
+    }
+    const onBip=()=>{ if(!isStandalone() && podeMostrar()) setInstallCard(true); };
     const onInstalled=()=>{ setInstallCard(false); try{ localStorage.setItem('gb_install','1'); }catch(e){} };
     window.addEventListener('beforeinstallprompt',onBip);
     window.addEventListener('appinstalled',onInstalled);
@@ -2939,12 +2984,12 @@ function App(){
     return ()=>{on=false;};
   },[session]);
   if(!CONFIGURED) return <NotConfigured/>;
+  // veio do link "esqueci minha senha": trava TUDO até criar a senha nova (sem fechar, sem pular)
+  if(recovery) return <RecoveryReset/>;
   if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!session) return <Login/>;
-  let body;
-  if(profile===undefined) body=<div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
-  else if(!profile || !profile.password_changed) body=<Onboarding session={session} profile={profile} onDone={setProfile}/>;
-  else body=<Dashboard session={session} profile={profile}/>;
-  return <>{body}{recovery&&<ChangePassModal onClose={()=>setRecovery(false)}/>}</>;
+  if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
+  return <Dashboard session={session} profile={profile}/>;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
