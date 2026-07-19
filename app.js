@@ -2855,7 +2855,14 @@ function Login() {
     });
     if (error) {
       setBusy(false);
-      return setErr(/registered|already/i.test(error.message || '') ? 'Esse e-mail já tem conta — usa o "Entrar".' : 'Não consegui criar a conta. Confere o e-mail e tenta de novo.');
+      try {
+        localStorage.removeItem('gb_signup');
+      } catch (e) {}
+      const m = `${error.message || ''} ${error.code || ''}`.toLowerCase();
+      if (/registered|already/.test(m)) return setErr('Esse e-mail já tem conta — usa o "Entrar".');
+      if (/invalid/.test(m) && /email/.test(m)) return setErr('Esse e-mail parece inválido — confere se digitou certo (ex.: termina em .com, não .con).');
+      if (/weak|password/.test(m)) return setErr('Senha muito fraca — tenta uma com mais letras e números.');
+      return setErr('Não consegui criar a conta. Confere o e-mail e tenta de novo.');
     }
     if (!data || !data.session) {
       setBusy(false);

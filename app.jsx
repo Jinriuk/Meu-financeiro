@@ -914,7 +914,12 @@ function Login(){
     // ou qualquer passo abaixo falhar, o próximo login completa perfil + workspace sozinho
     try{ localStorage.setItem('gb_signup',JSON.stringify({nickname:nome,whatsapp:zap||null})); }catch(e){}
     const {data,error}=await sb.auth.signUp({email:mail,password:nP1});
-    if(error){ setBusy(false); return setErr(/registered|already/i.test(error.message||'')?'Esse e-mail já tem conta — usa o "Entrar".':'Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
+    if(error){ setBusy(false); try{ localStorage.removeItem('gb_signup'); }catch(e){}
+      const m=`${error.message||''} ${error.code||''}`.toLowerCase();
+      if(/registered|already/.test(m)) return setErr('Esse e-mail já tem conta — usa o "Entrar".');
+      if(/invalid/.test(m)&&/email/.test(m)) return setErr('Esse e-mail parece inválido — confere se digitou certo (ex.: termina em .com, não .con).');
+      if(/weak|password/.test(m)) return setErr('Senha muito fraca — tenta uma com mais letras e números.');
+      return setErr('Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
     if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.'); return; }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
     const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
