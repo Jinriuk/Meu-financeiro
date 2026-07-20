@@ -424,33 +424,34 @@ const HH_GLOSS=[
 /* Leituras automáticas: compara as suas stats com as faixas de um reg de MTT micro/low e
    escreve o que precisa de atenção. Cada regra só dispara com amostra mínima. */
 function hhInsights(d){
-  const out=[]; const add=(tone,t,x)=>out.push({tone,t,x});
+  // k (opcional) liga a leitura à stat que a gerou — a tela usa pra abrir a frase ao tocar no número
+  const out=[]; const add=(tone,t,x,k)=>out.push({tone,t,x,k});
   const pct=(c,o)=>o>0?c/o*100:null;
   const p={vpip:pct(d.vpip,d.hands),pfr:pct(d.pfr,d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
   const f=n=>n==null?'—':n.toFixed(1).replace('.',',')+'%';
   if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
   if(d.hands>=200){
-    if(p.vpip>29) add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`);
-    if(p.vpip!=null&&p.vpip<16) add('gold','Muito apertado',`VPIP ${f(p.vpip)} (reg: 18–27%). Dá pra abrir mais em CO/BTN sem virar aventura — hoje você deixa roubo fácil na mesa.`);
+    if(p.vpip>29) add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`,'vpip');
+    if(p.vpip!=null&&p.vpip<16) add('gold','Muito apertado',`VPIP ${f(p.vpip)} (reg: 18–27%). Dá pra abrir mais em CO/BTN sem virar aventura — hoje você deixa roubo fácil na mesa.`,'vpip');
     const gap=(p.vpip!=null&&p.pfr!=null)?p.vpip-p.pfr:null;
-    if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${gap.toFixed(1).replace('.',',')} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold.`);
+    if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${gap.toFixed(1).replace('.',',')} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold.`,'pfr');
   }
-  if(d.tbOpp>=40&&p.tb<4.5) add('gold','Pouco 3-bet',`3-bet ${f(p.tb)} (reg: 5–10%). Sem 3-bet, os regs abrem em cima de você de graça — adicione blefes tipo A5s.`);
+  if(d.tbOpp>=40&&p.tb<4.5) add('gold','Pouco 3-bet',`3-bet ${f(p.tb)} (reg: 5–10%). Sem 3-bet, os regs abrem em cima de você de graça — adicione blefes tipo A5s.`,'tb');
   if(d.f3bOpp>=15){
-    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais.`);
-    if(p.f3b>70) add('gold','Foldando demais pra 3-bet',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Quando percebem, passam a 3-betar você sem mão.`);
+    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais.`,'f3b');
+    if(p.f3b>70) add('gold','Foldando demais pra 3-bet',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Quando percebem, passam a 3-betar você sem mão.`,'f3b');
   }
-  if(d.stealOpp>=30&&p.steal<28) add('gold','Roubando pouco',`Roubo de blinds ${f(p.steal)} (reg: 30–50%). Com antes em jogo, roubar de CO/BTN/SB é onde o MTT se ganha.`);
-  if(d.bbdefOpp>=30&&p.bbdef<32) add('gold','Foldando o BB demais',`Defesa de BB ${f(p.bbdef)} (reg: 35–55%). Pelo preço que o BB paga pra ver, folda-se menos do que parece.`);
+  if(d.stealOpp>=30&&p.steal<28) add('gold','Roubando pouco',`Roubo de blinds ${f(p.steal)} (reg: 30–50%). Com antes em jogo, roubar de CO/BTN/SB é onde o MTT se ganha.`,'steal');
+  if(d.bbdefOpp>=30&&p.bbdef<32) add('gold','Foldando o BB demais',`Defesa de BB ${f(p.bbdef)} (reg: 35–55%). Pelo preço que o BB paga pra ver, folda-se menos do que parece.`,'bbdef');
   if(d.cbetOpp>=30){
-    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Em board que bate no vilão, a c-bet automática vira rifa.`);
-    if(p.cbet<45) add('gold','Agressor passivo',`C-bet ${f(p.cbet)} (reg: 50–75%). Quem abriu o pote precisa continuar contando a história com mais frequência.`);
+    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Em board que bate no vilão, a c-bet automática vira rifa.`,'cbet');
+    if(p.cbet<45) add('gold','Agressor passivo',`C-bet ${f(p.cbet)} (reg: 50–75%). Quem abriu o pote precisa continuar contando a história com mais frequência.`,'cbet');
   }
-  if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`);
+  if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`,'fcb');
   if(d.sawflop>=100){
-    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão — solte o segundo par quando a ação esquenta no turn/river.`);
-    else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`);
-    if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`);
+    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão — solte o segundo par quando a ação esquenta no turn/river.`,'wsd');
+    else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`,'wtsd');
+    if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`,'wwsf');
   }
   const af=d.afC>0?d.afB/d.afC:null;
   if(af!=null&&(d.afB+d.afC)>=60&&af<1.3) add('gold','Passivo pós-flop',`Agressão (AF) ${af.toFixed(1).replace('.',',')} (reg: ~1,5–3). Mais bet/raise, menos call.`);
@@ -458,10 +459,10 @@ function hhInsights(d){
   if(d.hands>=300&&d.bb100!=null){
     const luck100=d.hands>0?d.sorte/d.hands*100:0, adj=d.bb100-luck100;
     const par=`bb/100 real ${fmtBB(d.bb100)} · sem a sorte dos all-ins ${fmtBB(adj)}`;
-    if(d.bb100>=0&&adj>=0) add('green','Winrate saudável',`${par}. O lucro não depende de rodar bem — é jogo, não moeda.`);
-    else if(d.bb100>=0&&adj<0) add('gold','Lucro segurado pela sorte',`${par}. Os all-ins estão pagando acima do justo: não suba de grade por esse resultado e revise os spots antes que a variância cobre.`);
-    else if(d.bb100<0&&adj>=0) add('info','Prejuízo com cara de variância',`${par}. O jogo está gerando valor; o resultado é que ainda não mostrou. Mantém o plano, a grade e o volume.`);
-    else add('red','Winrate negativo mesmo sem azar',`${par}. O prejuízo não é (só) variância — prioridade máxima é atacar os vazamentos apontados acima.`);
+    if(d.bb100>=0&&adj>=0) add('green','Winrate saudável',`${par}. O lucro não depende de rodar bem — é jogo, não moeda.`,'bb100');
+    else if(d.bb100>=0&&adj<0) add('gold','Lucro segurado pela sorte',`${par}. Os all-ins estão pagando acima do justo: não suba de grade por esse resultado e revise os spots antes que a variância cobre.`,'bb100');
+    else if(d.bb100<0&&adj>=0) add('info','Prejuízo com cara de variância',`${par}. O jogo está gerando valor; o resultado é que ainda não mostrou. Mantém o plano, a grade e o volume.`,'bb100');
+    else add('red','Winrate negativo mesmo sem azar',`${par}. O prejuízo não é (só) variância — prioridade máxima é atacar os vazamentos apontados acima.`,'bb100');
   }
   // ---- leituras COMBINADAS: dois números que, juntos, contam uma história ----
   if(d.stealOpp>=30&&d.f3bOpp>=15&&p.steal>45&&p.f3b>70)
@@ -478,17 +479,17 @@ function hhInsights(d){
     if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
   }
   const ep=d.pos&&d.pos.EP, btn=d.pos&&d.pos.BTN;
-  if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`);
-  if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`);
+  if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`,'pos:EP');
+  if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`,'pos:BTN');
   // ---- bb/100 POR POSIÇÃO (e cruzado com as outras stats) ----
   const pb=(k,min)=>{ const x=d.pos&&d.pos[k]; return (x&&num(x.hn)>=(min||150)) ? num(x.net)/num(x.hn)*100 : null; };
   const fB=n=>`${fmtBB(n)}/100`;
   const btn100=pb('BTN',200);
-  if(btn100!=null&&btn100<0) add('red','Perdendo na melhor cadeira',`BB/100 no BTN em ${fB(btn100)} — o botão é a posição que DEVERIA pagar a conta da mesa (reg: bem positivo). Ou você abre pouco do botão, ou abre e solta demais no pós-flop: cruze com o VPIP de BTN e o WWSF acima.`);
+  if(btn100!=null&&btn100<0) add('red','Perdendo na melhor cadeira',`BB/100 no BTN em ${fB(btn100)} — o botão é a posição que DEVERIA pagar a conta da mesa (reg: bem positivo). Ou você abre pouco do botão, ou abre e solta demais no pós-flop: cruze com o VPIP de BTN e o WWSF acima.`,'pos:BTN');
   const ep100=pb('EP',150);
-  if(ep&&ep.h>=60&&ep100!=null&&ep100<-20&&(ep.v/ep.h*100)>22) add('gold','O prejuízo nasce cedo (EP)',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% + BB/100 de ${fB(ep100)} nessa posição: mão marginal aberta cedo joga a mão inteira fora de posição e a conta aparece aqui. Apertar EP é o ajuste mais barato do poker.`);
+  if(ep&&ep.h>=60&&ep100!=null&&ep100<-20&&(ep.v/ep.h*100)>22) add('gold','O prejuízo nasce cedo (EP)',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% + BB/100 de ${fB(ep100)} nessa posição: mão marginal aberta cedo joga a mão inteira fora de posição e a conta aparece aqui. Apertar EP é o ajuste mais barato do poker.`,'pos:EP');
   const bbp100=pb('BB',200);
-  if(bbp100!=null&&bbp100<-50) add('gold','Sangrando demais no BB',`BB/100 no big blind em ${fB(bbp100)}. Perder no BB é normal (o blind sai antes de ver as cartas), mas a faixa saudável fica acima de −40: defesas largas demais ou desistências caras no pós-flop — casa com as leituras de defesa de BB e fold pra c-bet.`);
+  if(bbp100!=null&&bbp100<-50) add('gold','Sangrando demais no BB',`BB/100 no big blind em ${fB(bbp100)}. Perder no BB é normal (o blind sai antes de ver as cartas), mas a faixa saudável fica acima de −40: defesas largas demais ou desistências caras no pós-flop — casa com as leituras de defesa de BB e fold pra c-bet.`,'pos:BB');
   const co100=pb('CO',150), sb100=pb('SB',150);
   if(btn100!=null&&co100!=null&&sb100!=null&&bbp100!=null){
     const late=num(d.pos.BTN.net)+num(d.pos.CO.net), blinds=num(d.pos.SB.net)+num(d.pos.BB.net);
@@ -1233,8 +1234,10 @@ function Seg({label,value,options,onChange}){
     </div>
   </div>;
 }
-// tile de estatística de poker com faixa saudável (verde dentro, amarelo perto, vermelho fora)
-function StatTile({label,cnt,opp,band}){
+// tile de estatística de poker com faixa saudável (verde dentro, amarelo perto, vermelho fora).
+// Se a stat tem uma leitura associada (hint), o tile ganha um ⚠ discreto e vira clicável —
+// a frase abre num box único embaixo do card (nada de texto fixo poluindo a grade).
+function StatTile({label,cnt,opp,band,hint,open,onToggle}){
   const has=opp>0, pct=has?cnt/opp*100:0;
   let tone=C.inkSoft, bg=C.bg;
   if(has&&band){ const [lo,hi]=band;
@@ -1242,10 +1245,20 @@ function StatTile({label,cnt,opp,band}){
     else if(pct>=lo-5&&pct<=hi+5){tone=C.gold;bg=C.goldSoft;}
     else {tone=C.red;bg=C.redSoft;}
   }
-  return <div style={{padding:'10px 12px',borderRadius:12,background:bg,minWidth:0}}>
+  return <div onClick={hint?onToggle:undefined} style={{padding:'10px 12px',borderRadius:12,background:bg,minWidth:0,position:'relative',cursor:hint?'pointer':'default',outline:open?`2px solid ${tone}`:'none'}}>
+    {hint&&<span style={{position:'absolute',top:7,right:8,color:tone,opacity:.85}}><IcoAlert s={13}/></span>}
     <div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div>
     <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:has?tone:C.inkSoft}}>{has?pctFmt(pct):'—'}</div>
     <div style={{fontSize:10.5,color:C.inkSoft}}>{has?`${cnt}/${opp}`:'sem amostra'}{band&&has?` · alvo ${band[0]}–${band[1]}`:''}{has&&opp<30?' · amostra curta':''}</div>
+  </div>;
+}
+// box único da leitura aberta (por card): título + frase, fecha tocando no tile de novo ou no ×
+function StatHintBox({i,onClose}){
+  const T={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}}[i.tone];
+  return <div style={{marginTop:10,padding:'11px 13px',borderRadius:12,background:T.bg,display:'flex',gap:10,alignItems:'flex-start'}}>
+    <span style={{flexShrink:0,marginTop:1,color:T.c}}><IcoAlert s={15}/></span>
+    <div style={{minWidth:0,flex:1}}><div style={{fontWeight:800,fontSize:13,color:T.c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
+    <button onClick={onClose} style={{flexShrink:0,background:'transparent',border:'none',color:C.inkSoft,cursor:'pointer',padding:2}}><IcoX s={14}/></button>
   </div>;
 }
 // mini-stat usado no Diário/Mensal
@@ -1400,6 +1413,7 @@ function Dashboard({session,profile}){
   const [audF,setAudF]=useState({player:'',days:30});             // filtros da aba Auditoria
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
   const [leitOpen,setLeitOpen]=useState(false);   // card "Leituras do jogo" expandido?
+  const [statHint,setStatHint]=useState(null);    // stat tocada na tela Stats (abre a leitura dela)
   const [sorteOpen,setSorteOpen]=useState(false); // card "Sorte nos all-ins" expandido?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
   const [report,setReport]=useState(null);        // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
@@ -2275,6 +2289,15 @@ function Dashboard({session,profile}){
         const afc=S('af_calls'), afb=S('af_bets');
         const pos={}; rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos[k])pos[k]={h:0,v:0,p:0,net:0,hn:0}; pos[k].h+=num(pj[k].h); pos[k].v+=num(pj[k].v); pos[k].p+=num(pj[k].p); pos[k].net+=num(pj[k].net); pos[k].hn+=num(pj[k].hn); }); });
         const POS_ORDER=['EP','MP','CO','BTN','SB','BB'];
+        // leituras calculadas UMA vez: alimentam o card "Leituras do jogo" E os toques nas stats
+        const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos,bb100});
+        const hintFor=k=>insights.find(i=>i.k===k)||null;
+        const toggleHint=k=>setStatHint(s=>s===k?null:k);
+        // tile com leitura acoplada (só marca ⚠ se existir leitura pra essa stat)
+        const tile=(label,cnt,opp,bk,k)=>{ const kk=k||bk; return <StatTile label={label} cnt={cnt} opp={opp} band={HH_BANDS[bk]} hint={hintFor(kk)} open={statHint===kk} onToggle={()=>toggleHint(kk)}/>; };
+        const hintBox=keys=>{ const i=keys.includes(statHint)?hintFor(statHint):null; return i?<StatHintBox i={i} onClose={()=>setStatHint(null)}/>:null; };
+        const verd=hands>=300?hintFor('bb100'):null;   // veredito bb/100 × sorte (ponto mais nobre da tela)
+        const VERD_C={red:C.red,gold:C.gold,green:C.greenMid,info:P};
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories — só agregados sobem pro banco.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
 
@@ -2314,48 +2337,18 @@ function Dashboard({session,profile}){
           {/* resumo */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10}}>
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>MÃOS</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600}}>{hands}</div><div style={{fontSize:11,color:C.inkSoft}}>{rows.length} torneio{rows.length!==1?'s':''}</div></Card>
-            <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>BB/100</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</div><div style={{fontSize:11,color:C.inkSoft}}>em fichas</div></Card>
+            <Card onClick={verd?()=>toggleHint('bb100'):undefined} style={{padding:14,cursor:verd?'pointer':'default',position:'relative',outline:statHint==='bb100'?`2px solid ${verd?VERD_C[verd.tone]:P}`:'none'}}>
+              {verd&&<span style={{position:'absolute',top:10,right:11,color:VERD_C[verd.tone],opacity:.85}}><IcoAlert s={13}/></span>}
+              <div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>BB/100</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</div>
+              <div style={{fontSize:11,color:verd?VERD_C[verd.tone]:C.inkSoft,fontWeight:verd?700:400}}>{verd?verd.t.toLowerCase():'em fichas'}</div>
+            </Card>
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>SORTE (ALL-IN)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div><div style={{fontSize:11,color:C.inkSoft}}>real {fmtBB(netbb)} vs EV {fmtBB(evbb)} · {S('allin_cnt')} all-in{S('allin_cnt')!==1?'s':''}</div></Card>
             <Card style={{padding:14}}><div style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>AGRESSÃO (AF)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600}}>{afc>0?(afb/afc).toFixed(1).replace('.',','):'—'}</div><div style={{fontSize:11,color:C.inkSoft}}>{afb} bets+raises / {afc} calls</div></Card>
           </div>
-
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
-              <StatTile label="VPIP" cnt={S('vpip_cnt')} opp={hands} band={HH_BANDS.vpip}/>
-              <StatTile label="PFR" cnt={S('pfr_cnt')} opp={hands} band={HH_BANDS.pfr}/>
-              <StatTile label="3-bet" cnt={S('tb_cnt')} opp={S('tb_opp')} band={HH_BANDS.tb}/>
-              <StatTile label="Fold pra 3-bet" cnt={S('f3b_cnt')} opp={S('f3b_opp')} band={HH_BANDS.f3b}/>
-              <StatTile label="Roubo de blinds" cnt={S('steal_cnt')} opp={S('steal_opp')} band={HH_BANDS.steal}/>
-              <StatTile label="BB defende" cnt={S('bbdef_cnt')} opp={S('bbdef_opp')} band={HH_BANDS.bbdef}/>
-            </div>
-          </Card>
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
-              <StatTile label="C-bet flop" cnt={S('cbet_cnt')} opp={S('cbet_opp')} band={HH_BANDS.cbet}/>
-              <StatTile label="Fold pra c-bet" cnt={S('fcbet_cnt')} opp={S('fcbet_opp')} band={HH_BANDS.fcbet}/>
-              <StatTile label="WWSF" cnt={S('wwsf_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wwsf}/>
-              <StatTile label="WTSD" cnt={S('wtsd_cnt')} opp={S('sawflop_cnt')} band={HH_BANDS.wtsd}/>
-              <StatTile label="W$SD" cnt={S('wsd_cnt')} opp={S('wtsd_cnt')} band={HH_BANDS.wsd}/>
-            </div>
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Todas as siglas estão explicadas no glossário no fim da tela.</div>
-          </Card>
-          <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
-            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=>{const b100=pos[k].hn>0?pos[k].net/pos[k].hn*100:null; return <div key={k} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13,flexWrap:'wrap'}}>
-              <b style={{width:42}}>{k}</b>
-              <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
-              <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
-              <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
-              <span>BB/100 <b style={{color:b100==null?C.inkSoft:b100>=0?C.greenMid:C.red}}>{b100==null?'—':fmtBB(b100).replace(' bb','')}</b></span>
-            </div>;})}
-            {POS_ORDER.some(k=>pos[k]&&pos[k].h>0&&!(pos[k].hn>0))&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>ℹ️ BB/100 com "—": mãos importadas antes desse recurso. Reimporte os mesmos arquivos (não duplica nada) que o sistema reprocessa e preenche.</div>}
-          </Card>
+          {hintBox(['bb100'])}
 
           {/* Leituras automáticas (insights vs faixas de reg) */}
-          {(()=>{ const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos,bb100});
-            const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
+          {(()=>{ const TONE={red:{c:C.red,bg:C.redSoft},gold:{c:C.gold,bg:C.goldSoft},green:{c:C.greenMid,bg:C.greenSoft},info:{c:P,bg:C.plumSoft}};
             const pctS=(c,o)=>o>0?(c/o*100).toFixed(1).replace('.',',')+'% ('+c+'/'+o+')':'sem amostra';
             const coachTxt=()=>[
               `Análise de poker — ${sp} (${solo?'GrinderBank':'PoolGG'})`,
@@ -2377,7 +2370,10 @@ function Dashboard({session,profile}){
             const worst=insights[0]?TONE[insights[0].tone]:{c:C.inkSoft,bg:C.bg};
             return <Card style={{padding:0,overflow:'hidden'}}>
               <button onClick={()=>setLeitOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
-                <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600,flex:1}}>Leituras do jogo</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600}}>Leituras do jogo</span>
+                  {!leitOpen&&insights[0]&&<div style={{fontSize:12,color:worst.c,fontWeight:700,marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{insights[0].t}{insights.length>1?` · +${insights.length-1}`:''}</div>}
+                </div>
                 <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:worst.c,background:worst.bg,whiteSpace:'nowrap'}}>{insights.length} leitura{insights.length!==1?'s':''}</span>
                 <span style={{color:C.inkSoft,fontSize:20,transform:leitOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
               </button>
@@ -2393,6 +2389,45 @@ function Dashboard({session,profile}){
               </div>}
             </Card>;
           })()}
+
+
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
+              {tile('VPIP',S('vpip_cnt'),hands,'vpip')}
+              {tile('PFR',S('pfr_cnt'),hands,'pfr')}
+              {tile('3-bet',S('tb_cnt'),S('tb_opp'),'tb')}
+              {tile('Fold pra 3-bet',S('f3b_cnt'),S('f3b_opp'),'f3b')}
+              {tile('Roubo de blinds',S('steal_cnt'),S('steal_opp'),'steal')}
+              {tile('BB defende',S('bbdef_cnt'),S('bbdef_opp'),'bbdef')}
+            </div>
+            {hintBox(['vpip','pfr','tb','f3b','steal','bbdef'])}
+          </Card>
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pós-flop</h3>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
+              {tile('C-bet flop',S('cbet_cnt'),S('cbet_opp'),'cbet')}
+              {tile('Fold pra c-bet',S('fcbet_cnt'),S('fcbet_opp'),'fcbet','fcb')}
+              {tile('WWSF',S('wwsf_cnt'),S('sawflop_cnt'),'wwsf')}
+              {tile('WTSD',S('wtsd_cnt'),S('sawflop_cnt'),'wtsd')}
+              {tile('W$SD',S('wsd_cnt'),S('wtsd_cnt'),'wsd')}
+            </div>
+            {hintBox(['cbet','fcb','wwsf','wtsd','wsd'])}
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Stat com <b>⚠</b> tem uma leitura — toque no número pra ver. Siglas no glossário no fim da tela.</div>
+          </Card>
+          <Card style={{padding:18}}>
+            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
+            {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=>{const b100=pos[k].hn>0?pos[k].net/pos[k].hn*100:null; const ph=hintFor('pos:'+k); return <div key={k} onClick={ph?()=>toggleHint('pos:'+k):undefined} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13,flexWrap:'wrap',cursor:ph?'pointer':'default',background:statHint==='pos:'+k?C.bg:'transparent',borderRadius:statHint==='pos:'+k?8:0}}>
+              <b style={{width:42}}>{k}</b>
+              <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
+              <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
+              <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
+              <span>BB/100 <b style={{color:b100==null?C.inkSoft:b100>=0?C.greenMid:C.red}}>{b100==null?'—':fmtBB(b100).replace(' bb','')}</b></span>
+              {ph&&<span style={{color:{red:C.red,gold:C.gold,green:C.greenMid,info:P}[ph.tone],display:'flex',alignItems:'center'}}><IcoAlert s={14}/></span>}
+            </div>;})}
+            {hintBox(POS_ORDER.map(k=>'pos:'+k))}
+            {POS_ORDER.some(k=>pos[k]&&pos[k].h>0&&!(pos[k].hn>0))&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>ℹ️ BB/100 com "—": mãos importadas antes desse recurso. Reimporte os mesmos arquivos (não duplica nada) que o sistema reprocessa e preenche.</div>}
+          </Card>
 
           {/* Sorte explicada em detalhe (recolhido por padrão; o chip do cabeçalho já mostra o número) */}
           <Card style={{padding:0,overflow:'hidden'}}>
