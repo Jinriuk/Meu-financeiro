@@ -1428,6 +1428,123 @@ function Stat({
     }
   }, sub));
 }
+// medidor de stop loss: mostra quanto do limite (diário em buy-ins, semanal em % da banca) já
+// foi consumido HOJE / nesta semana — o valor de um stop loss é ser visto ANTES de estourar.
+function SLMeter({
+  label,
+  used,
+  limit,
+  detail
+}) {
+  const pct = limit > 0 ? used / limit * 100 : 0;
+  const col = pct >= 100 ? C.red : pct >= 70 ? C.gold : C.greenMid;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'baseline',
+      gap: 8,
+      marginBottom: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      fontWeight: 600
+    }
+  }, label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontWeight: 700,
+      fontSize: 13,
+      color: col
+    }
+  }, detail)), /*#__PURE__*/React.createElement(Bar2, {
+    pct: pct,
+    color: col
+  }));
+}
+function StopLossCard({
+  players,
+  config,
+  daily,
+  curWeek,
+  bancaAtual
+}) {
+  const today = todayISO();
+  const dayBI = num(config.stoploss_daily_buyins),
+    wkPct = num(config.stoploss_weekly_pct);
+  if (!(dayBI > 0) && !(wkPct > 0)) return null;
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 18,
+      fontWeight: 600,
+      margin: '0 0 4px'
+    }
+  }, "Stop loss \u2014 a hora de parar"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginBottom: 14
+    }
+  }, "Quanto do seu limite j\xE1 foi usado. Ver ", /*#__PURE__*/React.createElement("b", null, "antes"), " de estourar \xE9 o ponto \u2014 quando a barra fica vermelha, o dia (ou a semana) acabou."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, players.map((p, i) => {
+    const abiMax = abiMaxFor(config, p, today);
+    const slDay = dayBI * abiMax;
+    const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
+    const wkLim = wkPct * bancaAtual;
+    const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
+    return /*#__PURE__*/React.createElement("div", {
+      key: p,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 9,
+        height: 9,
+        borderRadius: 99,
+        background: PLAYER_COLORS[i] || C.inkSoft
+      }
+    }), /*#__PURE__*/React.createElement("b", {
+      style: {
+        fontSize: 13.5
+      }
+    }, p.split(' ')[0])), slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+      label: `Hoje · limite ${dayBI} buy-ins`,
+      used: dayLoss,
+      limit: slDay,
+      detail: `${(dayLoss / (abiMax || 1)).toFixed(1).replace('.', ',')} de ${dayBI} bi`
+    }), wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+      label: `Semana · limite ${pctFmt(wkPct * 100)} da banca`,
+      used: wkLoss,
+      limit: wkLim,
+      detail: `${fmt(wkLoss)} de ${fmt(wkLim)}`
+    }));
+  })));
+}
 
 /* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
 function MultiBars({
@@ -3944,7 +4061,8 @@ function TourRow({
   onDelete
 }) {
   // só sinaliza o que é grave (fora da grade DA ÉPOCA); OK/ATENÇÃO poluíam a lista
-  const st = tourStatus(t, abiMaxFor(config, t.player, t.entry_date)),
+  const abiMax = abiMaxFor(config, t.player, t.entry_date);
+  const st = tourStatus(t, abiMax),
     lp = lucroTorneio(t);
   const col = PLAYER_COLORS[players.indexOf(t.player)] || C.inkSoft;
   return /*#__PURE__*/React.createElement(Row, {
@@ -3990,9 +4108,14 @@ function TourRow({
         flexWrap: 'wrap',
         marginTop: 2
       }
-    }, "buy-in ", fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : '', t.final_position ? ` · ${t.final_position}º` : '', " ", st === 'FORA DA GRADE' && /*#__PURE__*/React.createElement(Badge, {
+    }, "buy-in ", fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : '', t.final_position ? ` · ${t.final_position}º` : '', " ", st === 'FORA DA GRADE' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Badge, {
       text: st
-    })))),
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.red,
+        fontWeight: 700
+      }
+    }, "buy-in ", fmt(t.buyin), " \xB7 teto ", fmt(abiMax)))))),
     right: /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 800,
@@ -4282,10 +4405,12 @@ function DiaryCard({
   const premios = dayTours.reduce((s, t) => s + num(t.prize), 0);
   const cashes = dayTours.filter(t => num(t.prize) > 0).length;
   const roi = num(entry.total_buyins) > 0 ? r / num(entry.total_buyins) * 100 : 0;
+  const fora = st === 'FORA DA GRADE';
   return /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
-      overflow: 'hidden'
+      overflow: 'hidden',
+      border: fora ? `1.5px solid ${C.red}` : `1px solid ${C.border}`
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setOpen(o => !o),
@@ -4348,7 +4473,21 @@ function DiaryCard({
       transform: open ? 'rotate(90deg)' : 'none',
       transition: 'transform .2s'
     }
-  }, "\u203A")), open && /*#__PURE__*/React.createElement("div", {
+  }, "\u203A")), fora && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 7,
+      padding: '9px 18px',
+      background: C.redSoft,
+      color: C.red,
+      fontSize: 12.5,
+      fontWeight: 700,
+      borderTop: `1px solid ${C.red}33`
+    }
+  }, /*#__PURE__*/React.createElement(IcoAlert, {
+    s: 15
+  }), "Fora da grade \u2014 maior buy-in ", fmt(entry.maior_buyin), " \xB7 teto ", fmt(abiMax), " na data (passou ", fmt(num(entry.maior_buyin) - abiMax), ")"), open && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '0 18px 16px'
     }
@@ -5072,6 +5211,19 @@ function Dashboard({
       [row.key]: nv
     });
     if (!salvou) return; // não registra no histórico uma mudança que o banco não aceitou
+    // renomear jogador: propaga o novo nome pro histórico (torneios, carteiras, saques, mãos),
+    // senão os registros antigos ficam "órfãos" com o nome velho e somem das telas do jogador.
+    if ((row.key === 'player1_name' || row.key === 'player2_name') && oldRaw && nv && oldRaw !== nv) {
+      for (const tb of ['tournaments', 'daily_entries', 'player_wallets', 'withdrawals', 'hh_tournament_stats']) {
+        const {
+          error
+        } = await sb.from(tb).update({
+          player: nv
+        }).eq('player', oldRaw);
+        if (error) console.error('rename cascade ' + tb, error);
+      }
+      await loadAll(); // recarrega tudo já com o nome novo em todo lugar
+    }
     const resumo = `${row.label}: ${oldShow} → ${newShow}`;
     const {
       data,
@@ -6315,7 +6467,7 @@ function Dashboard({
     bg: resSemanaAtual >= 0 ? C.greenSoft : C.redSoft,
     label: "Resultado da semana",
     value: fmt(resSemanaAtual),
-    sub: `semana até ${dLabel(CURWK)}`
+    sub: resSemanaAtual === 0 && !daily.some(e => weekEnding(e.entry_date) === CURWK) ? `semana começando · até ${dLabel(CURWK)}` : `semana até ${dLabel(CURWK)}`
   }), !solo && /*#__PURE__*/React.createElement(Stat, {
     Icon: IcoAlert,
     tone: makeUpTotal > 0 ? C.gold : C.greenMid,
@@ -6344,7 +6496,13 @@ function Dashboard({
     label: "Torneios jogados",
     value: String(tours.length),
     sub: `ABI médio ${fmt(tours.length ? tours.reduce((s, t) => s + totalInvestido(t), 0) / tours.reduce((s, t) => s + 1 + num(t.reentries), 0) : 0)}`
-  })), !solo && /*#__PURE__*/React.createElement(Card, {
+  })), /*#__PURE__*/React.createElement(StopLossCard, {
+    players: players,
+    config: config,
+    daily: daily,
+    curWeek: curWeek,
+    bancaAtual: bancaAtual
+  }), !solo && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
