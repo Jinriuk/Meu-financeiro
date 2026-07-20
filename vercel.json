@@ -4,6 +4,14 @@
   "installCommand": "echo skip-install",
   "buildCommand": "echo skip-build",
   "outputDirectory": ".",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "meu-financeiro.*\\.vercel\\.app" }],
+      "destination": "https://grinderbank.com/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

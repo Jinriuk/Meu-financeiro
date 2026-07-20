@@ -12,27 +12,62 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png"/>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
-  :root{--bg:#F5F0E6;--surface:#fff;--ink:#19231D;--soft:#57645A;--line:#E7DFCC;--p:#4C3E92;--psoft:#EAE7F8;--green:#1F7355;--greensoft:#E5EDE6;--gold:#A5782C;--goldsoft:#F1E6CD}
+  :root{--bg:#F5F0E6;--surface:#fff;--ink:#19231D;--soft:#57645A;--line:#E7DFCC;--p:#4C3E92;--psoft:#EAE7F8;--green:#1F7355;--greensoft:#E5EDE6;--red:#B23A3A;--gold:#A5782C;--goldsoft:#F1E6CD}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;line-height:1.65;font-variant-numeric:tabular-nums}
   .wrap{max-width:980px;margin:0 auto;padding:0 20px}
   h1,h2,h3{font-family:'Space Grotesk',sans-serif;line-height:1.15}
   header{padding:18px 0}
   .brand{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.02em}
-  .mark{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#5D4DAF,#4C3E92 55%,#332A69);display:grid;place-items:center;color:#fff;font-size:17px;font-weight:700}
-  .hero{padding:44px 0 30px;text-align:center}
-  .hero h1{font-size:clamp(1.9rem,5vw,3rem);margin:.2em auto .35em;max-width:720px}
-  .hero p{font-size:1.08rem;color:var(--soft);max-width:600px;margin:0 auto 22px}
+  .hero{padding:40px 0 24px;text-align:center}
+  .hero h1{font-size:clamp(1.95rem,5vw,3rem);margin:.28em auto .32em;max-width:740px}
+  .hero .sub{font-size:1.08rem;color:var(--soft);max-width:620px;margin:0 auto 22px}
   .cta{display:inline-block;background:var(--p);color:#fff;font-weight:700;font-size:16px;padding:15px 30px;border-radius:14px;text-decoration:none;box-shadow:0 10px 26px -12px rgba(76,62,146,.55)}
   .cta.sec{background:transparent;color:var(--p);border:1.5px solid var(--p);box-shadow:none;margin-left:10px}
   .pill{display:inline-block;background:var(--psoft);color:var(--p);font-weight:700;font-size:12px;padding:5px 13px;border-radius:99px;letter-spacing:.04em}
-  section{padding:36px 0}
+  section{padding:34px 0}
+  /* mock do app no hero */
+  .shot{max-width:520px;margin:30px auto 0;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 2px 4px rgba(25,35,29,.05),0 26px 56px -30px rgba(25,35,29,.5);overflow:hidden;text-align:left}
+  .shot .bar{display:flex;align-items:center;gap:6px;padding:11px 16px;border-bottom:1px solid var(--line);background:#FBF9F3}
+  .shot .dot{width:9px;height:9px;border-radius:99px;background:#D9D0BC}
+  .shot .bar b{margin-left:8px;font-family:'Space Grotesk',sans-serif;font-size:13px;color:var(--soft);font-weight:600}
+  .shot .body{padding:16px 18px}
+  .stat{display:grid;grid-template-columns:64px 1fr 52px;align-items:center;gap:10px;margin:9px 0}
+  .stat .k{font-size:12.5px;font-weight:700;color:var(--soft)}
+  .stat .track{height:9px;border-radius:99px;background:var(--line);overflow:hidden}
+  .stat .fill{height:100%;border-radius:99px;background:var(--p)}
+  .stat .fill.hot{background:var(--gold)}
+  .stat .v{font-size:12.5px;font-weight:700;text-align:right;font-family:'Space Grotesk',sans-serif}
+  .read{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+  .read .r{font-size:13px;margin:7px 0;padding-left:22px;position:relative}
+  .read .r.warn::before{content:'⚠️';position:absolute;left:0;font-size:12px}
+  .read .r.ok::before{content:'✓';position:absolute;left:2px;color:var(--green);font-weight:800}
+  .read .r b{color:var(--ink)}
+  .cap{text-align:center;font-size:12px;color:var(--soft);margin:10px auto 0;max-width:460px}
   .cards{display:grid;grid-template-columns:1fr;gap:14px}
   @media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 1px 2px rgba(25,35,29,.05),0 12px 32px -20px rgba(25,35,29,.28)}
   .card h3{margin:0 0 6px;font-size:17px}
   .card p{margin:0;font-size:14px;color:var(--soft)}
-  .num{font-family:'Space Grotesk',sans-serif;font-weight:700}
+  .card.feat{border-color:var(--gold);box-shadow:0 1px 2px rgba(25,35,29,.05),0 14px 34px -20px rgba(165,120,44,.5)}
+  .evchart{margin-top:12px;background:#FBF9F3;border:1px solid var(--line);border-radius:12px;padding:10px 12px 6px}
+  .evchart svg{display:block;width:100%;height:70px}
+  .evleg{display:flex;gap:16px;font-size:11px;color:var(--soft);margin-top:4px}
+  .evleg span{display:inline-flex;align-items:center;gap:5px}
+  .evleg i{width:14px;height:0;border-top:2px solid var(--green);display:inline-block}
+  .evleg i.ev{border-top-style:dashed;border-color:var(--gold)}
+  /* transformação */
+  .transform{max-width:760px;margin:0 auto}
+  .tgrid{display:grid;grid-template-columns:1fr;gap:14px}
+  @media(min-width:640px){.tgrid{grid-template-columns:1fr 1fr}}
+  .tcol{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px 22px}
+  .tcol.after{border-color:var(--green);background:linear-gradient(180deg,#fff,var(--greensoft))}
+  .tcol h4{font-family:'Space Grotesk',sans-serif;margin:0 0 12px;font-size:15px;letter-spacing:.02em}
+  .tcol ul{list-style:none;margin:0;padding:0;font-size:14px}
+  .tcol li{padding:6px 0 6px 26px;position:relative;color:var(--soft)}
+  .tcol.before li::before{content:'✕';position:absolute;left:2px;color:var(--red);font-weight:800}
+  .tcol.after li::before{content:'✓';position:absolute;left:2px;color:var(--green);font-weight:800}
+  .tcol.after li{color:var(--ink)}
   .planos{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;max-width:720px;margin:0 auto}
   .plano{background:var(--surface);border:1.5px solid var(--line);border-radius:20px;padding:26px;text-align:center}
   .plano.pro{border-color:var(--p);position:relative}
@@ -44,8 +79,10 @@
   ul.check li{padding:5px 0 5px 26px;position:relative}
   ul.check li::before{content:'✓';position:absolute;left:2px;color:var(--green);font-weight:800}
   .btnp{display:block;background:var(--p);color:#fff;font-weight:700;padding:13px 0;border-radius:13px;text-decoration:none}
-  .btnp.off{background:var(--goldsoft);color:var(--gold)}
+  .founder{background:var(--goldsoft);border:1px solid #E4D3A8;border-radius:16px;padding:16px 20px;max-width:660px;margin:20px auto 0;text-align:center;font-size:13.5px;color:#6b5320}
+  .founder b{color:var(--gold)}
   .faq details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:10px}
+  .faq details[open]{border-color:var(--p)}
   .faq summary{font-weight:700;cursor:pointer;font-size:14.5px}
   .faq p{font-size:13.5px;color:var(--soft);margin:.6em 0 0}
   footer{padding:34px 0 50px;border-top:1px solid var(--line);margin-top:30px;font-size:13px;color:var(--soft)}
@@ -58,24 +95,76 @@
   <header><div class="brand"><img src="brand-symbol.png" alt="" width="36" height="36" style="display:block"/>GrinderBank</div></header>
 
   <div class="hero">
+    <span class="pill">Feito por grinder, pra grinder — micro e low stakes</span>
     <h1>Sua banca sob controle. Suas estatísticas de verdade.</h1>
-    <p>Gestão de banca profissional das salas onde <b>você</b> joga + estatísticas reais das suas mãos — pelo preço de um buy-in de micro, não de uma mensalidade em dólar.</p>
-    <a class="cta" href="index.html">Testar 15 dias grátis</a><a class="cta sec" href="#planos">Ver planos</a>
-    <div style="font-size:12px;color:var(--soft);margin-top:10px">15 dias grátis do plano que você escolher · cancela quando quiser</div>
+    <p class="sub">Saber exatamente onde sua banca está, quanto do resultado é <b>você</b> e quanto é variância, e ter a disciplina no automático — pelo preço de um buy-in de micro, não de uma mensalidade em dólar.</p>
+    <a class="cta" href="index.html">Começar teste grátis de 15 dias</a><a class="cta sec" href="#planos">Ver planos</a>
+    <div style="font-size:12px;color:var(--soft);margin-top:10px">15 dias grátis do plano que você escolher · sem cartão pra começar · cancela quando quiser</div>
+
+    <!-- prova visual: leitura real do app -->
+    <div class="shot" aria-label="Exemplo de leitura do app">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><b>GrinderBank · Suas estatísticas</b></div>
+      <div class="body">
+        <div class="stat"><span class="k">VPIP</span><span class="track"><span class="fill hot" style="width:74%"></span></span><span class="v">31%</span></div>
+        <div class="stat"><span class="k">PFR</span><span class="track"><span class="fill" style="width:43%"></span></span><span class="v">18%</span></div>
+        <div class="stat"><span class="k">3-bet</span><span class="track"><span class="fill" style="width:26%"></span></span><span class="v">4,2%</span></div>
+        <div class="stat"><span class="k">bb/100</span><span class="track"><span class="fill" style="width:58%"></span></span><span class="v">+7,3</span></div>
+        <div class="read">
+          <div class="r warn"><b>Jogando mãos demais.</b> Teu VPIP tá ~6 pts acima da faixa de reg no teu ABI — dá pra apertar os limpes.</div>
+          <div class="r ok">Agressão pré-flop e pós-flop saudáveis. Segue firme.</div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Leitura de exemplo. No seu app, os números e as frases saem das <b>suas</b> mãos importadas.</p>
   </div>
 
   <section>
     <div class="cards">
       <div class="card"><h3>🎯 Banca com disciplina</h3><p>Banca separada por sala — <b>você adiciona as salas que quiser</b> —, stop loss diário e semanal, grade de buy-in (ABI) com histórico, resultado por semana e relatórios. O que separa reg de degen.</p></div>
       <div class="card"><h3>📈 Stats sem mensalidade em dólar</h3><p>Importa o zip do PokerCraft (GG) ou os .txt do PokerStars e vê VPIP, PFR, 3-bet, c-bet, W$SD, AF e <b>bb/100 por posição</b> — calculados no seu navegador, as mãos nunca saem do seu controle.</p></div>
-      <div class="card"><h3>🎲 Sorte separada do jogo</h3><p>O EV dos seus all-ins diz quanto do resultado é variância e quanto é jogo. Chega de subir de grade no rush ou desistir no downswing.</p></div>
+      <div class="card feat"><h3>🎲 Sorte separada do jogo</h3><p>O EV dos seus all-ins diz quanto do resultado é variância e quanto é jogo — pra você não confundir upswing com evolução, nem downswing com jogar mal.</p>
+        <div class="evchart">
+          <svg viewBox="0 0 300 80" preserveAspectRatio="none" role="img" aria-label="Resultado real oscilando em volta da linha de EV">
+            <polyline fill="none" stroke="#A5782C" stroke-width="2" stroke-dasharray="4 4" points="0,56 60,49 120,43 180,37 240,31 300,26"/>
+            <polyline fill="none" stroke="#1F7355" stroke-width="2.5" points="0,58 34,49 68,61 102,40 140,53 176,29 212,44 250,24 300,20"/>
+          </svg>
+          <div class="evleg"><span><i class="ev"></i> linha de EV (o jogo)</span><span><i></i> resultado real (a sorte)</span></div>
+        </div>
+      </div>
       <div class="card"><h3>🧠 Leituras em português</h3><p>O app compara suas stats com faixas de reg e escreve o que precisa de atenção: "jogando mãos demais", "uma bala só", "sangrando no BB" — direto, na sua língua.</p></div>
+    </div>
+  </section>
+
+  <section class="transform">
+    <h2 style="text-align:center;font-size:1.55rem">O que muda não é o dinheiro. É o controle.</h2>
+    <p style="text-align:center;color:var(--soft);margin:-4px 0 22px;font-size:14.5px">A banca é sua. O GrinderBank só te faz <b>enxergar</b> ela — e te dá o freio.</p>
+    <div class="tgrid">
+      <div class="tcol before">
+        <h4>Sem controle</h4>
+        <ul>
+          <li>Subia de grade na empolgação, largava no downswing</li>
+          <li>"Será que eu tô lucrando?" — sem resposta de verdade</li>
+          <li>Banca misturada com o dinheiro da vida</li>
+          <li>Stop loss só na teoria; parava tarde demais</li>
+          <li>Não sabia se jogou mal ou só correu mal</li>
+        </ul>
+      </div>
+      <div class="tcol after">
+        <h4>Com o GrinderBank</h4>
+        <ul>
+          <li>Grade de buy-in definida — e um toque quando você sai dela</li>
+          <li>Lucro real por semana, em reais, sem achismo</li>
+          <li>Banca separada, cada saque e recarga registrado</li>
+          <li>Stop loss diário e semanal avisando na hora</li>
+          <li>EV dos all-ins mostrando o que foi jogo e o que foi sorte</li>
+        </ul>
+      </div>
     </div>
   </section>
 
   <section id="planos">
     <h2 style="text-align:center;font-size:1.7rem">Planos que cabem na banca de micro</h2>
-    <p style="text-align:center;color:var(--soft);margin:-6px 0 24px;font-size:14.5px">Pra comparar: só o plano de entrada das ferramentas gringas custa ~R$ 270/mês.</p>
+    <p style="text-align:center;color:var(--soft);margin:-6px 0 24px;font-size:14.5px">Pra comparar: só o plano de entrada das ferramentas gringas custa ~R$ 270/mês. Todo plano começa com <b>15 dias grátis</b>.</p>
     <div class="planos">
       <div class="plano">
         <h3>Gestão</h3>
@@ -87,7 +176,7 @@
           <li>Stop loss e grade de buy-in</li>
           <li>Ilimitado, sem pegadinha</li>
         </ul>
-        <a class="btnp off" href="index.html">Testar 15 dias grátis</a>
+        <a class="btnp" href="index.html">Testar 15 dias grátis</a>
       </div>
       <div class="plano pro">
         <span class="tag">MAIS ESCOLHIDO</span>
@@ -102,10 +191,10 @@
           <li>Leituras automáticas em PT-BR</li>
           <li>Relatório completo em PDF</li>
         </ul>
-        <a class="btnp off" href="index.html">Entrar na lista de fundadores</a>
+        <a class="btnp" href="index.html">Testar 15 dias grátis</a>
       </div>
     </div>
-    <p style="text-align:center;font-size:12.5px;color:var(--soft);margin-top:14px">Vendas abrindo em breve — os <b>30 primeiros fundadores</b> travam R$ 15/mês pra sempre.</p>
+    <div class="founder">🏆 <b>Oferta de fundador:</b> quem entrar agora, ainda na fase de lançamento, <b>trava R$ 15/mês pra sempre</b> no Pro quando a cobrança abrir. Sem contador falso, sem pressão — é só um obrigado por chegar cedo.</div>
   </section>
 
   <section>
@@ -114,10 +203,10 @@
 
   <section class="faq">
     <h2 style="font-size:1.4rem">Perguntas de quem é do jogo</h2>
+    <details open><summary>Isso é permitido pelos sites?</summary><p>É. Análise pós-sessão das suas próprias mãos é permitida pela GG e pelo PokerStars. O que os sites proíbem é HUD/assistência em tempo real — e o GrinderBank não faz isso.</p></details>
+    <details open><summary>Meus dados ficam seguros?</summary><p>Cada conta é isolada no banco de dados (RLS do Postgres): é tecnicamente impossível um usuário ver dados de outro. As mãos brutas nem sobem — só agregados. Detalhes na <a href="privacidade.html">Política de Privacidade</a>.</p></details>
     <details><summary>Só funciona com GG e PokerStars?</summary><p>A <b>gestão de banca funciona com qualquer sala</b> — você adiciona as salas que joga nos ajustes. O <b>import de mãos</b> (pras estatísticas) hoje lê GG (PokerCraft) e PokerStars, que cobrem a imensa maioria do volume BR; outras salas entram conforme os fundadores pedirem.</p></details>
     <details><summary>Como importo as mãos?</summary><p>Na GG: baixa o hand history no PokerCraft e solta o zip inteiro no app (pode até zip dentro de zip). PokerStars: o histórico local ou o transcript por e-mail, em português ou inglês. Reimportar nunca duplica nada.</p></details>
-    <details><summary>Isso é permitido pelos sites?</summary><p>É. Análise pós-sessão das suas próprias mãos é permitida pela GG e pelo PokerStars. O que os sites proíbem é HUD/assistência em tempo real — e o GrinderBank não faz isso.</p></details>
-    <details><summary>Meus dados ficam seguros?</summary><p>Cada conta é isolada no banco de dados (RLS do Postgres): é tecnicamente impossível um usuário ver dados de outro. As mãos brutas nem sobem — só agregados. Detalhes na <a href="privacidade.html">Política de Privacidade</a>.</p></details>
     <details><summary>Posso cancelar quando quiser?</summary><p>Pode. Sem fidelidade, sem multa. Cancela e o acesso vale até o fim do período pago.</p></details>
     <details><summary>Sou de time/pool. Serve pra nós?</summary><p>O modo time (banca compartilhada, make-up, split e saques) já existe e roda em produção. Fala com a gente que a gente libera pro seu time.</p></details>
   </section>
@@ -125,7 +214,7 @@
   <footer>
     <div class="brand" style="font-size:16px;margin-bottom:10px"><img src="brand-symbol.png" alt="" width="28" height="28" style="display:block"/>GrinderBank</div>
     <a href="termos.html">Termos de Uso</a><a href="privacidade.html">Privacidade</a><a href="index.html">Entrar</a>
-    <div style="margin-top:10px">GrinderBank — gestão de banca e estatísticas de poker. Não somos site de apostas e não movimentamos dinheiro de jogo.</div>
+    <div style="margin-top:10px">GrinderBank — gestão de banca e estatísticas de poker. Não somos site de apostas e não movimentamos dinheiro de jogo. Jogue com responsabilidade.</div>
   </footer>
 </div>
 </body>
