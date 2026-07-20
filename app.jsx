@@ -556,6 +556,42 @@ function Stat({Icon,tone,bg,label,value,sub}){
     {sub&&<div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{sub}</div>}
   </Card>;
 }
+// medidor de stop loss: mostra quanto do limite (diário em buy-ins, semanal em % da banca) já
+// foi consumido HOJE / nesta semana — o valor de um stop loss é ser visto ANTES de estourar.
+function SLMeter({label,used,limit,detail}){
+  const pct=limit>0?used/limit*100:0;
+  const col=pct>=100?C.red:pct>=70?C.gold:C.greenMid;
+  return <div style={{minWidth:0}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,marginBottom:5}}>
+      <span style={{fontSize:12.5,color:C.inkSoft,fontWeight:600}}>{label}</span>
+      <span style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:13,color:col}}>{detail}</span>
+    </div>
+    <Bar2 pct={pct} color={col}/>
+  </div>;
+}
+function StopLossCard({players,config,daily,curWeek,bancaAtual}){
+  const today=todayISO();
+  const dayBI=num(config.stoploss_daily_buyins), wkPct=num(config.stoploss_weekly_pct);
+  if(!(dayBI>0)&&!(wkPct>0)) return null;
+  return <Card style={{padding:20}}>
+    <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Stop loss — a hora de parar</h3>
+    <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto — quando a barra fica vermelha, o dia (ou a semana) acabou.</div>
+    <div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {players.map((p,i)=>{
+        const abiMax=abiMaxFor(config,p,today);
+        const slDay=dayBI*abiMax;
+        const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
+        const wkLim=wkPct*bancaAtual;
+        const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
+        return <div key={p} style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{p.split(' ')[0]}</b></div>
+          {slDay>0&&<SLMeter label={`Hoje · limite ${dayBI} buy-ins`} used={dayLoss} limit={slDay} detail={`${(dayLoss/(abiMax||1)).toFixed(1).replace('.',',')} de ${dayBI} bi`}/>}
+          {wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(wkPct*100)} da banca`} used={wkLoss} limit={wkLim} detail={`${fmt(wkLoss)} de ${fmt(wkLim)}`}/>}
+        </div>;
+      })}
+    </div>
+  </Card>;
+}
 
 /* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
 function MultiBars({data, series}){
@@ -1178,12 +1214,13 @@ function NotConfigured(){
 /* ---------- torneios: linha + card de dia (Torneios) + card por jogador (Diário) ---------- */
 function TourRow({t,config,players,onEdit,onDelete}){
   // só sinaliza o que é grave (fora da grade DA ÉPOCA); OK/ATENÇÃO poluíam a lista
-  const st=tourStatus(t,abiMaxFor(config,t.player,t.entry_date)), lp=lucroTorneio(t);
+  const abiMax=abiMaxFor(config,t.player,t.entry_date);
+  const st=tourStatus(t,abiMax), lp=lucroTorneio(t);
   const col=PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft;
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
-      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} {st==='FORA DA GRADE'&&<Badge text={st}/>}</div></div></>}
+      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} {st==='FORA DA GRADE'&&<><Badge text={st}/><span style={{color:C.red,fontWeight:700}}>buy-in {fmt(t.buyin)} · teto {fmt(abiMax)}</span></>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
@@ -1245,7 +1282,8 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   const premios=dayTours.reduce((s,t)=>s+num(t.prize),0);
   const cashes=dayTours.filter(t=>num(t.prize)>0).length;
   const roi=num(entry.total_buyins)>0?(r/num(entry.total_buyins))*100:0;
-  return <Card style={{padding:0,overflow:'hidden'}}>
+  const fora=st==='FORA DA GRADE';
+  return <Card style={{padding:0,overflow:'hidden',border:fora?`1.5px solid ${C.red}`:`1px solid ${C.border}`}}>
     <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'14px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
       <span style={{width:10,height:10,borderRadius:99,background:PLAYER_COLORS[i]||C.inkSoft,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}>
@@ -1255,6 +1293,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
       <span style={{fontWeight:800,fontSize:16,color:r>=0?C.greenMid:C.red}}>{r>=0?'+':'−'}{fmt(Math.abs(r))}</span>
       <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
+    {fora&&<div style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:C.redSoft,color:C.red,fontSize:12.5,fontWeight:700,borderTop:`1px solid ${C.red}33`}}><IcoAlert s={15}/>Fora da grade — maior buy-in {fmt(entry.maior_buyin)} · teto {fmt(abiMax)} na data (passou {fmt(num(entry.maior_buyin)-abiMax)})</div>}
     {open&&<div style={{padding:'0 18px 16px'}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(88px,1fr))',gap:8,marginBottom:12}}>
         <MiniStat label="ABI médio" value={fmt(abiMedioDia(entry))}/>
@@ -1535,6 +1574,15 @@ function Dashboard({session,profile}){
     const oldRaw=config[row.key];
     const salvou=await saveConfig({[row.key]:nv});
     if(!salvou) return;   // não registra no histórico uma mudança que o banco não aceitou
+    // renomear jogador: propaga o novo nome pro histórico (torneios, carteiras, saques, mãos),
+    // senão os registros antigos ficam "órfãos" com o nome velho e somem das telas do jogador.
+    if((row.key==='player1_name'||row.key==='player2_name') && oldRaw && nv && oldRaw!==nv){
+      for(const tb of ['tournaments','daily_entries','player_wallets','withdrawals','hh_tournament_stats']){
+        const {error}=await sb.from(tb).update({player:nv}).eq('player',oldRaw);
+        if(error) console.error('rename cascade '+tb,error);
+      }
+      await loadAll();   // recarrega tudo já com o nome novo em todo lugar
+    }
     const resumo=`${row.label}: ${oldShow} → ${newShow}`;
     const {data,error}=await sb.from('config_changes').insert({field:row.key,old_value:String(oldRaw),new_value:String(nv),resumo,changed_by_name:myName}).select();
     if(error){ console.error('config_changes',error); return; }
@@ -2009,12 +2057,14 @@ function Dashboard({session,profile}){
         </div>}
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={`semana até ${dLabel(CURWK)}`}/>
+          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · até ${dLabel(CURWK)}`:`semana até ${dLabel(CURWK)}`}/>
           {!solo&&<Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>}
           {!solo&&<Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>}
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Lucro acumulado':'Lucro da pool (acum.)'} value={fmt(solo?resTotalGeral:lucroPoolAcum)} sub={solo?'desde o começo':`pago em saques: ${fmt(totalPago)}`}/>
           {solo&&<Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios jogados" value={String(tours.length)} sub={`ABI médio ${fmt(tours.length?tours.reduce((s,t)=>s+totalInvestido(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0)}`}/>}
         </div>
+
+        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaAtual={bancaAtual}/>
 
         {!solo&&<Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
