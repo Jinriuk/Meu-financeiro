@@ -134,9 +134,6 @@
   ul.check li::before{content:'✓';position:absolute;left:2px;color:var(--green);font-weight:800}
   .btnp{display:block;background:var(--p);color:#fff;font-weight:700;padding:13px 0;border-radius:13px;text-decoration:none;transition:transform .25s var(--ease),box-shadow .25s var(--ease)}
   .btnp:hover{transform:translateY(-2px);box-shadow:0 12px 26px -12px rgba(76,62,146,.6)}
-  .founder{background:var(--goldsoft);border:1px solid #E4D3A8;border-radius:16px;padding:16px 20px;max-width:660px;margin:20px auto 0;text-align:center;font-size:13.5px;color:#6b5320}
-  .founder b{color:var(--gold)}
-
   .faq details{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:10px;transition:border-color .25s}
   .faq details[open]{border-color:var(--p)}
   .faq summary{font-weight:700;cursor:pointer;font-size:14.5px;list-style:none;position:relative;padding-right:26px}
@@ -254,7 +251,6 @@
         <a class="btnp" href="index.html">Testar 15 dias grátis</a>
       </div>
     </div>
-    <div class="founder rv">🏆 <b>Oferta de fundador:</b> quem entrar agora, ainda na fase de lançamento, <b>trava R$ 15/mês pra sempre</b> no Pro quando a cobrança abrir. Sem contador falso, sem pressão — é só um obrigado por chegar cedo.</div>
   </section>
 
   <section>
@@ -265,7 +261,7 @@
     <h2 class="rv" style="font-size:1.4rem">Perguntas de quem é do jogo</h2>
     <details class="rv" open><summary>Isso é permitido pelos sites?</summary><p>É. Análise pós-sessão das suas próprias mãos é permitida pela GG e pelo PokerStars. O que os sites proíbem é HUD/assistência em tempo real — e o GrinderBank não faz isso.</p></details>
     <details class="rv" style="--d:.06s" open><summary>Meus dados ficam seguros?</summary><p>Cada conta é isolada no banco de dados (RLS do Postgres): é tecnicamente impossível um usuário ver dados de outro. As mãos brutas nem sobem — só agregados. Detalhes na <a href="privacidade.html">Política de Privacidade</a>.</p></details>
-    <details class="rv" style="--d:.12s"><summary>Só funciona com GG e PokerStars?</summary><p>A <b>gestão de banca funciona com qualquer sala</b> — você adiciona as salas que joga nos ajustes. O <b>import de mãos</b> (pras estatísticas) hoje lê GG (PokerCraft) e PokerStars, que cobrem a imensa maioria do volume BR; outras salas entram conforme os fundadores pedirem.</p></details>
+    <details class="rv" style="--d:.12s"><summary>Só funciona com GG e PokerStars?</summary><p>A <b>gestão de banca funciona com qualquer sala</b> — você adiciona as salas que joga nos ajustes. O <b>import de mãos</b> (pras estatísticas) hoje lê GG (PokerCraft) e PokerStars, que cobrem a imensa maioria do volume BR; outras salas entram conforme os assinantes pedirem.</p></details>
     <details class="rv" style="--d:.18s"><summary>Como importo as mãos?</summary><p>Na GG: baixa o hand history no PokerCraft e solta o zip inteiro no app (pode até zip dentro de zip). PokerStars: o histórico local ou o transcript por e-mail, em português ou inglês. Reimportar nunca duplica nada.</p></details>
     <details class="rv" style="--d:.24s"><summary>Posso cancelar quando quiser?</summary><p>Pode. Sem fidelidade, sem multa. Cancela e o acesso vale até o fim do período pago.</p></details>
     <details class="rv" style="--d:.3s"><summary>Sou de time/pool. Serve pra nós?</summary><p>O modo time (banca compartilhada, make-up, split e saques) já existe e roda em produção. Fala com a gente que a gente libera pro seu time.</p></details>
