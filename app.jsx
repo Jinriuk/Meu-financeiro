@@ -683,10 +683,11 @@ function LineChart({data, color=P, ref_}){
           <polygon points={area} fill={color} opacity="0.12"/>
           <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
           {act!=null&&<line x1={xF(act)*100} x2={xF(act)*100} y1="0" y2="100" stroke={color} strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
-          {act!=null&&<circle cx={xF(act)*100} cy={yF(vals[act])} r="4" fill={color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>}
         </svg>
+        {/* marcador em HTML (círculo SVG esticaria com preserveAspectRatio="none" e virava elipse) */}
+        {act!=null&&<span style={{position:'absolute',left:`${xF(act)*100}%`,top:`${yF(vals[act])}%`,transform:'translate(-50%,-50%)',width:11,height:11,borderRadius:99,background:color,border:'2px solid #fff',boxShadow:'0 1px 5px rgba(0,0,0,.3)',pointerEvents:'none'}}/>}
         {ref_!=null&&<span style={{position:'absolute',right:2,top:`${yF(ref_)}%`,transform:'translateY(-115%)',fontSize:9.5,color:C.red,fontWeight:700,pointerEvents:'none'}}>piso</span>}
-        {act!=null&&<div style={{position:'absolute',left:`${xF(act)*100}%`,top:`${yF(vals[act])}%`,transform:`translate(${xF(act)>0.65?'-108%':'8%'},-130%)`,background:C.ink,color:'#fff',padding:'5px 9px',borderRadius:9,fontSize:12,fontWeight:700,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 12px -4px rgba(0,0,0,.4)'}}>
+        {act!=null&&<div style={{position:'absolute',left:`${xF(act)*100}%`,top:`${yF(vals[act])}%`,transform:`translate(${xF(act)>0.65?'-108%':'8%'},${yF(vals[act])<30?'30%':'-130%'})`,background:C.ink,color:'#fff',padding:'5px 9px',borderRadius:9,fontSize:12,fontWeight:700,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 12px -4px rgba(0,0,0,.4)'}}>
           {fmt(vals[act])}<div style={{fontSize:10,opacity:.8,fontWeight:600}}>{data[act].label}</div>
         </div>}
         <div style={{position:'absolute',inset:0,cursor:'crosshair',touchAction:'none'}}
@@ -727,8 +728,9 @@ function MultiLineChart({labels, series}){
           <line x1="0" x2="100" y1={yF(0)} y2={yF(0)} stroke={C.inkSoft} strokeWidth="0.5" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>
           {series.map((s,si)=><polyline key={si} points={s.values.map((v,i)=>`${(xF(i)*100).toFixed(2)},${yF(num(v)).toFixed(2)}`).join(' ')} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>)}
           {act!=null&&<line x1={xF(act)*100} x2={xF(act)*100} y1="0" y2="100" stroke={C.inkSoft} strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
-          {act!=null&&series.map((s,si)=><circle key={si} cx={xF(act)*100} cy={yF(num(s.values[act]))} r="3.5" fill={s.color} stroke="#fff" strokeWidth="1.5" vectorEffect="non-scaling-stroke"/>)}
         </svg>
+        {/* marcadores em HTML (círculo SVG esticaria com preserveAspectRatio="none") */}
+        {act!=null&&series.map((s,si)=><span key={si} style={{position:'absolute',left:`${xF(act)*100}%`,top:`${yF(num(s.values[act]))}%`,transform:'translate(-50%,-50%)',width:10,height:10,borderRadius:99,background:s.color,border:'2px solid #fff',boxShadow:'0 1px 4px rgba(0,0,0,.3)',pointerEvents:'none'}}/>)}
         {act!=null&&<div style={{position:'absolute',left:`${xF(act)*100}%`,top:'6%',transform:`translate(${xF(act)>0.6?'-106%':'6%'},0)`,background:C.ink,color:'#fff',padding:'6px 10px',borderRadius:10,fontSize:11.5,fontWeight:700,whiteSpace:'nowrap',pointerEvents:'none',boxShadow:'0 4px 12px -4px rgba(0,0,0,.4)'}}>
           <div style={{fontSize:10,opacity:.8,fontWeight:600,marginBottom:2}}>{labels[act]}</div>
           {series.map((s,si)=><div key={si} style={{display:'flex',alignItems:'center',gap:6}}><i style={{width:8,height:8,borderRadius:99,background:s.color}}/>{s.name.split(' ')[0]}: {fmt(num(s.values[act]))}</div>)}
@@ -1368,6 +1370,13 @@ function WeekRow({w,player,config,solo}){
     {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>}
   </div>;
 }
+// "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
+function VerMais({resta,bloco,onClick,rotulo}){
+  if(resta<=0) return null;
+  return <button onClick={onClick} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'12px 14px',borderRadius:13,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}>
+    Ver mais {Math.min(bloco,resta)} {rotulo} <span style={{color:C.inkSoft,fontWeight:600}}>({resta} restante{resta!==1?'s':''})</span>
+  </button>;
+}
 // botão que abre/fecha o histórico de semanas de meses anteriores
 function HistToggle({n,open,onClick}){
   return <button onClick={onClick} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'10px 14px',borderRadius:12,fontWeight:700,fontSize:13,cursor:'pointer',width:'100%'}}>{open?'Ocultar':'Ver'} histórico de meses anteriores ({n} semana{n!==1?'s':''})</button>;
@@ -1429,6 +1438,8 @@ function Dashboard({session,profile}){
   const [month,setMonth]=useState(todayISO().slice(0,7));
   const [diF,setDiF]=useState({player:'Todos',site:'Todos',mod:'Todos',from:'',to:'',days:''}); // filtros do Diário
   const [mensalWho,setMensalWho]=useState('Geral'); // filtro do "Onde vocês lucram"
+  const [pastN,setPastN]=useState(10);            // Torneios: quantos dias antigos mostrar (dez em dez)
+  const [diaryN,setDiaryN]=useState(12);          // Diário: quantos cards mostrar (doze em doze)
   const [hh,setHh]=useState([]);                  // agregados de hand history por torneio
   const [chgs,setChgs]=useState([]);              // histórico de alterações dos Ajustes
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
@@ -1944,7 +1955,7 @@ function Dashboard({session,profile}){
     {id:'saques',label:'Saques',Icon:IcoCashOut},
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
-  ].filter(n=>!solo||!['saques','mensal'].includes(n.id));  // solo: só as abas essenciais (make-up/split/saques são coisa de pool)
+  ].filter(n=>!solo||n.id!=='saques');  // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
 
   /* ---------- mensal ---------- */
   const monthList=[...new Set(allWeeks.map(w=>w.slice(0,7)).concat([todayISO().slice(0,7)]))].sort();
@@ -2158,7 +2169,8 @@ function Dashboard({session,profile}){
           </div>
           <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
           {past.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.inkSoft,margin:'4px 2px 0'}}>Dias anteriores</div>}
-          {past.map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          <VerMais resta={past.length-pastN} bloco={10} rotulo="dias" onClick={()=>setPastN(n=>n+10)}/>
         </div>;
       })()}
 
@@ -2204,7 +2216,10 @@ function Dashboard({session,profile}){
           </div>
         </Card>}
 
-        {diaryDaily.length?diaryDaily.map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>):<Empty>{diFiltroAtivo?'Nenhum torneio nesse filtro/período.':'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.'}</Empty>}
+        {diaryDaily.length?<>
+          {diaryDaily.slice(0,diaryN).map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          <VerMais resta={diaryDaily.length-diaryN} bloco={12} rotulo="dias" onClick={()=>setDiaryN(n=>n+12)}/>
+        </>:<Empty>{diFiltroAtivo?'Nenhum torneio nesse filtro/período.':'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.'}</Empty>}
       </div>}
 
       {/* ---------------- SEMANAL ---------------- */}
@@ -2231,7 +2246,7 @@ function Dashboard({session,profile}){
         <button onClick={()=>setReport({type:'mensal'})} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Gerar relatório do mês (PDF)</button>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
-          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>
+          {!solo&&<Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>}
           <Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios no mês" value={String(mTorneios)} sub={`ABI médio ${fmt(mAbi)}`}/>
           <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
         </div>
@@ -2241,7 +2256,7 @@ function Dashboard({session,profile}){
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
               <span style={{fontWeight:700,flex:1}}>{pm.p}</span>
-              <span style={{fontSize:12.5,color:C.inkSoft}}>make-up <b style={{color:C.ink}}>{fmt(pm.makeAberto)}</b></span>
+              {!solo&&<span style={{fontSize:12.5,color:C.inkSoft}}>make-up <b style={{color:C.ink}}>{fmt(pm.makeAberto)}</b></span>}
               <span style={{fontWeight:800,color:pm.res>=0?C.greenMid:C.red,minWidth:88,textAlign:'right'}}>{pm.res>=0?'+':'−'}{fmt(Math.abs(pm.res))}</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(76px,1fr))',gap:6,marginTop:8}}>
@@ -2261,9 +2276,9 @@ function Dashboard({session,profile}){
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Onde vocês lucram</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>{solo?'Onde você lucra':'Onde vocês lucram'}</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Resultado e ROI por site e por modalidade neste mês.</div>
-          <div style={{marginBottom:14}}><Seg value={mensalWho} options={['Geral',...players]} onChange={setMensalWho}/></div>
+          {!solo&&<div style={{marginBottom:14}}><Seg value={mensalWho} options={['Geral',...players]} onChange={setMensalWho}/></div>}
           {monthToursWho.length===0?<Empty>Sem torneios de {mensalWho} neste mês.</Empty>:[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
             <div style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:6}}>{titulo}</div>
             {rows.map(g=>{const mx=Math.max(1,...rows.map(x=>Math.abs(x.res))); return <div key={g.k} style={{padding:'8px 0',borderBottom:`1px solid ${C.border}`}}>
@@ -2790,7 +2805,7 @@ function Dashboard({session,profile}){
       const Sec=({t,children})=><div className="repcard" style={{marginBottom:18}}><div style={{fontSize:13,fontWeight:800,color:P,margin:'0 0 8px',textTransform:'uppercase',letterSpacing:'.04em'}}>{t}</div>{children}</div>;
       let corpo=null, titulo='', sub='';
       if(report.type==='mensal'){
-        titulo=`Relatório mensal — ${mLabel(month)}`; sub='fechamento da pool';
+        titulo=`Relatório mensal — ${mLabel(month)}`; sub=solo?'fechamento do mês':'fechamento da pool';
         const wkRows=players.flatMap(pl=>(weeksByPlayer[pl]||[]).filter(w=>w.week.slice(0,7)===month).map(w=>({...w,pl,vs:valorSacadoFor(w.week,pl)})));
         const mSaques=wds.filter(w=>String(w.week_ending_date||'').slice(0,7)===month);
         const bs=breakdownBy('site',monthTours), bm=breakdownBy('modality',monthTours);
@@ -2798,26 +2813,26 @@ function Dashboard({session,profile}){
           <Sec t="Resumo do mês">
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
               <Big label="Resultado" value={fmt(mRes)} tone={mRes>=0?C.greenMid:C.red}/>
-              <Big label="Lucro dividido" value={fmt(mLucroDiv)}/>
-              <Big label="Ficou na pool" value={fmt(mPool)}/>
+              {!solo&&<Big label="Lucro dividido" value={fmt(mLucroDiv)}/>}
+              {!solo&&<Big label="Ficou na pool" value={fmt(mPool)}/>}
               <Big label="Torneios" value={String(mTorneios)}/>
               <Big label="ABI médio" value={fmt(mAbi)}/>
               <Big label="ROI" value={pctFmt(mRoi)} tone={mRoi>=0?C.greenMid:C.red}/>
             </div>
           </Sec>
           <Sec t="Por jogador">
-            <table className="reptable"><thead><tr><th>Jogador</th><th>Torneios</th><th>Investido</th><th>Premiação</th><th>Resultado</th><th>ROI</th><th>ITM</th><th>Make-up final</th></tr></thead>
-            <tbody>{perPlayerMonth.map(pm=><tr key={pm.p}><td><b>{pm.p}</b></td><td>{pm.torneios}</td><td>{fmt(pm.vol)}</td><td>{fmt(pm.premios)}</td><td style={{color:pm.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(pm.res)}</td><td>{pctFmt(pm.roi)}</td><td>{pctFmt(pm.itm)}</td><td>{fmt(pm.makeAberto)}</td></tr>)}</tbody></table>
+            <table className="reptable"><thead><tr><th>Jogador</th><th>Torneios</th><th>Investido</th><th>Premiação</th><th>Resultado</th><th>ROI</th><th>ITM</th>{!solo&&<th>Make-up final</th>}</tr></thead>
+            <tbody>{perPlayerMonth.map(pm=><tr key={pm.p}><td><b>{pm.p}</b></td><td>{pm.torneios}</td><td>{fmt(pm.vol)}</td><td>{fmt(pm.premios)}</td><td style={{color:pm.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(pm.res)}</td><td>{pctFmt(pm.roi)}</td><td>{pctFmt(pm.itm)}</td>{!solo&&<td>{fmt(pm.makeAberto)}</td>}</tr>)}</tbody></table>
           </Sec>
           <Sec t="Semana a semana">
-            {wkRows.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Jogador</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
-            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{dLabel(w.week)}</td><td>{w.pl}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
+            {wkRows.length?<table className="reptable"><thead><tr><th>Semana até</th>{!solo&&<th>Jogador</th>}<th>Resultado</th>{!solo&&<><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></>}</tr></thead>
+            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{dLabel(w.week)}</td>{!solo&&<td>{w.pl}</td>}<td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td>{!solo&&<><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></>}</tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
           </Sec>
           {mSaques.length>0&&<Sec t="Saques pagos no mês">
             <table className="reptable"><thead><tr><th>Semana</th><th>Jogador</th><th>Carteira</th><th>Valor</th></tr></thead>
             <tbody>{mSaques.map(w=><tr key={w.id}><td>{dLabel(w.week_ending_date)}</td><td>{w.player}</td><td>{w.wallet||'—'}</td><td style={{fontWeight:700}}>{fmt(w.valor_sacado)}</td></tr>)}</tbody></table>
           </Sec>}
-          {monthTours.length>0&&<Sec t="Onde a pool lucra (mês)">
+          {monthTours.length>0&&<Sec t={solo?'Onde você lucra (mês)':'Onde a pool lucra (mês)'}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
               {[['Por site',bs],['Por modalidade',bm]].map(([tt,rws])=><div key={tt}>
                 <div style={{fontSize:11,fontWeight:700,color:'#6B6455',marginBottom:4}}>{tt}</div>
@@ -2825,7 +2840,7 @@ function Dashboard({session,profile}){
               </div>)}
             </div>
           </Sec>}
-          <div style={{fontSize:11,color:'#6B6455'}}>Banca central da pool no momento do relatório: <b>{fmt(bancaAtual)}</b> · make-up em aberto: {players.map(pl=>`${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · ')}.</div>
+          <div style={{fontSize:11,color:'#6B6455'}}>{solo?<>Banca no momento do relatório: <b>{fmt(bancaAtual)}</b>.</>:<>Banca central da pool no momento do relatório: <b>{fmt(bancaAtual)}</b> · make-up em aberto: {players.map(pl=>`${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · ')}.</>}</div>
         </>;
       } else {
         const sp2=report.player||players[0]; const nn=parseInt(report.days,10);

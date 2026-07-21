@@ -1870,15 +1870,21 @@ function LineChart({
     strokeWidth: "1",
     strokeDasharray: "2 2",
     vectorEffect: "non-scaling-stroke"
-  }), act != null && /*#__PURE__*/React.createElement("circle", {
-    cx: xF(act) * 100,
-    cy: yF(vals[act]),
-    r: "4",
-    fill: color,
-    stroke: "#fff",
-    strokeWidth: "1.5",
-    vectorEffect: "non-scaling-stroke"
-  })), ref_ != null && /*#__PURE__*/React.createElement("span", {
+  })), act != null && /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      left: `${xF(act) * 100}%`,
+      top: `${yF(vals[act])}%`,
+      transform: 'translate(-50%,-50%)',
+      width: 11,
+      height: 11,
+      borderRadius: 99,
+      background: color,
+      border: '2px solid #fff',
+      boxShadow: '0 1px 5px rgba(0,0,0,.3)',
+      pointerEvents: 'none'
+    }
+  }), ref_ != null && /*#__PURE__*/React.createElement("span", {
     style: {
       position: 'absolute',
       right: 2,
@@ -1894,7 +1900,7 @@ function LineChart({
       position: 'absolute',
       left: `${xF(act) * 100}%`,
       top: `${yF(vals[act])}%`,
-      transform: `translate(${xF(act) > 0.65 ? '-108%' : '8%'},-130%)`,
+      transform: `translate(${xF(act) > 0.65 ? '-108%' : '8%'},${yF(vals[act]) < 30 ? '30%' : '-130%'})`,
       background: C.ink,
       color: '#fff',
       padding: '5px 9px',
@@ -2050,16 +2056,22 @@ function MultiLineChart({
     strokeWidth: "1",
     strokeDasharray: "2 2",
     vectorEffect: "non-scaling-stroke"
-  }), act != null && series.map((s, si) => /*#__PURE__*/React.createElement("circle", {
+  })), act != null && series.map((s, si) => /*#__PURE__*/React.createElement("span", {
     key: si,
-    cx: xF(act) * 100,
-    cy: yF(num(s.values[act])),
-    r: "3.5",
-    fill: s.color,
-    stroke: "#fff",
-    strokeWidth: "1.5",
-    vectorEffect: "non-scaling-stroke"
-  }))), act != null && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'absolute',
+      left: `${xF(act) * 100}%`,
+      top: `${yF(num(s.values[act]))}%`,
+      transform: 'translate(-50%,-50%)',
+      width: 10,
+      height: 10,
+      borderRadius: 99,
+      background: s.color,
+      border: '2px solid #fff',
+      boxShadow: '0 1px 4px rgba(0,0,0,.3)',
+      pointerEvents: 'none'
+    }
+  })), act != null && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       left: `${xF(act) * 100}%`,
@@ -4788,6 +4800,38 @@ function WeekRow({
     color: wkAbi >= pAbi * 0.9 ? C.red : wkAbi >= pAbi * 0.7 ? C.gold : C.greenMid
   })));
 }
+// "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
+function VerMais({
+  resta,
+  bloco,
+  onClick,
+  rotulo
+}) {
+  if (resta <= 0) return null;
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: onClick,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      background: 'transparent',
+      color: P,
+      border: `1.5px dashed ${C.border}`,
+      padding: '12px 14px',
+      borderRadius: 13,
+      fontWeight: 700,
+      fontSize: 13.5,
+      cursor: 'pointer',
+      width: '100%'
+    }
+  }, "Ver mais ", Math.min(bloco, resta), " ", rotulo, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft,
+      fontWeight: 600
+    }
+  }, "(", resta, " restante", resta !== 1 ? 's' : '', ")"));
+}
 // botão que abre/fecha o histórico de semanas de meses anteriores
 function HistToggle({
   n,
@@ -4990,6 +5034,8 @@ function Dashboard({
     days: ''
   }); // filtros do Diário
   const [mensalWho, setMensalWho] = useState('Geral'); // filtro do "Onde vocês lucram"
+  const [pastN, setPastN] = useState(10); // Torneios: quantos dias antigos mostrar (dez em dez)
+  const [diaryN, setDiaryN] = useState(12); // Diário: quantos cards mostrar (doze em doze)
   const [hh, setHh] = useState([]); // agregados de hand history por torneio
   const [chgs, setChgs] = useState([]); // histórico de alterações dos Ajustes
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
@@ -6146,7 +6192,7 @@ function Dashboard({
     id: 'config',
     label: 'Ajustes',
     Icon: IcoGear
-  }].filter(n => !solo || !['saques', 'mensal'].includes(n.id)); // solo: só as abas essenciais (make-up/split/saques são coisa de pool)
+  }].filter(n => !solo || n.id !== 'saques'); // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
 
   /* ---------- mensal ---------- */
   const monthList = [...new Set(allWeeks.map(w => w.slice(0, 7)).concat([todayISO().slice(0, 7)]))].sort();
@@ -6874,7 +6920,7 @@ function Dashboard({
         color: C.inkSoft,
         margin: '4px 2px 0'
       }
-    }, "Dias anteriores"), past.map(d => /*#__PURE__*/React.createElement(DayCard, {
+    }, "Dias anteriores"), past.slice(0, pastN).map(d => /*#__PURE__*/React.createElement(DayCard, {
       key: d,
       date: d,
       dayTours: tours.filter(t => t.entry_date === d),
@@ -6883,7 +6929,12 @@ function Dashboard({
       onAdd: addTourOn,
       onEdit: editTour,
       onDelete: delTour
-    })));
+    })), /*#__PURE__*/React.createElement(VerMais, {
+      resta: past.length - pastN,
+      bloco: 10,
+      rotulo: "dias",
+      onClick: () => setPastN(n => n + 10)
+    }));
   })(), view === 'diario' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: {
@@ -7098,7 +7149,7 @@ function Dashboard({
   }), /*#__PURE__*/React.createElement(MiniStat, {
     label: "ITM",
     value: pctFmt(diAgg.itm)
-  }))), diaryDaily.length ? diaryDaily.map(e => /*#__PURE__*/React.createElement(DiaryCard, {
+  }))), diaryDaily.length ? /*#__PURE__*/React.createElement(React.Fragment, null, diaryDaily.slice(0, diaryN).map(e => /*#__PURE__*/React.createElement(DiaryCard, {
     key: e.id,
     entry: e,
     dayTours: diaryTours.filter(t => t.player === e.player && t.entry_date === e.entry_date),
@@ -7107,6 +7158,11 @@ function Dashboard({
     onAdd: addTourOn,
     onEdit: editTour,
     onDelete: delTour
+  })), /*#__PURE__*/React.createElement(VerMais, {
+    resta: diaryDaily.length - diaryN,
+    bloco: 12,
+    rotulo: "dias",
+    onClick: () => setDiaryN(n => n + 12)
   })) : /*#__PURE__*/React.createElement(Empty, null, diFiltroAtivo ? 'Nenhum torneio nesse filtro/período.' : 'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.')), view === 'semanal' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: {
@@ -7274,7 +7330,7 @@ function Dashboard({
     bg: mRes >= 0 ? C.greenSoft : C.redSoft,
     label: "Resultado do m\xEAs",
     value: fmt(mRes)
-  }), /*#__PURE__*/React.createElement(Stat, {
+  }), !solo && /*#__PURE__*/React.createElement(Stat, {
     Icon: IcoChip,
     tone: C.green,
     bg: C.greenSoft,
@@ -7330,7 +7386,7 @@ function Dashboard({
       fontWeight: 700,
       flex: 1
     }
-  }, pm.p), /*#__PURE__*/React.createElement("span", {
+  }, pm.p), !solo && /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft
@@ -7471,13 +7527,13 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Onde voc\xEAs lucram"), /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Onde você lucra' : 'Onde vocês lucram'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
       marginBottom: 10
     }
-  }, "Resultado e ROI por site e por modalidade neste m\xEAs."), /*#__PURE__*/React.createElement("div", {
+  }, "Resultado e ROI por site e por modalidade neste m\xEAs."), !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 14
     }
@@ -9981,7 +10037,7 @@ function Dashboard({
       sub = '';
     if (report.type === 'mensal') {
       titulo = `Relatório mensal — ${mLabel(month)}`;
-      sub = 'fechamento da pool';
+      sub = solo ? 'fechamento do mês' : 'fechamento da pool';
       const wkRows = players.flatMap(pl => (weeksByPlayer[pl] || []).filter(w => w.week.slice(0, 7) === month).map(w => ({
         ...w,
         pl,
@@ -10002,10 +10058,10 @@ function Dashboard({
         label: "Resultado",
         value: fmt(mRes),
         tone: mRes >= 0 ? C.greenMid : C.red
-      }), /*#__PURE__*/React.createElement(Big, {
+      }), !solo && /*#__PURE__*/React.createElement(Big, {
         label: "Lucro dividido",
         value: fmt(mLucroDiv)
-      }), /*#__PURE__*/React.createElement(Big, {
+      }), !solo && /*#__PURE__*/React.createElement(Big, {
         label: "Ficou na pool",
         value: fmt(mPool)
       }), /*#__PURE__*/React.createElement(Big, {
@@ -10022,25 +10078,25 @@ function Dashboard({
         t: "Por jogador"
       }, /*#__PURE__*/React.createElement("table", {
         className: "reptable"
-      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Torneios"), /*#__PURE__*/React.createElement("th", null, "Investido"), /*#__PURE__*/React.createElement("th", null, "Premia\xE7\xE3o"), /*#__PURE__*/React.createElement("th", null, "Resultado"), /*#__PURE__*/React.createElement("th", null, "ROI"), /*#__PURE__*/React.createElement("th", null, "ITM"), /*#__PURE__*/React.createElement("th", null, "Make-up final"))), /*#__PURE__*/React.createElement("tbody", null, perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("tr", {
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Torneios"), /*#__PURE__*/React.createElement("th", null, "Investido"), /*#__PURE__*/React.createElement("th", null, "Premia\xE7\xE3o"), /*#__PURE__*/React.createElement("th", null, "Resultado"), /*#__PURE__*/React.createElement("th", null, "ROI"), /*#__PURE__*/React.createElement("th", null, "ITM"), !solo && /*#__PURE__*/React.createElement("th", null, "Make-up final"))), /*#__PURE__*/React.createElement("tbody", null, perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("tr", {
         key: pm.p
       }, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("b", null, pm.p)), /*#__PURE__*/React.createElement("td", null, pm.torneios), /*#__PURE__*/React.createElement("td", null, fmt(pm.vol)), /*#__PURE__*/React.createElement("td", null, fmt(pm.premios)), /*#__PURE__*/React.createElement("td", {
         style: {
           color: pm.res >= 0 ? C.greenMid : C.red,
           fontWeight: 700
         }
-      }, fmt(pm.res)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.roi)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.itm)), /*#__PURE__*/React.createElement("td", null, fmt(pm.makeAberto))))))), /*#__PURE__*/React.createElement(Sec, {
+      }, fmt(pm.res)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.roi)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.itm)), !solo && /*#__PURE__*/React.createElement("td", null, fmt(pm.makeAberto))))))), /*#__PURE__*/React.createElement(Sec, {
         t: "Semana a semana"
       }, wkRows.length ? /*#__PURE__*/React.createElement("table", {
         className: "reptable"
-      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana at\xE9"), /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Resultado"), /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado"))), /*#__PURE__*/React.createElement("tbody", null, wkRows.map((w, i) => /*#__PURE__*/React.createElement("tr", {
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana at\xE9"), !solo && /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Resultado"), !solo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado")))), /*#__PURE__*/React.createElement("tbody", null, wkRows.map((w, i) => /*#__PURE__*/React.createElement("tr", {
         key: i
-      }, /*#__PURE__*/React.createElement("td", null, dLabel(w.week)), /*#__PURE__*/React.createElement("td", null, w.pl), /*#__PURE__*/React.createElement("td", {
+      }, /*#__PURE__*/React.createElement("td", null, dLabel(w.week)), !solo && /*#__PURE__*/React.createElement("td", null, w.pl), /*#__PURE__*/React.createElement("td", {
         style: {
           color: w.resultado >= 0 ? C.greenMid : C.red,
           fontWeight: 700
         }
-      }, fmt(w.resultado)), /*#__PURE__*/React.createElement("td", null, fmt(w.makeAnterior), " \u2192 ", fmt(w.makeFinal)), /*#__PURE__*/React.createElement("td", null, fmt(w.parteJog)), /*#__PURE__*/React.createElement("td", null, fmt(w.saqueAut)), /*#__PURE__*/React.createElement("td", null, fmt(w.vs)))))) : /*#__PURE__*/React.createElement("div", {
+      }, fmt(w.resultado)), !solo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, fmt(w.makeAnterior), " \u2192 ", fmt(w.makeFinal)), /*#__PURE__*/React.createElement("td", null, fmt(w.parteJog)), /*#__PURE__*/React.createElement("td", null, fmt(w.saqueAut)), /*#__PURE__*/React.createElement("td", null, fmt(w.vs))))))) : /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 12,
           color: '#6B6455'
@@ -10056,7 +10112,7 @@ function Dashboard({
           fontWeight: 700
         }
       }, fmt(w.valor_sacado))))))), monthTours.length > 0 && /*#__PURE__*/React.createElement(Sec, {
-        t: "Onde a pool lucra (m\xEAs)"
+        t: solo ? 'Onde você lucra (mês)' : 'Onde a pool lucra (mês)'
       }, /*#__PURE__*/React.createElement("div", {
         style: {
           display: 'grid',
@@ -10086,7 +10142,7 @@ function Dashboard({
           fontSize: 11,
           color: '#6B6455'
         }
-      }, "Banca central da pool no momento do relat\xF3rio: ", /*#__PURE__*/React.createElement("b", null, fmt(bancaAtual)), " \xB7 make-up em aberto: ", players.map(pl => `${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · '), "."));
+      }, solo ? /*#__PURE__*/React.createElement(React.Fragment, null, "Banca no momento do relat\xF3rio: ", /*#__PURE__*/React.createElement("b", null, fmt(bancaAtual)), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Banca central da pool no momento do relat\xF3rio: ", /*#__PURE__*/React.createElement("b", null, fmt(bancaAtual)), " \xB7 make-up em aberto: ", players.map(pl => `${pl.split(' ')[0]} ${fmt(curMakeUp[pl])}`).join(' · '), ".")));
     } else {
       const sp2 = report.player || players[0];
       const nn = parseInt(report.days, 10);
