@@ -414,12 +414,12 @@ const HH_GLOSS=[
   ['BB defende','Quantas vezes você (no BB) pagou ou re-raisou contra um roubo, em vez de foldar.'],
   ['C-bet flop','Aposta de continuação: você abriu pré-flop e seguiu apostando no flop.'],
   ['Fold pra c-bet','Quantas vezes você desistiu no flop contra a c-bet do agressor. Alto demais = "fit-or-fold", fácil de explorar.'],
-  ['WWSF','% das vezes que você viu o flop e LEVOU o pote (com ou sem showdown). Mede briga pós-flop.'],
-  ['WTSD','% das vezes que, tendo visto o flop, você foi até o showdown. Alto = paga muito; baixo = desiste muito.'],
-  ['W$SD','% dos showdowns que você ganhou. Lido junto com o WTSD: ir muito ao showdown e ganhar pouco = vazamento clássico.'],
+  ['WWSF','% das vezes que você viu o flop e LEVOU o pote, com ou sem showdown (potes ganhos ÷ flops vistos). Mede briga pós-flop.'],
+  ['WTSD','% das vezes que, tendo visto o flop, você foi até o showdown (showdowns ÷ flops vistos — definição padrão de tracker). Atenção: o HUD da GG mostra o "WT" sobre TODAS as mãos, por isso o número de lá é bem menor que o daqui. Alto = paga muito; baixo = desiste muito.'],
+  ['W$SD','% dos showdowns que você ganhou (showdowns ganhos ÷ showdowns disputados). Lido junto com o WTSD: ir muito ao showdown e ganhar pouco = vazamento clássico.'],
   ['AF (agressão)','(apostas + raises) ÷ calls no pós-flop. Abaixo de ~1,5 = passivo; acima de ~4 = hiperagressivo.'],
   ['bb/100','Resultado em big blinds a cada 100 mãos, em FICHAS de torneio — mede qualidade de jogo, não dinheiro direto.'],
-  ['Sorte (all-in EV)','Explicada no card "Sorte nos all-ins" acima.'],
+  ['Sorte (all-in EV)','Explicada no card "Sorte nos all-ins" acima. Mede só os all-ins com cartas viradas — sorte pré-all-in (cooler, distribuição), bounty de PKO e ICM ficam fora da conta.'],
 ];
 /* Leituras automáticas: compara as suas stats com as faixas de um reg de MTT micro/low e
    escreve o que precisa de atenção. Cada regra só dispara com amostra mínima. */
@@ -429,27 +429,41 @@ function hhInsights(d){
   const pct=(c,o)=>o>0?c/o*100:null;
   const p={vpip:pct(d.vpip,d.hands),pfr:pct(d.pfr,d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
   const f=n=>n==null?'—':n.toFixed(1).replace('.',',')+'%';
+  const f1=n=>n.toFixed(1).replace('.',',');
+  // VPIP/PFR/gap por posição — deixa as leituras cirúrgicas em vez de acusar a posição errada
+  const pp=k=>{ const x=d.pos&&d.pos[k]; if(!x||!(num(x.h)>0)) return null; const h=num(x.h); return {h,v:num(x.v)/h*100,pr:num(x.p)/h*100,gap:(num(x.v)-num(x.p))/h*100}; };
+  // gap VPIP−PFR SEM os blinds: defesa de BB é call por natureza (e completar SB pode ser plano),
+  // então contar blinds no gap acusaria "passividade" injustamente
+  const nb=['EP','MP','CO','BTN'].reduce((a,k)=>{const x=d.pos&&d.pos[k]; if(x){a.h+=num(x.h);a.v+=num(x.v);a.p+=num(x.p);} return a;},{h:0,v:0,p:0});
+  const gapNB=nb.h>=200?(nb.v-nb.p)/nb.h*100:null;
   if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
   if(d.hands>=200){
-    if(p.vpip>29) add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`,'vpip');
+    if(p.vpip>29){
+      const ep=pp('EP'), mp=pp('MP');
+      const earlyOk=ep&&ep.h>=60&&ep.v<=24&&(!mp||mp.h<60||mp.v<=28);
+      if(earlyOk) add('red','Jogando mãos demais (nas posições finais)',`VPIP total ${f(p.vpip)} (reg: 18–27%), mas o EP tá controlado (${f1(ep.v)}%) — o excesso vem de CO/BTN e dos blinds: cold calls e defesas largas é que inflam o número. Corte os spots ruins de posição final (call atrás sem stack pra pagar quando acerta), não a categoria inteira de mãos.`,'vpip');
+      else add('red','Jogando mãos demais',`VPIP ${f(p.vpip)} (reg: 18–27%). Mão fraca de mais vira prejuízo no pós-flop — aperte primeiro as aberturas de EP/MP.`,'vpip');
+    }
     if(p.vpip!=null&&p.vpip<16) add('gold','Muito apertado',`VPIP ${f(p.vpip)} (reg: 18–27%). Dá pra abrir mais em CO/BTN sem virar aventura — hoje você deixa roubo fácil na mesa.`,'vpip');
     const gap=(p.vpip!=null&&p.pfr!=null)?p.vpip-p.pfr:null;
-    if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${gap.toFixed(1).replace('.',',')} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold.`,'pfr');
+    if(gapNB!=null){
+      if(gapNB>9) add('red','Passividade pré-flop (fora dos blinds)',`De EP a BTN, a diferença VPIP−PFR é de ${f1(gapNB)} pontos (ideal até ~8) — muito call/limp onde dava pra raise ou fold. Os blinds ficam fora dessa conta: defender o BB de call é normal.`,'pfr');
+    } else if(gap!=null&&gap>9) add('red','Passividade pré-flop',`Diferença VPIP−PFR de ${f1(gap)} pontos (ideal até ~8). Você entra muito de call/limp: prefira raise ou fold. (Sem amostra por posição pra excluir os blinds — parte disso pode ser defesa normal de BB; reimporte as mãos pra refinar.)`,'pfr');
   }
   if(d.tbOpp>=40&&p.tb<4.5) add('gold','Pouco 3-bet',`3-bet ${f(p.tb)} (reg: 5–10%). Sem 3-bet, os regs abrem em cima de você de graça — adicione blefes tipo A5s.`,'tb');
   if(d.f3bOpp>=15){
-    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais.`,'f3b');
+    if(p.f3b<40) add('red','Pagando 3-bet demais',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Defender toda abertura contra 3-bet queima stack — solte as marginais. Os piores candidatos: call fora de posição e call deep contra range forte de EP; reshove de short e min-3-bet de recreativo são outra conversa.`,'f3b');
     if(p.f3b>70) add('gold','Foldando demais pra 3-bet',`Fold pra 3-bet ${f(p.f3b)} (reg: 45–65%). Quando percebem, passam a 3-betar você sem mão.`,'f3b');
   }
   if(d.stealOpp>=30&&p.steal<28) add('gold','Roubando pouco',`Roubo de blinds ${f(p.steal)} (reg: 30–50%). Com antes em jogo, roubar de CO/BTN/SB é onde o MTT se ganha.`,'steal');
   if(d.bbdefOpp>=30&&p.bbdef<32) add('gold','Foldando o BB demais',`Defesa de BB ${f(p.bbdef)} (reg: 35–55%). Pelo preço que o BB paga pra ver, folda-se menos do que parece.`,'bbdef');
   if(d.cbetOpp>=30){
-    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Em board que bate no vilão, a c-bet automática vira rifa.`,'cbet');
+    if(p.cbet>78) add('gold','C-bet no automático',`C-bet ${f(p.cbet)} (reg: 50–75%). Mantenha a frequência alta heads-up, em posição e em board seco (A72r, K83r) — o corte é nos outros spots: multiway, fora de posição e board médio/conectado (T98, 876 com draw). São os últimos 10–15 pontos que viram rifa.`,'cbet');
     if(p.cbet<45) add('gold','Agressor passivo',`C-bet ${f(p.cbet)} (reg: 50–75%). Quem abriu o pote precisa continuar contando a história com mais frequência.`,'cbet');
   }
   if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`,'fcb');
   if(d.sawflop>=100){
-    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão — solte o segundo par quando a ação esquenta no turn/river.`,'wsd');
+    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão. A correção não é virar nit: é chegar ao river com range mais forte e escolher bluff catcher por blocker e sizing — não por "a linha do vilão não faz sentido".`,'wsd');
     else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`,'wtsd');
     if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`,'wwsf');
   }
@@ -459,12 +473,18 @@ function hhInsights(d){
   if(d.hands>=300&&d.bb100!=null){
     const luck100=d.hands>0?d.sorte/d.hands*100:0, adj=d.bb100-luck100;
     const par=`bb/100 real ${fmtBB(d.bb100)} · sem a sorte dos all-ins ${fmtBB(adj)}`;
-    if(d.bb100>=0&&adj>=0) add('green','Winrate saudável',`${par}. O lucro não depende de rodar bem — é jogo, não moeda.`,'bb100');
-    else if(d.bb100>=0&&adj<0) add('gold','Lucro segurado pela sorte',`${par}. Os all-ins estão pagando acima do justo: não suba de grade por esse resultado e revise os spots antes que a variância cobre.`,'bb100');
-    else if(d.bb100<0&&adj>=0) add('info','Prejuízo com cara de variância',`${par}. O jogo está gerando valor; o resultado é que ainda não mostrou. Mantém o plano, a grade e o volume.`,'bb100');
-    else add('red','Winrate negativo mesmo sem azar',`${par}. O prejuízo não é (só) variância — prioridade máxima é atacar os vazamentos apontados acima.`,'bb100');
+    // hedge honesto: a conta cobre só os all-ins de cartas viradas — não é sentença sobre o jogo todo
+    const evNote=' (Conta feita só nos all-ins com cartas viradas — sorte pré-all-in, bounty de PKO e ICM ficam fora; é hipótese forte, não sentença.)';
+    if(d.bb100>=0&&adj>=0) add('green','Winrate saudável',`${par}. O lucro não depende de rodar bem nos all-ins — é jogo, não moeda.${evNote}`,'bb100');
+    else if(d.bb100>=0&&adj<0) add('gold','Lucro inflado pelos all-ins',`${par}. Nos all-ins medidos você recebeu acima do justo: não suba de grade por esse resultado e revise os spots antes que a variância cobre.${evNote}`,'bb100');
+    else if(d.bb100<0&&adj>=0) add('info','Prejuízo com cara de variância',`${par}. Nos all-ins medidos o jogo gerou valor; o resultado é que ainda não mostrou. Mantém o plano, a grade e o volume.${evNote}`,'bb100');
+    else add('red','Winrate negativo mesmo sem azar',`${par}. Nem o azar dos all-ins explica o prejuízo sozinho — prioridade é atacar os vazamentos apontados acima.${evNote}`,'bb100');
   }
   // ---- leituras COMBINADAS: dois números que, juntos, contam uma história ----
+  // o perfil "entra bem mas não sai": paga 3-bet, gruda contra c-bet e vai demais ao showdown.
+  // O leak não é abrir demais — é não ter ponto de saída quando o vilão mostra força.
+  if(d.f3bOpp>=15&&d.fcbOpp>=30&&d.sawflop>=100&&p.f3b<40&&p.fcb<35&&p.wtsd>34)
+    add('red','Resiste demais depois de entrar no pote',`Fold pra 3-bet ${f(p.f3b)} + fold pra c-bet ${f(p.fcb)} + WTSD ${f(p.wtsd)}: você entra no pote razoavelmente bem, mas não solta a mão quando o adversário mostra força — antes e depois do flop. A evolução não é abrir menos: é melhorar os pontos de saída (largar contra 3-bet fora de posição, abandonar o float que não melhorou, soltar o bluff catcher sem blocker).`);
   if(d.stealOpp>=30&&d.f3bOpp>=15&&p.steal>45&&p.f3b>70)
     add('gold','Rouba, mas não defende o roubo',`Roubo de blinds ${f(p.steal)} + fold pra 3-bet ${f(p.f3b)}: você abre muito de CO/BTN/SB e desiste quando reagem. Reg atento passa a 3-betar você sem mão — abra um pouco menos ou defenda mais as melhores.`);
   if(d.cbetOpp>=30&&d.sawflop>=100&&p.cbet>70&&p.wwsf<42)
@@ -475,12 +495,17 @@ function hhInsights(d){
   if(d.hands>=200&&gap2!=null&&gap2>9&&af!=null&&(d.afB+d.afC)>=60&&af<1.3)
     add('red','Passivo pré e pós-flop',`VPIP−PFR de ${gap2.toFixed(1).replace('.',',')} pontos + AF ${af.toFixed(1).replace('.',',')}: o padrão completo é de jogo de call — entra pagando e segue pagando. É o perfil que mais perde no micro; a correção rende mais que qualquer ajuste fino.`);}
   if(d.allinCnt>=15){
-    if(d.sorte<=-15) add('info','Rodando abaixo do EV',`${fmtBB(d.sorte)} de "sorte" em ${d.allinCnt} all-ins: parte do resultado ruim é variância, não erro. Mantenha o plano, a grade e o volume.`);
-    if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
+    if(d.sorte<=-15) add('info','Rodando abaixo do EV',`${fmtBB(d.sorte)} de "sorte" em ${d.allinCnt} all-ins com cartas viradas: parte do resultado ruim é variância, não erro. Mantenha o plano, a grade e o volume. (Em PKO, lembre: o bounty não entra nessa conta.)`);
+    if(d.sorte>=15) add('info','Rodando acima do EV',`${fmtBB(d.sorte)} em ${d.allinCnt} all-ins com cartas viradas: o resultado está inflado pela sorte — não suba de grade por causa dele.`);
   }
   const ep=d.pos&&d.pos.EP, btn=d.pos&&d.pos.BTN;
   if(ep&&ep.h>=60&&(ep.v/ep.h*100)>24) add('gold','Aberto demais de posição inicial',`VPIP de EP em ${(ep.v/ep.h*100).toFixed(1).replace('.',',')}% (reg: ~14–20%). Mão marginal de EP joga a mão toda fora de posição.`,'pos:EP');
   if(btn&&btn.h>=60&&(btn.v/btn.h*100)<30) add('gold','Botão subaproveitado',`VPIP no BTN em ${(btn.v/btn.h*100).toFixed(1).replace('.',',')}% (reg: ~35–55%). O botão é a cadeira mais lucrativa da mesa — abra mais.`,'pos:BTN');
+  // cold call em excesso nas posições de raise (gap VPIP−PFR alto no BTN/SB)
+  {const bp=pp('BTN');
+  if(bp&&bp.h>=60&&bp.v>=30&&bp.gap>12) add('gold','Cold call demais no botão',`No BTN seu VPIP é ${f1(bp.v)}% mas o PFR é só ${f1(bp.pr)}% (gap de ${f1(bp.gap)} pontos). Botão é cadeira de raise: mão que não aguenta 3-bet nem domina o range do open costuma ser fold — transforme parte desses calls em 3-bet ou fold. Não corte a categoria (JTs, pares, suited aces); corte os spots sem stack ou sem plano.`,'pos:BTN');}
+  {const sp2=pp('SB');
+  if(sp2&&sp2.h>=60&&sp2.gap>18) add('gold','SB entrando de call demais',`No SB o gap VPIP−PFR é de ${f1(sp2.gap)} pontos. Completar SB pode ser plano em spot certo, mas call largo ali te deixa fora de posição o resto da mão contra os dois — raise ou fold resolve a maioria.`,'pos:SB');}
   // ---- bb/100 POR POSIÇÃO (e cruzado com as outras stats) ----
   const pb=(k,min)=>{ const x=d.pos&&d.pos[k]; return (x&&num(x.hn)>=(min||150)) ? num(x.net)/num(x.hn)*100 : null; };
   const fB=n=>`${fmtBB(n)}/100`;
@@ -2360,6 +2385,7 @@ function Dashboard({session,profile}){
               `Roubo de blinds ${pctS(S('steal_cnt'),S('steal_opp'))} · BB defende ${pctS(S('bbdef_cnt'),S('bbdef_opp'))}`,
               `C-bet flop ${pctS(S('cbet_cnt'),S('cbet_opp'))} · Fold pra c-bet ${pctS(S('fcbet_cnt'),S('fcbet_opp'))}`,
               `WWSF ${pctS(S('wwsf_cnt'),S('sawflop_cnt'))} · WTSD ${pctS(S('wtsd_cnt'),S('sawflop_cnt'))} · W$SD ${pctS(S('wsd_cnt'),S('wtsd_cnt'))}`,
+              'Definições: WWSF e WTSD = % sobre flops vistos; W$SD = % sobre showdowns; bb/100 em fichas; sorte = all-in EV (só cartas viradas, PKO/ICM fora).',
               `AF: ${afc>0?(afb/afc).toFixed(2).replace('.',','):'—'}`,
               'Por posição (mãos · VPIP · PFR · bb/100): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%·${pos[k].hn>0?(pos[k].net/pos[k].hn*100).toFixed(1):'—'}`).join(' | '),
               'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
@@ -2413,7 +2439,7 @@ function Dashboard({session,profile}){
               {tile('W$SD',S('wsd_cnt'),S('wtsd_cnt'),'wsd')}
             </div>
             {hintBox(['cbet','fcb','wwsf','wtsd','wsd'])}
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = ganhou quando viu o flop · WTSD = foi ao showdown · W$SD = ganhou no showdown. Stat com <b>⚠</b> tem uma leitura — toque no número pra ver. Siglas no glossário no fim da tela.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF e WTSD = % sobre os <b>flops vistos</b> · W$SD = % sobre os <b>showdowns</b> (o HUD da GG usa outra base — detalhe no glossário). Stat com <b>⚠</b> tem uma leitura — toque no número pra ver.</div>
           </Card>
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
@@ -2472,6 +2498,7 @@ function Dashboard({session,profile}){
             <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
               Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
             </div>
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,lineHeight:1.5}}>⚠️ <b>Limites da medida</b> (honestidade de reg): ela cobre só os all-ins de cartas viradas. Sorte <b>antes</b> do all-in (cooler, distribuição de cartas, runout sem all-in), <b>bounty de PKO</b> (um call negativo em fichas pode ser positivo em dinheiro pelo prêmio) e <b>ICM de mesa final</b> ficam fora. Use como hipótese forte sobre a variância — não como sentença sobre o seu jogo.</div>
             <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
             </div>}
           </Card>
