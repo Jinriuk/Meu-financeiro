@@ -3228,8 +3228,24 @@ function Login() {
     }
     window.location.reload();
   };
+  // reenviar o e-mail de confirmação (caso do login antes de confirmar)
+  const [confirmMail, setConfirmMail] = useState('');
+  const reenviarConfirm = async () => {
+    setBusy(true);
+    try {
+      await sb.auth.resend({
+        type: 'signup',
+        email: confirmMail
+      });
+    } catch (e) {}
+    setBusy(false);
+    setConfirmMail('');
+    setOk('E-mail de confirmação reenviado! Confere a caixa de entrada (e o spam) e clica no link antes de entrar.');
+  };
   const entrar = async () => {
     setErr('');
+    setOk('');
+    setConfirmMail('');
     setBusy(true);
     const id = ident.trim();
     if (id.includes('@')) {
@@ -3240,7 +3256,10 @@ function Login() {
         password: pass
       });
       setBusy(false);
-      if (error) setErr('Usuário ou senha incorretos.');
+      if (error) {
+        // conta existe mas o e-mail ainda não foi confirmado -> mensagem certa + reenvio
+        if (/confirm/i.test(`${error.message || ''} ${error.code || ''}`)) setConfirmMail(id.toLowerCase());else setErr('Usuário ou senha incorretos.');
+      }
       return;
     }
     // login por apelido: a resolução apelido->e-mail e a autenticação acontecem NO SERVIDOR
@@ -3361,7 +3380,40 @@ function Login() {
       fontSize: 13.5,
       fontWeight: 600
     }
-  }, err), /*#__PURE__*/React.createElement("button", {
+  }, err), confirmMail && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.goldSoft,
+      borderRadius: 11,
+      padding: '12px 14px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gold,
+      fontSize: 13.5,
+      fontWeight: 700
+    }
+  }, "Falta confirmar teu e-mail \uD83D\uDCEC"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.ink,
+      lineHeight: 1.5,
+      marginTop: 3
+    }
+  }, "Tua conta existe, mas antes de entrar voc\xEA precisa clicar no link que mandamos pra ", /*#__PURE__*/React.createElement("b", null, confirmMail), ". N\xE3o achou? Olha o spam \u2014 ou reenvia:"), /*#__PURE__*/React.createElement("button", {
+    onClick: reenviarConfirm,
+    disabled: busy,
+    style: {
+      marginTop: 8,
+      padding: '9px 14px',
+      borderRadius: 10,
+      border: 'none',
+      background: C.gold,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 12.5,
+      cursor: 'pointer'
+    }
+  }, "Reenviar e-mail de confirma\xE7\xE3o")), /*#__PURE__*/React.createElement("button", {
     onClick: entrar,
     disabled: busy,
     style: {
