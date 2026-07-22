@@ -13,8 +13,17 @@ const C = {
 };
 const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
 const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
-// GrinderBank: planos do produto individual. UPGRADE_URL recebe o checkout (Kiwify) quando a conta existir.
-const UPGRADE_URL='';
+// GrinderBank: checkouts reais da Hotmart (produto Gestão Y106811622J · Pro K106838001X).
+// O e-mail da conta vai pré-preenchido: comprar com o MESMO e-mail é o que faz o webhook
+// ativar o plano sozinho na conta.
+const CHECKOUT={
+  gestao:{mensal:'https://pay.hotmart.com/Y106811622J?off=8yvvehri',anual:'https://pay.hotmart.com/Y106811622J?off=zzmz1hue'},
+  pro:{mensal:'https://pay.hotmart.com/K106838001X?off=rpo4cutz',anual:'https://pay.hotmart.com/K106838001X?off=qkhobsay'},
+};
+const abrirCheckout=(plano,ciclo,email)=>{
+  const c=CHECKOUT[plano==='gestao'?'gestao':'pro'];
+  window.open((c[ciclo]||c.mensal)+(email?`&email=${encodeURIComponent(email)}`:''),'_blank');
+};
 const PLAN_LABEL={free:'Grátis',gestao:'Gestão (R$ 19,90/mês)',pro:'Pro (R$ 49,90/mês)',founder:'Fundador (tudo liberado)',team:'Time'};
 // tour guiado do 1º acesso: navega tela a tela com um cartão explicando cada parte
 const TOUR_STEPS=[
@@ -1230,14 +1239,17 @@ function Onboarding({session,profile,onDone}){
   </div>;
 }
 // teste grátis de 15 dias acabou: bloqueia o app inteiro até assinar (dados ficam guardados)
-function TrialBlocked({planLabel,onLogout,onDelete}){
+function TrialBlocked({plan,email,onLogout,onDelete}){
+  const pro=plan==='pro';
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:430,textAlign:'center'}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
       <div style={{fontSize:42,marginBottom:6}}>⏳</div>
       <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,margin:'0 0 8px'}}>Seu teste grátis de 15 dias acabou</h3>
-      <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.65,margin:'0 0 18px'}}>Pra continuar com sua banca, torneios{planLabel==='pro'?' e estatísticas':''}, é só assinar. <b>Seus dados estão guardados</b> — voltam na hora que a assinatura entrar.</p>
-      <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:16,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Assinar e voltar':'Assinatura abre em breve'}</button>
+      <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.65,margin:'0 0 18px'}}>Pra continuar com sua banca, torneios{pro?' e estatísticas':''}, é só assinar. <b>Seus dados estão guardados</b> — voltam na hora que o pagamento confirmar. Use <b>este mesmo e-mail</b> no checkout.</p>
+      <button onClick={()=>abrirCheckout(pro?'pro':'gestao','mensal',email)} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>{pro?'Assinar o Pro — R$ 49,90/mês':'Assinar a Gestão — R$ 19,90/mês'}</button>
+      <button onClick={()=>abrirCheckout(pro?'pro':'gestao','anual',email)} style={{width:'100%',marginTop:8,padding:'12px 0',borderRadius:13,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{pro?'Plano anual — R$ 399 (2 meses grátis)':'Plano anual — R$ 149'}</button>
+      <button onClick={()=>abrirCheckout(pro?'gestao':'pro','mensal',email)} style={{width:'100%',marginTop:8,border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:12.5,cursor:'pointer',textDecoration:'underline'}}>{pro?'Prefiro só a gestão de banca — R$ 19,90/mês':'Quero também as estatísticas (Pro) — R$ 49,90/mês'}</button>
       <button onClick={()=>window.location.reload()} style={{width:'100%',marginTop:10,padding:'12px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Já paguei — atualizar</button>
       <div style={{display:'flex',gap:16,justifyContent:'center',marginTop:16}}>
         <button onClick={onLogout} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:13,cursor:'pointer',textDecoration:'underline'}}>Sair</button>
@@ -2052,7 +2064,7 @@ function Dashboard({session,profile}){
 
   // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
   if(trialExpired) return <>
-    <TrialBlocked planLabel={plan} onLogout={sair} onDelete={()=>setDelAcc(true)}/>
+    <TrialBlocked plan={plan} email={session.user.email} onLogout={sair} onDelete={()=>setDelAcc(true)}/>
     {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
   </>;
 
@@ -2087,7 +2099,7 @@ function Dashboard({session,profile}){
             <div style={{fontWeight:800,fontSize:14,color:C.ink}}>Teste grátis · {trialDaysLeft===0?'último dia':`faltam ${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</div>
             <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.4}}>Assine o plano <b>{PLAN_LABEL[plan]?PLAN_LABEL[plan].split(' (')[0]:plan}</b> pra não perder o acesso quando o teste acabar.</div>
           </div>
-          <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); else setView('config'); }} style={{padding:'9px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>{UPGRADE_URL?'Assinar':'Ver plano'}</button>
+          <button onClick={()=>abrirCheckout(plan==='pro'?'pro':'gestao','mensal',session.user.email)} style={{padding:'9px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>Assinar</button>
         </Card>}
         {/* convite pra instalar na tela inicial (some quando já instalado ou dispensado) */}
         {installCard&&<Card style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${P}`,background:C.plumSoft}}>
@@ -2326,8 +2338,8 @@ function Dashboard({session,profile}){
               ✓ <b>Relatório completo em PDF</b> pra revisar ou mandar pro coach
             </div>
             <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:26,fontWeight:700,color:P}}>R$ 49,90<span style={{fontSize:14,color:C.inkSoft,fontWeight:600}}>/mês</span></div>
-            <div style={{fontSize:12,color:C.inkSoft,marginBottom:14}}>ou R$ 399/ano (2 meses grátis)</div>
-            <button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{padding:'14px 28px',borderRadius:14,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:15.5,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Assinar o Pro':'Vendas abrem em breve'}</button>
+            <div style={{fontSize:12,color:C.inkSoft,marginBottom:14}}>ou <button onClick={()=>abrirCheckout('pro','anual',session.user.email)} style={{border:'none',background:'transparent',color:P,fontWeight:700,fontSize:12,cursor:'pointer',padding:0,textDecoration:'underline'}}>R$ 399/ano (2 meses grátis)</button></div>
+            <button onClick={()=>abrirCheckout('pro','mensal',session.user.email)} style={{padding:'14px 28px',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Assinar o Pro</button>
             <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10}}>Seu plano atual: <b>{PLAN_LABEL[plan]||plan}</b> — a gestão de banca continua completa e ilimitada.</div>
           </Card>
         </div>;
@@ -2760,7 +2772,8 @@ function Dashboard({session,profile}){
             <b>Gestão</b> (R$ 19,90/mês): banca, torneios, diário, semanal e relatórios de banca — ilimitado.<br/>
             <b>Pro</b> (R$ 49,90/mês): tudo da Gestão + import de mãos GG/PS, estatísticas completas, leituras automáticas e relatório em PDF.
           </div>
-          {!canStats&&<button onClick={()=>{ if(UPGRADE_URL) window.open(UPGRADE_URL,'_blank'); }} style={{marginTop:12,padding:'12px 20px',borderRadius:13,border:'none',background:UPGRADE_URL?P:C.bg,color:UPGRADE_URL?'#fff':C.inkSoft,fontWeight:700,fontSize:14,cursor:UPGRADE_URL?'pointer':'default'}}>{UPGRADE_URL?'Fazer upgrade pro Pro':'Vendas abrem em breve'}</button>}
+          {trialDaysLeft!=null&&<button onClick={()=>abrirCheckout(plan==='pro'?'pro':'gestao','mensal',session.user.email)} style={{marginTop:4,marginRight:10,padding:'12px 20px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Assinar agora</button>}
+          {!canStats&&<button onClick={()=>abrirCheckout('pro','mensal',session.user.email)} style={{marginTop:12,padding:'12px 20px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Fazer upgrade pro Pro</button>}
           <button onClick={()=>{setTour(1); setView(TOUR_STEPS[0].v);}} style={{marginTop:12,marginLeft:8,padding:'12px 20px',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Rever o tour do sistema</button>
         </Card>}
         <Card style={{padding:20,marginTop:16}}>
