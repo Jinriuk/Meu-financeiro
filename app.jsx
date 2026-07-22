@@ -1034,13 +1034,25 @@ function Login(){
     try{ await sb.rpc('create_solo_workspace',{ws_name:nome,plan_escolhido:nPlan}); }catch(e){ console.error(e); }
     window.location.reload();
   };
+  // reenviar o e-mail de confirmação (caso do login antes de confirmar)
+  const [confirmMail,setConfirmMail]=useState('');
+  const reenviarConfirm=async()=>{
+    setBusy(true);
+    try{ await sb.auth.resend({type:'signup',email:confirmMail}); }catch(e){}
+    setBusy(false); setConfirmMail('');
+    setOk('E-mail de confirmação reenviado! Confere a caixa de entrada (e o spam) e clica no link antes de entrar.');
+  };
   const entrar=async()=>{
-    setErr(''); setBusy(true);
+    setErr(''); setOk(''); setConfirmMail(''); setBusy(true);
     const id=ident.trim();
     if(id.includes('@')){
       const {error}=await sb.auth.signInWithPassword({email:id.toLowerCase(),password:pass});
       setBusy(false);
-      if(error) setErr('Usuário ou senha incorretos.');
+      if(error){
+        // conta existe mas o e-mail ainda não foi confirmado -> mensagem certa + reenvio
+        if(/confirm/i.test(`${error.message||''} ${error.code||''}`)) setConfirmMail(id.toLowerCase());
+        else setErr('Usuário ou senha incorretos.');
+      }
       return;
     }
     // login por apelido: a resolução apelido->e-mail e a autenticação acontecem NO SERVIDOR
@@ -1077,6 +1089,11 @@ function Login(){
         <div><label style={labelStyle}>E-mail, apelido ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+        {confirmMail&&<div style={{background:C.goldSoft,borderRadius:11,padding:'12px 14px'}}>
+          <div style={{color:C.gold,fontSize:13.5,fontWeight:700}}>Falta confirmar teu e-mail 📬</div>
+          <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>Tua conta existe, mas antes de entrar você precisa clicar no link que mandamos pra <b>{confirmMail}</b>. Não achou? Olha o spam — ou reenvia:</div>
+          <button onClick={reenviarConfirm} disabled={busy} style={{marginTop:8,padding:'9px 14px',borderRadius:10,border:'none',background:C.gold,color:'#fff',fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Reenviar e-mail de confirmação</button>
+        </div>}
         <button onClick={entrar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Entrando...':'Entrar'}</button>
         <button onClick={esqueci} disabled={busy} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:13,cursor:'pointer',padding:'2px 0',textDecoration:'underline'}}>Esqueci minha senha</button>
         <button onClick={()=>{setMode('signup');setErr('');setOk('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Criar conta grátis</button>
