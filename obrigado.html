@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex, nofollow"/>
+<title>Pedido recebido — GrinderBank</title>
+<meta name="theme-color" content="#4C3E92"/>
+<link rel="icon" href="favicon.ico" sizes="any"/>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+  :root{--bg:#F5F0E6;--surface:#fff;--ink:#19231D;--soft:#57645A;--line:#E7DFCC;--p:#4C3E92;--psoft:#EAE7F8;--green:#1F7355;--greensoft:#E5EDE6;--gold:#A5782C;--goldsoft:#F1E6CD}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;line-height:1.65}
+  .wrap{max-width:640px;margin:0 auto;padding:28px 20px 60px}
+  .brand{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:19px;letter-spacing:-.02em;margin-bottom:34px}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:clamp(1.6rem,5vw,2.2rem);line-height:1.15;margin:.4em 0 .3em}
+  .status{border-radius:18px;padding:22px 24px;margin-bottom:22px}
+  .status .badge{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.05em;padding:5px 13px;border-radius:99px;margin-bottom:6px}
+  .status p{margin:.4em 0 0;font-size:15px;color:var(--soft)}
+  .ok{background:var(--greensoft)} .ok .badge{background:#CDE3D2;color:var(--green)}
+  .wait{background:var(--goldsoft)} .wait .badge{background:#EAD9AE;color:var(--gold)}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px 22px;margin-bottom:14px;box-shadow:0 1px 2px rgba(25,35,29,.05),0 12px 32px -20px rgba(25,35,29,.28)}
+  .card h2{font-family:'Space Grotesk',sans-serif;font-size:16.5px;margin:0 0 6px}
+  .card p{margin:0 0 12px;font-size:14px;color:var(--soft)}
+  .card p b{color:var(--ink)}
+  .btn{display:inline-block;background:var(--p);color:#fff;font-weight:700;font-size:15px;padding:13px 26px;border-radius:13px;text-decoration:none;box-shadow:0 10px 26px -12px rgba(76,62,146,.55)}
+  .btn.sec{background:transparent;color:var(--p);border:1.5px solid var(--p);box-shadow:none}
+  .steps{margin:0;padding:0 0 0 2px;list-style:none;font-size:14px}
+  .steps li{padding:5px 0 5px 30px;position:relative}
+  .steps li::before{content:attr(data-n);position:absolute;left:0;top:6px;width:21px;height:21px;border-radius:99px;background:var(--psoft);color:var(--p);font-size:12px;font-weight:800;display:grid;place-items:center}
+  .note{font-size:12.5px;color:var(--soft);margin-top:22px;line-height:1.6}
+  footer{margin-top:36px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--soft)}
+  footer a{color:var(--p);text-decoration:none;margin-right:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><img src="brand-symbol.png" alt="" width="34" height="34" style="display:block"/>GrinderBank</div>
+
+  <!-- o obrigado.js mostra o bloco certo pelo status que a Hotmart manda na URL;
+       sem JS/parâmetro, o genérico (visível por padrão) cobre todos os casos -->
+  <div id="st-ok" class="status ok" hidden>
+    <span class="badge">PAGAMENTO CONFIRMADO ✓</span>
+    <h1>Bom grind! Seu acesso já está sendo liberado.</h1>
+    <p>Em poucos minutos o plano é ativado automaticamente na conta com o <b>mesmo e-mail da compra</b>.</p>
+  </div>
+  <div id="st-wait" class="status wait" hidden>
+    <span class="badge">AGUARDANDO PAGAMENTO</span>
+    <h1>Pedido recebido — falta só o pagamento compensar.</h1>
+    <p>Pix costuma confirmar em instantes; boleto pode levar até 2 dias úteis. Assim que compensar, o acesso é liberado <b>automaticamente</b> na conta com o mesmo e-mail da compra.</p>
+  </div>
+  <div id="st-review" class="status wait" hidden>
+    <span class="badge">PAGAMENTO EM ANÁLISE</span>
+    <h1>Pedido recebido — o pagamento está em análise.</h1>
+    <p>Isso é uma checagem normal da operadora do cartão e costuma resolver em algumas horas. Aprovou, seu acesso é liberado <b>automaticamente</b> — a Hotmart te avisa por e-mail.</p>
+  </div>
+  <div id="st-generic" class="status ok">
+    <span class="badge">PEDIDO RECEBIDO ✓</span>
+    <h1>Bom grind! Falta pouco pra tudo estar liberado.</h1>
+    <p>Assim que o pagamento for confirmado, o plano é ativado <b>automaticamente</b> na conta com o <b>mesmo e-mail da compra</b>.</p>
+  </div>
+
+  <div class="card">
+    <h2>Já tem conta no GrinderBank?</h2>
+    <p>Então não precisa fazer nada: o plano cai <b>sozinho</b> na sua conta. É só entrar.</p>
+    <a class="btn" href="index.html">Entrar no GrinderBank</a>
+  </div>
+
+  <div class="card">
+    <h2>Ainda não tem conta?</h2>
+    <p>Crie agora usando <b>o mesmo e-mail que você usou na compra</b> — é assim que o sistema reconhece sua assinatura e libera tudo.</p>
+    <ol class="steps">
+      <li data-n="1">Toque em "Criar conta" na tela de entrada</li>
+      <li data-n="2">Use <b>o e-mail da compra</b> e crie sua senha</li>
+      <li data-n="3">Pronto — o plano ativa sozinho na sua conta</li>
+    </ol>
+    <p style="margin-top:12px"><a class="btn sec" href="index.html">Criar minha conta</a></p>
+  </div>
+
+  <p class="note">Comprou com um e-mail diferente do da sua conta no app? Sem problema — responde o e-mail de confirmação da Hotmart ou fala com a gente que movemos o acesso. E se a ativação não aparecer em até 15 minutos após a confirmação do pagamento, sai e entra de novo no app.</p>
+
+  <footer>
+    <a href="termos.html">Termos de Uso</a><a href="privacidade.html">Privacidade</a><a href="venda.html">Página do produto</a>
+    <div style="margin-top:8px">GrinderBank — gestão de banca e estatísticas de poker. Jogue com responsabilidade.</div>
+  </footer>
+</div>
+<script src="obrigado.js" defer></script>
+</body>
+</html>
