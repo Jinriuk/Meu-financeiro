@@ -29,8 +29,23 @@ const C = {
 };
 const P = C.plum; // cor primária da "pool" (diferencia do app financeiro pessoal)
 const WALLETS = ['PokerStars', 'GG Poker', 'Reserva', 'Outros'];
-// GrinderBank: planos do produto individual. UPGRADE_URL recebe o checkout (Kiwify) quando a conta existir.
-const UPGRADE_URL = '';
+// GrinderBank: checkouts reais da Hotmart (produto Gestão Y106811622J · Pro K106838001X).
+// O e-mail da conta vai pré-preenchido: comprar com o MESMO e-mail é o que faz o webhook
+// ativar o plano sozinho na conta.
+const CHECKOUT = {
+  gestao: {
+    mensal: 'https://pay.hotmart.com/Y106811622J?off=8yvvehri',
+    anual: 'https://pay.hotmart.com/Y106811622J?off=zzmz1hue'
+  },
+  pro: {
+    mensal: 'https://pay.hotmart.com/K106838001X?off=rpo4cutz',
+    anual: 'https://pay.hotmart.com/K106838001X?off=qkhobsay'
+  }
+};
+const abrirCheckout = (plano, ciclo, email) => {
+  const c = CHECKOUT[plano === 'gestao' ? 'gestao' : 'pro'];
+  window.open((c[ciclo] || c.mensal) + (email ? `&email=${encodeURIComponent(email)}` : ''), '_blank');
+};
 const PLAN_LABEL = {
   free: 'Grátis',
   gestao: 'Gestão (R$ 19,90/mês)',
@@ -4030,10 +4045,12 @@ function Onboarding({
 }
 // teste grátis de 15 dias acabou: bloqueia o app inteiro até assinar (dados ficam guardados)
 function TrialBlocked({
-  planLabel,
+  plan,
+  email,
   onLogout,
   onDelete
 }) {
+  const pro = plan === 'pro';
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
@@ -4074,22 +4091,47 @@ function TrialBlocked({
       lineHeight: 1.65,
       margin: '0 0 18px'
     }
-  }, "Pra continuar com sua banca, torneios", planLabel === 'pro' ? ' e estatísticas' : '', ", \xE9 s\xF3 assinar. ", /*#__PURE__*/React.createElement("b", null, "Seus dados est\xE3o guardados"), " \u2014 voltam na hora que a assinatura entrar."), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');
-    },
+  }, "Pra continuar com sua banca, torneios", pro ? ' e estatísticas' : '', ", \xE9 s\xF3 assinar. ", /*#__PURE__*/React.createElement("b", null, "Seus dados est\xE3o guardados"), " \u2014 voltam na hora que o pagamento confirmar. Use ", /*#__PURE__*/React.createElement("b", null, "este mesmo e-mail"), " no checkout."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => abrirCheckout(pro ? 'pro' : 'gestao', 'mensal', email),
     style: {
       width: '100%',
       padding: '15px 0',
       borderRadius: 14,
       border: 'none',
-      background: UPGRADE_URL ? P : C.bg,
-      color: UPGRADE_URL ? '#fff' : C.inkSoft,
+      background: P,
+      color: '#fff',
       fontWeight: 700,
       fontSize: 16,
-      cursor: UPGRADE_URL ? 'pointer' : 'default'
+      cursor: 'pointer'
     }
-  }, UPGRADE_URL ? 'Assinar e voltar' : 'Assinatura abre em breve'), /*#__PURE__*/React.createElement("button", {
+  }, pro ? 'Assinar o Pro — R$ 49,90/mês' : 'Assinar a Gestão — R$ 19,90/mês'), /*#__PURE__*/React.createElement("button", {
+    onClick: () => abrirCheckout(pro ? 'pro' : 'gestao', 'anual', email),
+    style: {
+      width: '100%',
+      marginTop: 8,
+      padding: '12px 0',
+      borderRadius: 13,
+      border: `1.5px solid ${P}`,
+      background: C.plumSoft,
+      color: P,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, pro ? 'Plano anual — R$ 399 (2 meses grátis)' : 'Plano anual — R$ 149'), /*#__PURE__*/React.createElement("button", {
+    onClick: () => abrirCheckout(pro ? 'gestao' : 'pro', 'mensal', email),
+    style: {
+      width: '100%',
+      marginTop: 8,
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 600,
+      fontSize: 12.5,
+      cursor: 'pointer',
+      textDecoration: 'underline'
+    }
+  }, pro ? 'Prefiro só a gestão de banca — R$ 19,90/mês' : 'Quero também as estatísticas (Pro) — R$ 49,90/mês'), /*#__PURE__*/React.createElement("button", {
     onClick: () => window.location.reload(),
     style: {
       width: '100%',
@@ -6376,7 +6418,8 @@ function Dashboard({
 
   // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
   if (trialExpired) return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TrialBlocked, {
-    planLabel: plan,
+    plan: plan,
+    email: session.user.email,
     onLogout: sair,
     onDelete: () => setDelAcc(true)
   }), delAcc && /*#__PURE__*/React.createElement(DeleteAccountModal, {
@@ -6524,9 +6567,7 @@ function Dashboard({
       lineHeight: 1.4
     }
   }, "Assine o plano ", /*#__PURE__*/React.createElement("b", null, PLAN_LABEL[plan] ? PLAN_LABEL[plan].split(' (')[0] : plan), " pra n\xE3o perder o acesso quando o teste acabar.")), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');else setView('config');
-    },
+    onClick: () => abrirCheckout(plan === 'pro' ? 'pro' : 'gestao', 'mensal', session.user.email),
     style: {
       padding: '9px 14px',
       borderRadius: 11,
@@ -6538,7 +6579,7 @@ function Dashboard({
       cursor: 'pointer',
       flexShrink: 0
     }
-  }, UPGRADE_URL ? 'Assinar' : 'Ver plano')), installCard && /*#__PURE__*/React.createElement(Card, {
+  }, "Assinar")), installCard && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: '14px 16px',
       display: 'flex',
@@ -7726,21 +7767,31 @@ function Dashboard({
         color: C.inkSoft,
         marginBottom: 14
       }
-    }, "ou R$ 399/ano (2 meses gr\xE1tis)"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => {
-        if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');
-      },
+    }, "ou ", /*#__PURE__*/React.createElement("button", {
+      onClick: () => abrirCheckout('pro', 'anual', session.user.email),
+      style: {
+        border: 'none',
+        background: 'transparent',
+        color: P,
+        fontWeight: 700,
+        fontSize: 12,
+        cursor: 'pointer',
+        padding: 0,
+        textDecoration: 'underline'
+      }
+    }, "R$ 399/ano (2 meses gr\xE1tis)")), /*#__PURE__*/React.createElement("button", {
+      onClick: () => abrirCheckout('pro', 'mensal', session.user.email),
       style: {
         padding: '14px 28px',
         borderRadius: 14,
         border: 'none',
-        background: UPGRADE_URL ? P : C.bg,
-        color: UPGRADE_URL ? '#fff' : C.inkSoft,
+        background: P,
+        color: '#fff',
         fontWeight: 700,
         fontSize: 15.5,
-        cursor: UPGRADE_URL ? 'pointer' : 'default'
+        cursor: 'pointer'
       }
-    }, UPGRADE_URL ? 'Assinar o Pro' : 'Vendas abrem em breve'), /*#__PURE__*/React.createElement("div", {
+    }, "Assinar o Pro"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11.5,
         color: C.inkSoft,
@@ -9729,22 +9780,34 @@ function Dashboard({
       color: C.inkSoft,
       lineHeight: 1.6
     }
-  }, /*#__PURE__*/React.createElement("b", null, "Gest\xE3o"), " (R$ 19,90/m\xEAs): banca, torneios, di\xE1rio, semanal e relat\xF3rios de banca \u2014 ilimitado.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", null, "Pro"), " (R$ 49,90/m\xEAs): tudo da Gest\xE3o + import de m\xE3os GG/PS, estat\xEDsticas completas, leituras autom\xE1ticas e relat\xF3rio em PDF."), !canStats && /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank');
-    },
+  }, /*#__PURE__*/React.createElement("b", null, "Gest\xE3o"), " (R$ 19,90/m\xEAs): banca, torneios, di\xE1rio, semanal e relat\xF3rios de banca \u2014 ilimitado.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", null, "Pro"), " (R$ 49,90/m\xEAs): tudo da Gest\xE3o + import de m\xE3os GG/PS, estat\xEDsticas completas, leituras autom\xE1ticas e relat\xF3rio em PDF."), trialDaysLeft != null && /*#__PURE__*/React.createElement("button", {
+    onClick: () => abrirCheckout(plan === 'pro' ? 'pro' : 'gestao', 'mensal', session.user.email),
+    style: {
+      marginTop: 4,
+      marginRight: 10,
+      padding: '12px 20px',
+      borderRadius: 13,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, "Assinar agora"), !canStats && /*#__PURE__*/React.createElement("button", {
+    onClick: () => abrirCheckout('pro', 'mensal', session.user.email),
     style: {
       marginTop: 12,
       padding: '12px 20px',
       borderRadius: 13,
       border: 'none',
-      background: UPGRADE_URL ? P : C.bg,
-      color: UPGRADE_URL ? '#fff' : C.inkSoft,
+      background: P,
+      color: '#fff',
       fontWeight: 700,
       fontSize: 14,
-      cursor: UPGRADE_URL ? 'pointer' : 'default'
+      cursor: 'pointer'
     }
-  }, UPGRADE_URL ? 'Fazer upgrade pro Pro' : 'Vendas abrem em breve'), /*#__PURE__*/React.createElement("button", {
+  }, "Fazer upgrade pro Pro"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       setTour(1);
       setView(TOUR_STEPS[0].v);
