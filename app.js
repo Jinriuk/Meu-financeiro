@@ -1545,19 +1545,92 @@ function StopLossCard({
   const today = todayISO();
   const dayBI = num(config.stoploss_daily_buyins),
     wkPct = num(config.stoploss_weekly_pct);
+  const [open, setOpen] = useState(null); // null = automático (abre sozinho se alguém passou de 70%)
   if (!(dayBI > 0) && !(wkPct > 0)) return null;
+  const rows = players.map((p, i) => {
+    const abiMax = abiMaxFor(config, p, today);
+    const slDay = dayBI * abiMax;
+    const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
+    const wkLim = wkPct * bancaAtual;
+    const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
+    const pct = Math.max(slDay > 0 ? dayLoss / slDay * 100 : 0, wkLim > 0 ? wkLoss / wkLim * 100 : 0);
+    return {
+      p,
+      i,
+      abiMax,
+      slDay,
+      dayLoss,
+      wkLim,
+      wkLoss,
+      pct
+    };
+  });
+  const worst = Math.max(0, ...rows.map(r => r.pct));
+  const isOpen = open == null ? worst >= 70 : open;
+  const chip = worst >= 100 ? {
+    t: 'estourou',
+    c: C.red,
+    bg: C.redSoft
+  } : worst >= 70 ? {
+    t: `${Math.round(worst)}% usado`,
+    c: C.gold,
+    bg: C.goldSoft
+  } : worst > 0 ? {
+    t: `${Math.round(worst)}% usado`,
+    c: C.greenMid,
+    bg: C.greenSoft
+  } : {
+    t: 'em dia',
+    c: C.greenMid,
+    bg: C.greenSoft
+  };
   return /*#__PURE__*/React.createElement(Card, {
     style: {
-      padding: 20
+      padding: 0,
+      overflow: 'hidden'
     }
-  }, /*#__PURE__*/React.createElement("h3", {
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setOpen(o => o == null ? !(worst >= 70) : !o),
+    style: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '15px 18px',
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      textAlign: 'left'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 18,
+      fontSize: 17,
       fontWeight: 600,
-      margin: '0 0 4px'
+      flex: 1
     }
-  }, "Stop loss \u2014 a hora de parar"), /*#__PURE__*/React.createElement("div", {
+  }, "Stop loss \u2014 a hora de parar"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: '3px 10px',
+      borderRadius: 99,
+      fontSize: 11,
+      fontWeight: 800,
+      color: chip.c,
+      background: chip.bg,
+      whiteSpace: 'nowrap'
+    }
+  }, chip.t), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft,
+      fontSize: 20,
+      transform: isOpen ? 'rotate(90deg)' : 'none',
+      transition: 'transform .2s'
+    }
+  }, "\u203A")), isOpen && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0 18px 18px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -1569,48 +1642,41 @@ function StopLossCard({
       flexDirection: 'column',
       gap: 16
     }
-  }, players.map((p, i) => {
-    const abiMax = abiMaxFor(config, p, today);
-    const slDay = dayBI * abiMax;
-    const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
-    const wkLim = wkPct * bancaAtual;
-    const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
-    return /*#__PURE__*/React.createElement("div", {
-      key: p,
-      style: {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 7
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        width: 9,
-        height: 9,
-        borderRadius: 99,
-        background: PLAYER_COLORS[i] || C.inkSoft
-      }
-    }), /*#__PURE__*/React.createElement("b", {
-      style: {
-        fontSize: 13.5
-      }
-    }, p.split(' ')[0])), slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-      label: `Hoje · limite ${dayBI} buy-ins`,
-      used: dayLoss,
-      limit: slDay,
-      detail: `${(dayLoss / (abiMax || 1)).toFixed(1).replace('.', ',')} de ${dayBI} bi`
-    }), wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-      label: `Semana · limite ${pctFmt(wkPct * 100)} da banca`,
-      used: wkLoss,
-      limit: wkLim,
-      detail: `${fmt(wkLoss)} de ${fmt(wkLim)}`
-    }));
-  })));
+  }, rows.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.p,
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 7
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 9,
+      height: 9,
+      borderRadius: 99,
+      background: PLAYER_COLORS[r.i] || C.inkSoft
+    }
+  }), /*#__PURE__*/React.createElement("b", {
+    style: {
+      fontSize: 13.5
+    }
+  }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+    label: `Hoje · limite ${dayBI} buy-ins`,
+    used: r.dayLoss,
+    limit: r.slDay,
+    detail: `${(r.dayLoss / (r.abiMax || 1)).toFixed(1).replace('.', ',')} de ${dayBI} bi`
+  }), r.wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+    label: `Semana · limite ${pctFmt(wkPct * 100)} da banca`,
+    used: r.wkLoss,
+    limit: r.wkLim,
+    detail: `${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`
+  }))))));
 }
 
 /* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
@@ -4471,35 +4537,40 @@ function StatHintBox({
     s: 14
   })));
 }
-// mini-stat usado no Diário/Mensal
+// mini-stat usado no Diário/Mensal — valor longo (ex: US$ 1.158,29) encolhe em vez de vazar do card
 const MiniStat = ({
   label,
   value,
   tone
-}) => /*#__PURE__*/React.createElement("div", {
-  style: {
-    padding: '8px 10px',
-    borderRadius: 10,
-    background: C.bg,
-    minWidth: 0
-  }
-}, /*#__PURE__*/React.createElement("div", {
-  style: {
-    fontSize: 10.5,
-    color: C.inkSoft,
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '.03em'
-  }
-}, label), /*#__PURE__*/React.createElement("div", {
-  style: {
-    fontFamily: "'Space Grotesk',sans-serif",
-    fontSize: 15.5,
-    fontWeight: 600,
-    color: tone || C.ink,
-    marginTop: 1
-  }
-}, value));
+}) => {
+  const s = String(value),
+    fz = s.length > 13 ? 11.5 : s.length > 10 ? 13 : 15.5;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '8px 10px',
+      borderRadius: 10,
+      background: C.bg,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      color: C.inkSoft,
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '.03em'
+    }
+  }, label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: fz,
+      fontWeight: 600,
+      color: tone || C.ink,
+      marginTop: 1,
+      whiteSpace: 'nowrap'
+    }
+  }, value));
+};
 function DayCard({
   date,
   dayTours,
@@ -4893,6 +4964,39 @@ function WeekRow({
     pct: pAbi > 0 ? wkAbi / pAbi * 100 : 0,
     color: wkAbi >= pAbi * 0.9 ? C.red : wkAbi >= pAbi * 0.7 ? C.gold : C.greenMid
   })));
+}
+// Avisos do Painel viram toasts: aparecem UMA vez (por conteúdo), somem sozinhos em 8s e não
+// voltam a cada visita — o que já foi visto fica marcado no aparelho.
+function AlertToaster({
+  alerts,
+  push
+}) {
+  React.useEffect(() => {
+    if (!alerts.length) return;
+    let seen = [];
+    try {
+      seen = JSON.parse(localStorage.getItem('gb_alerts_seen') || '[]');
+    } catch (e) {}
+    const s = new Set(seen);
+    let mudou = false;
+    alerts.forEach(a => {
+      if (!s.has(a.text)) {
+        push({
+          tone: a.tone,
+          title: a.tone === C.red ? 'Atenção na banca' : 'Aviso',
+          text: a.text
+        });
+        s.add(a.text);
+        mudou = true;
+      }
+    });
+    if (mudou) {
+      try {
+        localStorage.setItem('gb_alerts_seen', JSON.stringify([...s].slice(-80)));
+      } catch (e) {}
+    }
+  }, [alerts.map(a => a.text).join('|')]);
+  return null;
 }
 // "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
 function VerMais({
@@ -5963,7 +6067,7 @@ function Dashboard({
 
   /* alertas */
   const alerts = [];
-  players.forEach(p => {
+  if (!solo) players.forEach(p => {
     if (curMakeUp[p] > num(config.makeup_max_recomendado)) alerts.push({
       tone: C.red,
       text: `Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`
@@ -6699,47 +6803,10 @@ function Dashboard({
       fontSize: 13.5,
       opacity: .92
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), alerts.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10
-    }
-  }, alerts.map((a, i) => {
-    const clickable = a.items && a.items.length;
-    return /*#__PURE__*/React.createElement(Card, {
-      key: i,
-      onClick: clickable ? () => setAlertDetail(a) : undefined,
-      style: {
-        padding: '14px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 11,
-        borderLeft: `4px solid ${a.tone}`,
-        cursor: clickable ? 'pointer' : 'default'
-      }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: a.tone,
-        flexShrink: 0
-      }
-    }, /*#__PURE__*/React.createElement(IcoAlert, {
-      s: 20
-    })), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 13.5,
-        fontWeight: 600,
-        color: C.ink,
-        flex: 1
-      }
-    }, a.text), clickable && /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.inkSoft,
-        fontSize: 20,
-        flexShrink: 0
-      }
-    }, "\u203A"));
-  })), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), /*#__PURE__*/React.createElement(AlertToaster, {
+    alerts: alerts,
+    push: pushToast
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
@@ -7580,7 +7647,11 @@ function Dashboard({
       fontWeight: 700,
       marginTop: 2
     }
-  }, melhorDia ? /*#__PURE__*/React.createElement(React.Fragment, null, dLabel(melhorDia.d), " \xB7 ", fmt(melhorDia.r), melhorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
+  }, melhorDia ? /*#__PURE__*/React.createElement(React.Fragment, null, dLabel(melhorDia.d), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      whiteSpace: 'nowrap'
+    }
+  }, fmt(melhorDia.r)), melhorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.green,
       fontWeight: 600,
@@ -7603,7 +7674,11 @@ function Dashboard({
       fontWeight: 700,
       marginTop: 2
     }
-  }, piorDia ? /*#__PURE__*/React.createElement(React.Fragment, null, dLabel(piorDia.d), " \xB7 ", fmt(piorDia.r), piorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
+  }, piorDia ? /*#__PURE__*/React.createElement(React.Fragment, null, dLabel(piorDia.d), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      whiteSpace: 'nowrap'
+    }
+  }, fmt(piorDia.r)), piorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.red,
       fontWeight: 600,

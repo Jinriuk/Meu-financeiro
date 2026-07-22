@@ -607,24 +607,39 @@ function SLMeter({label,used,limit,detail}){
 function StopLossCard({players,config,daily,curWeek,bancaAtual}){
   const today=todayISO();
   const dayBI=num(config.stoploss_daily_buyins), wkPct=num(config.stoploss_weekly_pct);
+  const [open,setOpen]=useState(null);   // null = automático (abre sozinho se alguém passou de 70%)
   if(!(dayBI>0)&&!(wkPct>0)) return null;
-  return <Card style={{padding:20}}>
-    <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Stop loss — a hora de parar</h3>
-    <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto — quando a barra fica vermelha, o dia (ou a semana) acabou.</div>
-    <div style={{display:'flex',flexDirection:'column',gap:16}}>
-      {players.map((p,i)=>{
-        const abiMax=abiMaxFor(config,p,today);
-        const slDay=dayBI*abiMax;
-        const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
-        const wkLim=wkPct*bancaAtual;
-        const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
-        return <div key={p} style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{p.split(' ')[0]}</b></div>
-          {slDay>0&&<SLMeter label={`Hoje · limite ${dayBI} buy-ins`} used={dayLoss} limit={slDay} detail={`${(dayLoss/(abiMax||1)).toFixed(1).replace('.',',')} de ${dayBI} bi`}/>}
-          {wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(wkPct*100)} da banca`} used={wkLoss} limit={wkLim} detail={`${fmt(wkLoss)} de ${fmt(wkLim)}`}/>}
-        </div>;
-      })}
-    </div>
+  const rows=players.map((p,i)=>{
+    const abiMax=abiMaxFor(config,p,today);
+    const slDay=dayBI*abiMax;
+    const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
+    const wkLim=wkPct*bancaAtual;
+    const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
+    const pct=Math.max(slDay>0?dayLoss/slDay*100:0, wkLim>0?wkLoss/wkLim*100:0);
+    return {p,i,abiMax,slDay,dayLoss,wkLim,wkLoss,pct};
+  });
+  const worst=Math.max(0,...rows.map(r=>r.pct));
+  const isOpen=open==null?worst>=70:open;
+  const chip=worst>=100?{t:'estourou',c:C.red,bg:C.redSoft}
+    :worst>=70?{t:`${Math.round(worst)}% usado`,c:C.gold,bg:C.goldSoft}
+    :worst>0?{t:`${Math.round(worst)}% usado`,c:C.greenMid,bg:C.greenSoft}
+    :{t:'em dia',c:C.greenMid,bg:C.greenSoft};
+  return <Card style={{padding:0,overflow:'hidden'}}>
+    <button onClick={()=>setOpen(o=>o==null?!(worst>=70):!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+      <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,flex:1}}>Stop loss — a hora de parar</span>
+      <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:chip.c,background:chip.bg,whiteSpace:'nowrap'}}>{chip.t}</span>
+      <span style={{color:C.inkSoft,fontSize:20,transform:isOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+    </button>
+    {isOpen&&<div style={{padding:'0 18px 18px'}}>
+      <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto — quando a barra fica vermelha, o dia (ou a semana) acabou.</div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        {rows.map(r=><div key={r.p} style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>
+          {r.slDay>0&&<SLMeter label={`Hoje · limite ${dayBI} buy-ins`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${dayBI} bi`}/>}
+          {r.wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(wkPct*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>}
+        </div>)}
+      </div>
+    </div>}
   </Card>;
 }
 
@@ -1317,8 +1332,11 @@ function StatHintBox({i,onClose}){
     <button onClick={onClose} style={{flexShrink:0,background:'transparent',border:'none',color:C.inkSoft,cursor:'pointer',padding:2}}><IcoX s={14}/></button>
   </div>;
 }
-// mini-stat usado no Diário/Mensal
-const MiniStat = ({label,value,tone}) =><div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:15.5,fontWeight:600,color:tone||C.ink,marginTop:1}}>{value}</div></div>;
+// mini-stat usado no Diário/Mensal — valor longo (ex: US$ 1.158,29) encolhe em vez de vazar do card
+const MiniStat = ({label,value,tone}) =>{
+  const s=String(value), fz=s.length>13?11.5:s.length>10?13:15.5;
+  return <div style={{padding:'8px 10px',borderRadius:10,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700,textTransform:'uppercase',letterSpacing:'.03em'}}>{label}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:fz,fontWeight:600,color:tone||C.ink,marginTop:1,whiteSpace:'nowrap'}}>{value}</div></div>;
+};
 
 function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
@@ -1398,6 +1416,18 @@ function WeekRow({w,player,config,solo}){
     </div>}
     {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>}
   </div>;
+}
+// Avisos do Painel viram toasts: aparecem UMA vez (por conteúdo), somem sozinhos em 8s e não
+// voltam a cada visita — o que já foi visto fica marcado no aparelho.
+function AlertToaster({alerts,push}){
+  React.useEffect(()=>{
+    if(!alerts.length) return;
+    let seen=[]; try{ seen=JSON.parse(localStorage.getItem('gb_alerts_seen')||'[]'); }catch(e){}
+    const s=new Set(seen); let mudou=false;
+    alerts.forEach(a=>{ if(!s.has(a.text)){ push({tone:a.tone,title:a.tone===C.red?'Atenção na banca':'Aviso',text:a.text}); s.add(a.text); mudou=true; } });
+    if(mudou){ try{ localStorage.setItem('gb_alerts_seen',JSON.stringify([...s].slice(-80))); }catch(e){} }
+  },[alerts.map(a=>a.text).join('|')]);
+  return null;
 }
 // "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
 function VerMais({resta,bloco,onClick,rotulo}){
@@ -1883,7 +1913,7 @@ function Dashboard({session,profile}){
 
   /* alertas */
   const alerts=[];
-  players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
+  if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
   if(bancaAtual<piso) alerts.push({tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player,t.entry_date));
@@ -2127,13 +2157,8 @@ function Dashboard({session,profile}){
           </div>
         </Card>
 
-        {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:10}}>
-          {alerts.map((a,i)=>{const clickable=a.items&&a.items.length; return <Card key={i} onClick={clickable?()=>setAlertDetail(a):undefined} style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:11,borderLeft:`4px solid ${a.tone}`,cursor:clickable?'pointer':'default'}}>
-            <span style={{color:a.tone,flexShrink:0}}><IcoAlert s={20}/></span>
-            <span style={{fontSize:13.5,fontWeight:600,color:C.ink,flex:1}}>{a.text}</span>
-            {clickable&&<span style={{color:C.inkSoft,fontSize:20,flexShrink:0}}>›</span>}
-          </Card>;})}
-        </div>}
+        {/* avisos como pop-up: aparecem uma vez e somem (nada de card fixo poluindo o Painel) */}
+        <AlertToaster alerts={alerts} push={pushToast}/>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · até ${dLabel(CURWK)}`:`semana até ${dLabel(CURWK)}`}/>
@@ -2300,8 +2325,8 @@ function Dashboard({session,profile}){
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · {fmt(melhorDia.r)}{melhorDia.d.slice(0,7)!==month&&<span style={{color:C.green,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · {fmt(piorDia.r)}{piorDia.d.slice(0,7)!==month&&<span style={{color:C.red,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(melhorDia.r)}</span>{melhorDia.d.slice(0,7)!==month&&<span style={{color:C.green,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(piorDia.r)}</span>{piorDia.d.slice(0,7)!==month&&<span style={{color:C.red,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
