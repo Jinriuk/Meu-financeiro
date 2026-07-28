@@ -69,6 +69,12 @@ function weekEnding(dateStr){
   dt.setUTCDate(dt.getUTCDate()+((7-day)%7));
   return dt.toISOString().slice(0,10);
 }
+// segunda que ABRE a semana fechada por `wk` (domingo)
+const weekStart = wk => addDaysISO(wk,-6);
+// rótulo da semana com os dois extremos — "27/07 a 02/08" deixa claro quando ela pula o mês
+const weekLabel = wk => `${dLabel(weekStart(wk))} a ${dLabel(wk)}`;
+// a semana encosta neste mês? (vale tanto pela segunda que abre quanto pelo domingo que fecha)
+const weekInMonth = (wk,m) => mKey(wk)===m || mKey(weekStart(wk))===m;
 
 /* ---------- regras de negócio (seção 4) ---------- */
 // normaliza antes de salvar: semana do saque vira domingo; "pool/não informar" viram null (não atribuído)
@@ -1405,7 +1411,7 @@ function WeekRow({w,player,config,solo}){
   const wkAbi=wkEnt>0?wkBuyins/wkEnt:0, pAbi=abiMaxFor(config,player,w.week);
   return <div style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}>
-      <div style={{fontWeight:700,fontSize:14.5}}>Semana até {dLabel(w.week)}</div>
+      <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>Semana {weekLabel(w.week)}</div>{mKey(weekStart(w.week))!==mKey(w.week)&&<div style={{fontSize:11,color:C.inkSoft,marginTop:1}}>semana que vira o mês · fecha em {dLabel(w.week)}</div>}</div>
       <span style={{fontWeight:800,fontSize:15,color:w.resultado>=0?C.greenMid:C.red}}>{w.resultado>=0?'+':'−'}{fmt(Math.abs(w.resultado))}</span>
     </div>
     {!solo&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginTop:8,fontSize:12.5}}>
@@ -1424,7 +1430,7 @@ function AlertToaster({alerts,push}){
     if(!alerts.length) return;
     let seen=[]; try{ seen=JSON.parse(localStorage.getItem('gb_alerts_seen')||'[]'); }catch(e){}
     const s=new Set(seen); let mudou=false;
-    alerts.forEach(a=>{ if(!s.has(a.text)){ push({tone:a.tone,title:a.tone===C.red?'Atenção na banca':'Aviso',text:a.text}); s.add(a.text); mudou=true; } });
+    alerts.forEach(a=>{ if(!s.has(a.text)){ push({tone:a.tone,title:a.tone===C.red?'Atenção na banca':'Aviso',text:a.text,items:a.items}); s.add(a.text); mudou=true; } });
     if(mudou){ try{ localStorage.setItem('gb_alerts_seen',JSON.stringify([...s].slice(-80))); }catch(e){} }
   },[alerts.map(a=>a.text).join('|')]);
   return null;
@@ -1443,9 +1449,10 @@ function HistToggle({n,open,onClick}){
 // card "geral da pool por semana" — mês atual aberto; meses anteriores viram histórico recolhível
 function SemanalGeral({geral,curMonth}){
   const [hist,setHist]=useState(false);
-  const atuais=geral.filter(g=>g.mes===curMonth), antigas=geral.filter(g=>g.mes!==curMonth);
+  // "deste mês" = a semana encosta no mês corrente, mesmo que ela feche só no mês seguinte
+  const atuais=geral.filter(g=>weekInMonth(g.week,curMonth)), antigas=geral.filter(g=>!weekInMonth(g.week,curMonth));
   const Row=g=><div key={g.week} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,padding:'11px 0',borderBottom:`1px solid ${C.border}`}}>
-    <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>Semana até {dLabel(g.week)}</div><div style={{fontSize:11.5,color:C.inkSoft,marginTop:1}}>saque autorizado {fmt(g.saqueAut)} · pool ficou com {fmt(g.partePool)}</div></div>
+    <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>Semana {weekLabel(g.week)}</div><div style={{fontSize:11.5,color:C.inkSoft,marginTop:1}}>saque autorizado {fmt(g.saqueAut)} · pool ficou com {fmt(g.partePool)}</div></div>
     <span style={{fontWeight:800,fontSize:15.5,color:g.resultado>=0?C.greenMid:C.red,flexShrink:0}}>{g.resultado>=0?'+':'−'}{fmt(Math.abs(g.resultado))}</span>
   </div>;
   return <Card style={{padding:20}}>
@@ -1459,7 +1466,7 @@ function SemanalGeral({geral,curMonth}){
 function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual,solo}){
   const [hist,setHist]=useState(false);
   const arr=[...weeks].reverse();
-  const atuais=arr.filter(w=>w.week.slice(0,7)===curMonth), antigas=arr.filter(w=>w.week.slice(0,7)!==curMonth);
+  const atuais=arr.filter(w=>weekInMonth(w.week,curMonth)), antigas=arr.filter(w=>!weekInMonth(w.week,curMonth));
   return <Card style={{padding:20}}>
     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}><span style={{width:12,height:12,borderRadius:99,background:PLAYER_COLORS[[config.player1_name,config.player2_name].indexOf(player)]||C.inkSoft}}/><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>{player}</h3>{!solo&&<span style={{marginLeft:'auto',fontSize:13,color:C.inkSoft,fontWeight:600}}>make-up atual {fmt(makeUpAtual)}</span>}</div>
     {atuais.length?atuais.map(w=><WeekRow key={w.week} w={w} player={player} config={config} solo={solo}/>):<Empty>Sem semanas neste mês ainda.</Empty>}
@@ -2017,12 +2024,14 @@ function Dashboard({session,profile}){
   ].filter(n=>!solo||n.id!=='saques');  // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
 
   /* ---------- mensal ---------- */
-  const monthList=[...new Set(allWeeks.map(w=>w.slice(0,7)).concat([todayISO().slice(0,7)]))].sort();
+  // O mês é o mês do CALENDÁRIO em que o dia foi jogado: lançou dia 28/07, conta em julho.
+  // (o rateio semanal — make-up, split, saque — continua semanal e aparece na semana em que fecha)
+  const monthList=[...new Set(daily.map(e=>mKey(e.entry_date)).concat(allWeeks.map(mKey)).concat([todayISO().slice(0,7)]))].sort();
   const monthIdx=monthList.indexOf(month);
   const goMonth=d=>{const i=monthIdx+d; if(i>=0&&i<monthList.length)setMonth(monthList[i]);};
-  const monthWeeks=players.flatMap(p=>(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month));
-  const monthDaily=daily.filter(e=>weekEnding(e.entry_date).slice(0,7)===month);
-  const mRes=monthWeeks.reduce((s,w)=>s+w.resultado,0);
+  const monthWeeks=players.flatMap(p=>(weeksByPlayer[p]||[]).filter(w=>mKey(w.week)===month)); // semanas FECHADAS no mês (só pro rateio)
+  const monthDaily=daily.filter(e=>mKey(e.entry_date)===month);
+  const mRes=monthDaily.reduce((s,e)=>s+resultadoDia(e),0);
   const mLucroDiv=monthWeeks.reduce((s,w)=>s+w.lucroDiv,0);
   const mPool=monthWeeks.reduce((s,w)=>s+w.partePool,0);
   const mTorneios=monthDaily.reduce((s,e)=>s+num(e.qtd_torneios),0);
@@ -2033,10 +2042,10 @@ function Dashboard({session,profile}){
   const dayResults=monthDaily.map(e=>({d:e.entry_date,r:resultadoDia(e),p:e.player}));
   const melhorDia=dayResults.length?dayResults.reduce((a,b)=>b.r>a.r?b:a):null;
   const piorDia=dayResults.length?dayResults.reduce((a,b)=>b.r<a.r?b:a):null;
-  const monthToursOf=p=>tours.filter(t=>t.player===p && weekEnding(t.entry_date).slice(0,7)===month);
+  const monthToursOf=p=>tours.filter(t=>t.player===p && mKey(t.entry_date)===month);
   const perPlayerMonth=players.map(p=>{
     const ed=monthDaily.filter(e=>e.player===p);
-    const res=monthWeeks.filter(w=>w.player===p).reduce((s,w)=>s+w.resultado,0);
+    const res=ed.reduce((s,e)=>s+resultadoDia(e),0);
     const vol=ed.reduce((s,e)=>s+num(e.total_buyins),0);
     const torneios=ed.reduce((s,e)=>s+num(e.qtd_torneios),0);
     const entradas=ed.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
@@ -2045,13 +2054,13 @@ function Dashboard({session,profile}){
     const abi=entradas>0?vol/entradas:0;
     const roi=vol>0?(res/vol)*100:0;
     const itm=torneios>0?(cashes/torneios)*100:0;
-    const makeAberto=(()=>{const ws=(weeksByPlayer[p]||[]).filter(w=>w.week.slice(0,7)===month); return ws.length?ws[ws.length-1].makeFinal:makeUpAt(p,month+'-31');})();
+    const makeAberto=makeUpAt(p,month+'-31');   // make-up depois da última semana fechada até o fim do mês
     return {p, res, vol, torneios, entradas, premios, cashes, abi, roi, itm, makeAberto};
   });
   const maisLucrativo=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.res>a.res?b:a):null;
   const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
   // desempenho por site e por modalidade (usa os campos que já são lançados em cada torneio)
-  const monthTours=tours.filter(t=>weekEnding(t.entry_date).slice(0,7)===month);
+  const monthTours=tours.filter(t=>mKey(t.entry_date)===month);
   // "Onde vocês lucram" com filtro Geral/jogador
   const monthToursWho=mensalWho==='Geral'?monthTours:monthTours.filter(t=>t.player===mensalWho);
   const breakdownBy=(key,list)=>{
@@ -2161,7 +2170,7 @@ function Dashboard({session,profile}){
         <AlertToaster alerts={alerts} push={pushToast}/>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · até ${dLabel(CURWK)}`:`semana até ${dLabel(CURWK)}`}/>
+          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · ${weekLabel(CURWK)}`:weekLabel(CURWK)}/>
           {!solo&&<Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>}
           {!solo&&<Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>}
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Lucro acumulado':'Lucro da pool (acum.)'} value={fmt(solo?resTotalGeral:lucroPoolAcum)} sub={solo?'desde o começo':`pago em saques: ${fmt(totalPago)}`}/>
@@ -2296,11 +2305,11 @@ function Dashboard({session,profile}){
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Consolidado de</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:26,fontWeight:600,lineHeight:1.1}}>{mLabel(month)}</div></div>
           <div style={{display:'flex',gap:8}}><RoundBtn disabled={monthIdx<=0} onClick={()=>goMonth(-1)}>‹</RoundBtn><RoundBtn disabled={monthIdx>=monthList.length-1} onClick={()=>goMonth(1)}>›</RoundBtn></div>
         </div>
-        <div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Cada semana conta no mês do <b>domingo que a fecha</b> — por isso um dia do fim do mês pode aparecer no mês seguinte.</span></div>
+        {!solo&&<div style={{fontSize:12,color:C.inkSoft,marginTop:-8,display:'flex',alignItems:'flex-start',gap:6}}><span style={{flexShrink:0,lineHeight:1.4}}><IcoAlert s={14}/></span><span style={{lineHeight:1.4}}>Resultado, torneios e ROI contam pelo <b>dia jogado</b>. Só a <b>divisão de lucro</b> segue as semanas que <b>fecharam</b> neste mês — o rateio da pool é semanal.</span></div>}
         <button onClick={()=>setReport({type:'mensal'})} style={{alignSelf:'flex-start',display:'inline-flex',alignItems:'center',gap:6,padding:'9px 14px',borderRadius:12,border:`1.5px solid ${P}`,background:C.plumSoft,color:P,fontWeight:700,fontSize:13,cursor:'pointer'}}>📄 Gerar relatório do mês (PDF)</button>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={mRes>=0?IcoUp:IcoDown} tone={mRes>=0?C.greenMid:C.red} bg={mRes>=0?C.greenSoft:C.redSoft} label="Resultado do mês" value={fmt(mRes)}/>
-          {!solo&&<Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Lucro dividido" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)}`}/>}
+          {!solo&&<Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label="Dividido nas semanas" value={fmt(mLucroDiv)} sub={`pool ficou com ${fmt(mPool)} · ${monthWeeks.length} semana${monthWeeks.length!==1?'s':''} fechada${monthWeeks.length!==1?'s':''}`}/>}
           <Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios no mês" value={String(mTorneios)} sub={`ABI médio ${fmt(mAbi)}`}/>
           <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
         </div>
@@ -2325,8 +2334,8 @@ function Dashboard({session,profile}){
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
             <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(melhorDia.r)}</span>{melhorDia.d.slice(0,7)!==month&&<span style={{color:C.green,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(piorDia.r)}</span>{piorDia.d.slice(0,7)!==month&&<span style={{color:C.red,fontWeight:600,fontSize:11}}> · semana deste mês</span>}</>:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(melhorDia.r)}</span></>:'—'}</div></div>
+            <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(piorDia.r)}</span></>:'—'}</div></div>
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
@@ -2545,30 +2554,52 @@ function Dashboard({session,profile}){
               return <div style={{padding:'12px 14px',borderRadius:12,background:neutro?C.bg:(sorte>=0?C.greenSoft:C.redSoft),marginBottom:12}}>
                 <div style={{fontSize:10.5,fontWeight:700,color:C.inkSoft,textTransform:'uppercase',letterSpacing:'.03em'}}>Veredito do período · {periodoLabel} · {hands} mão{hands!==1?'s':''} · {allins} all-in{allins!==1?'s':''}</div>
                 {allins===0
-                  ? <div style={{fontSize:13.5,color:C.inkSoft,marginTop:4}}>Nenhum all-in com cartas reveladas no período — ainda não há sorte pra medir.</div>
+                  ? <div style={{fontSize:13.5,color:C.inkSoft,marginTop:4}}>Nenhum all-in de cartas viradas no período — não há sorte pra medir ainda. Ela aparece assim que você importar mãos que foram all-in e chegaram ao showdown.</div>
                   : <>
-                    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17.5,fontWeight:600,color:tone,marginTop:4}}>
-                      {neutro?'Neutro — variância dentro do normal':`Você está ${grau} com ${sorte>=0?'SORTE':'AZAR'}`}
-                      <span style={{fontSize:13.5,fontWeight:700}}> ({luck100>=0?'+':'−'}{Math.abs(luck100).toFixed(1).replace('.',',')} bb/100 {sorte>=0?'acima':'abaixo'} do justo)</span>
+                    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17.5,fontWeight:600,color:tone,marginTop:4,lineHeight:1.25}}>
+                      {neutro?'Você correu dentro do normal':`Você correu ${grau} ${sorte>=0?'BEM':'MAL'}`}
                     </div>
-                    <div style={{fontSize:12.5,color:C.ink,lineHeight:1.6,marginTop:6}}>
-                      Seu bb/100 real no período é <b style={{color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</b> — tirando a sorte dos all-ins, seria <b style={{color:adj>=0?C.greenMid:C.red}}>{fmtBB(adj)}</b>. Esse segundo número é o termômetro mais honesto do seu jogo.
-                      {pctEV!=null&&<> Nos all-ins, você recebeu <b>{Math.abs(pctEV).toFixed(0).replace('.',',')}% {pctEV>=0?'a mais':'a menos'}</b> do que a equity mandava.</>}
+                    <div style={{fontSize:12.5,fontWeight:700,color:tone,marginTop:2}}>
+                      {neutro?'a sorte quase não mexeu no seu resultado':<>{Math.abs(luck100).toFixed(1).replace('.',',')} bb/100 {sorte>=0?'acima':'abaixo'} do que era justo</>}
                     </div>
-                    {curta&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:6}}>⚠️ Amostra curta ({allins} all-in{allins!==1?'s':''} em {hands} mão{hands!==1?'s':''}) — esse termômetro ainda oscila muito; leve como tendência, não como veredito final.</div>}
+                    <div style={{fontSize:12.5,color:C.ink,lineHeight:1.6,marginTop:8}}>
+                      No período você fez <b style={{color:bb100>=0?C.greenMid:C.red}}>{fmtBB(bb100)}</b>/100 mãos. Tirando a sorte dos all-ins, seriam <b style={{color:adj>=0?C.greenMid:C.red}}>{fmtBB(adj)}</b>/100 — <b>é esse o número mais perto do seu jogo de verdade</b>.
+                      {pctEV!=null&&<> Nos all-ins, caiu <b>{Math.abs(pctEV).toFixed(0)}% {pctEV>=0?'a mais':'a menos'}</b> do que a equity mandava.</>}
+                    </div>
+                    {curta&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8,lineHeight:1.5}}>⚠️ Amostra curta ({allins} all-in{allins!==1?'s':''} em {hands} mão{hands!==1?'s':''}). Com pouca mão esse número pula muito de um dia pro outro — leia como tendência, não como veredito.</div>}
                   </>}
               </div>;
             })()}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:8,marginBottom:12}}>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ACONTECEU</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red}}>{fmtBB(netbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>O QUE ERA "JUSTO" (EV)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red}}>{fmtBB(evbb)}</div></div>
-              <div style={{padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE (DIFERENÇA)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red}}>{fmtBB(sorte)}</div></div>
+            {/* leitura em equação: o que caiu · o que era justo · a diferença (a sorte, em destaque) */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>CAIU DE VERDADE</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:netbb>=0?C.greenMid:C.red,whiteSpace:'nowrap'}}>{fmtBB(netbb)}</div></div>
+              <div style={{padding:'10px 12px',borderRadius:12,background:C.bg,minWidth:0}}><div style={{fontSize:10.5,color:C.inkSoft,fontWeight:700}}>ERA JUSTO (EV)</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:evbb>=0?C.greenMid:C.red,whiteSpace:'nowrap'}}>{fmtBB(evbb)}</div></div>
+              <div style={{gridColumn:'1 / -1',padding:'10px 12px',borderRadius:12,background:sorte>=0?C.greenSoft:C.redSoft,minWidth:0}}><div style={{fontSize:10.5,color:sorte>=0?C.green:C.red,fontWeight:700}}>SORTE — A DIFERENÇA ENTRE OS DOIS</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,color:sorte>=0?C.greenMid:C.red,whiteSpace:'nowrap'}}>{fmtBB(sorte)}</div></div>
             </div>
-            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
-              Toda vez que o dinheiro entra <b>all-in e as cartas viram</b>, dá pra calcular a chance real da sua mão (a <b>equity</b>). Se AA vs KK fosse pago "na justiça", você levaria ~82% do pote — o <b>EV</b> soma esse valor justo de cada all-in. O <b>"o que aconteceu"</b> é o resultado real. A diferença entre os dois é <b>pura variância</b>: <span style={{color:C.red,fontWeight:700}}>negativa = azar</span>, <span style={{color:C.greenMid,fontWeight:700}}>positiva = sorte</span> — e vale lembrar que ela <b>não diz se o all-in foi uma boa decisão</b>, só separa o resultado da execução.
+            {/* explicação em passos curtos — a versão antiga era um parágrafo só e ninguém lia até o fim */}
+            <div style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em',marginBottom:6}}>De onde sai esse número</div>
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6,marginBottom:10}}>
+              <div style={{marginBottom:5}}><b style={{color:C.ink}}>1.</b> Quando o dinheiro entra all-in e <b>as cartas viram</b>, dá pra saber a chance real de cada mão — a <b>equity</b>. AA contra KK ganha ~82% das vezes.</div>
+              <div style={{marginBottom:5}}><b style={{color:C.ink}}>2.</b> Se o pote fosse repartido por essa chance, sem correr as cartas, você levaria a sua fatia. Somando todos os all-ins do período, isso é o <b>"era justo (EV)"</b>.</div>
+              <div><b style={{color:C.ink}}>3.</b> O que <b>caiu de verdade</b> quase nunca é igual. Essa diferença é a <b>sorte</b>: <span style={{color:C.greenMid,fontWeight:700}}>positiva você correu bem</span>, <span style={{color:C.red,fontWeight:700}}>negativa você correu mal</span>.</div>
             </div>
-            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,lineHeight:1.5}}>⚠️ <b>Limites da medida</b> (honestidade de reg): ela cobre só os all-ins de cartas viradas. Sorte <b>antes</b> do all-in (cooler, distribuição de cartas, runout sem all-in), <b>bounty de PKO</b> (um call negativo em fichas pode ser positivo em dinheiro pelo prêmio) e <b>ICM de mesa final</b> ficam fora. Use como hipótese forte sobre a variância — não como sentença sobre o seu jogo.</div>
-            <div style={{fontSize:12,color:C.inkSoft,marginTop:8,padding:'8px 10px',borderRadius:10,background:C.bg,lineHeight:1.5}}>💡 <b>Na prática:</b> prejuízo com sorte muito negativa = provavelmente é variância, mantém o plano e a grade. Lucro com sorte muito positiva = o winrate real é menor do que parece, não suba de grade ainda. Só all-ins com cartas reveladas entram na conta ({S('allin_cnt')} até aqui).</div>
+            <div style={{fontSize:12.5,color:C.ink,lineHeight:1.6,padding:'9px 11px',borderRadius:10,background:C.plumSoft,marginBottom:10}}>
+              Repare: a sorte <b>não julga a sua decisão</b>. Um all-in ruim pode ganhar e um all-in perfeito pode perder. Ela só separa o que foi <b>escolha sua</b> do que foi <b>a carta que veio</b>.
+            </div>
+            <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.55,marginBottom:10}}>
+              <b style={{color:C.ink}}>⚠️ O que ela não enxerga.</b> Só entram all-ins de cartas viradas ({S('allin_cnt')} no período). Ficam de fora: o <b>cooler antes do all-in</b> (AA contra KK é azar, mas a conta começa depois de virar), as <b>cartas que você simplesmente não recebeu</b>, o <b>prêmio de bounty do PKO</b> (um call ruim em fichas pode ser ótimo em dinheiro) e o <b>ICM</b> de bolha e mesa final. Ou seja: é a melhor pista que você tem sobre a variância — <b>não é uma nota do seu jogo</b>.
+            </div>
+            {(()=>{ // o "e daí?" — uma frase só, escolhida pelo cenário do jogador
+              const luck100=hands>0?sorte/hands*100:0, mag=Math.abs(luck100);
+              if(S('allin_cnt')===0) return null;
+              let txt;
+              if(mag<1) txt=<>a sorte está <b>neutra</b> — esse resultado é o seu jogo mesmo, pra melhor ou pra pior. É a hora mais confiável pra olhar as outras stats e decidir o que ajustar.</>;
+              else if(luck100<0&&bb100<0) txt=<>você está <b>perdendo e correndo mal ao mesmo tempo</b>. Boa parte do prejuízo é variância cobrando — o certo aqui é <b>manter a grade e o plano</b>, não aumentar buy-in pra recuperar.</>;
+              else if(luck100<0&&bb100>=0) txt=<>você está <b>no azul mesmo correndo mal</b>. É o cenário mais saudável que existe: o resultado veio do jogo, não da carta.</>;
+              else if(luck100>0&&bb100>=0) txt=<>parte do seu lucro <b>veio da sorte</b>. O winrate real é menor do que a tela mostra — não use este período como prova pra subir de limite.</>;
+              else txt=<>você está <b>no vermelho apesar de correr bem</b>. Aí não dá pra culpar a variância: o ajuste é no jogo. Vale revisar as leituras acima antes de aumentar volume.</>;
+              return <div style={{fontSize:12.5,color:C.ink,marginTop:2,padding:'9px 11px',borderRadius:10,background:C.bg,lineHeight:1.55}}>💡 <b>E daí?</b> No período de <b>{periodoLabel}</b>, {txt}</div>;
+            })()}
             </div>}
           </Card>
 
@@ -2879,9 +2910,9 @@ function Dashboard({session,profile}){
             <table className="reptable"><thead><tr><th>Jogador</th><th>Torneios</th><th>Investido</th><th>Premiação</th><th>Resultado</th><th>ROI</th><th>ITM</th>{!solo&&<th>Make-up final</th>}</tr></thead>
             <tbody>{perPlayerMonth.map(pm=><tr key={pm.p}><td><b>{pm.p}</b></td><td>{pm.torneios}</td><td>{fmt(pm.vol)}</td><td>{fmt(pm.premios)}</td><td style={{color:pm.res>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(pm.res)}</td><td>{pctFmt(pm.roi)}</td><td>{pctFmt(pm.itm)}</td>{!solo&&<td>{fmt(pm.makeAberto)}</td>}</tr>)}</tbody></table>
           </Sec>
-          <Sec t="Semana a semana">
-            {wkRows.length?<table className="reptable"><thead><tr><th>Semana até</th>{!solo&&<th>Jogador</th>}<th>Resultado</th>{!solo&&<><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></>}</tr></thead>
-            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{dLabel(w.week)}</td>{!solo&&<td>{w.pl}</td>}<td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td>{!solo&&<><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></>}</tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
+          <Sec t="Semana a semana (fechadas no mês)">
+            {wkRows.length?<table className="reptable"><thead><tr><th>Semana</th>{!solo&&<th>Jogador</th>}<th>Resultado</th>{!solo&&<><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></>}</tr></thead>
+            <tbody>{wkRows.map((w,i)=><tr key={i}><td>{weekLabel(w.week)}</td>{!solo&&<td>{w.pl}</td>}<td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td>{!solo&&<><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(w.vs)}</td></>}</tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas neste mês.</div>}
           </Sec>
           {mSaques.length>0&&<Sec t="Saques pagos no mês">
             <table className="reptable"><thead><tr><th>Semana</th><th>Jogador</th><th>Carteira</th><th>Valor</th></tr></thead>
@@ -2962,8 +2993,8 @@ function Dashboard({session,profile}){
             </div>
           </Sec>}
           {!solo&&<Sec t="Últimas semanas na pool">
-            {pWk8.length?<table className="reptable"><thead><tr><th>Semana até</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
-            <tbody>{pWk8.map(w=><tr key={w.week}><td>{dLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
+            {pWk8.length?<table className="reptable"><thead><tr><th>Semana</th><th>Resultado</th><th>Make-up</th><th>Parte do jogador</th><th>Saque autorizado</th><th>Sacado</th></tr></thead>
+            <tbody>{pWk8.map(w=><tr key={w.week}><td>{weekLabel(w.week)}</td><td style={{color:w.resultado>=0?C.greenMid:C.red,fontWeight:700}}>{fmt(w.resultado)}</td><td>{fmt(w.makeAnterior)} → {fmt(w.makeFinal)}</td><td>{fmt(w.parteJog)}</td><td>{fmt(w.saqueAut)}</td><td>{fmt(valorSacadoFor(w.week,sp2))}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem semanas fechadas ainda.</div>}
           </Sec>}
           <Sec t={`Estatísticas de jogo — hand histories (${repPeriodo})`}>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
@@ -3117,7 +3148,7 @@ function Dashboard({session,profile}){
 
     {/* toasts flutuantes (avisos de tempo real, ex: fora da grade do outro jogador) */}
     {toasts.length>0&&<div style={{position:'fixed',top:'calc(12px + env(safe-area-inset-top))',left:0,right:0,display:'flex',flexDirection:'column',alignItems:'center',gap:8,zIndex:70,pointerEvents:'none',padding:'0 12px'}}>
-      {toasts.map(t=><div key={t.id} onClick={()=>setToasts(l=>l.filter(x=>x.id!==t.id))} className="ftfade" style={{pointerEvents:'auto',cursor:'pointer',width:'100%',maxWidth:440,background:C.surface,borderLeft:`4px solid ${t.tone||C.red}`,borderRadius:14,boxShadow:'0 10px 30px -10px rgba(0,0,0,.35)',padding:'12px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
+      {toasts.map(t=><div key={t.id} onClick={()=>{ setToasts(l=>l.filter(x=>x.id!==t.id)); if(t.items&&t.items.length) setAlertDetail({items:t.items}); }} className="ftfade" style={{pointerEvents:'auto',cursor:'pointer',width:'100%',maxWidth:440,background:C.surface,borderLeft:`4px solid ${t.tone||C.red}`,borderRadius:14,boxShadow:'0 10px 30px -10px rgba(0,0,0,.35)',padding:'12px 14px',display:'flex',gap:10,alignItems:'flex-start'}}>
         <span style={{color:t.tone||C.red,flexShrink:0,marginTop:1}}><IcoAlert s={19}/></span>
         <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13.5,color:C.ink}}>{t.title}</div><div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.4}}>{t.text}</div></div>
       </div>)}

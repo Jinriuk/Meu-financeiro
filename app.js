@@ -141,6 +141,12 @@ function weekEnding(dateStr) {
   dt.setUTCDate(dt.getUTCDate() + (7 - day) % 7);
   return dt.toISOString().slice(0, 10);
 }
+// segunda que ABRE a semana fechada por `wk` (domingo)
+const weekStart = wk => addDaysISO(wk, -6);
+// rótulo da semana com os dois extremos — "27/07 a 02/08" deixa claro quando ela pula o mês
+const weekLabel = wk => `${dLabel(weekStart(wk))} a ${dLabel(wk)}`;
+// a semana encosta neste mês? (vale tanto pela segunda que abre quanto pelo domingo que fecha)
+const weekInMonth = (wk, m) => mKey(wk) === m || mKey(weekStart(wk)) === m;
 
 /* ---------- regras de negócio (seção 4) ---------- */
 // normaliza antes de salvar: semana do saque vira domingo; "pool/não informar" viram null (não atribuído)
@@ -4901,10 +4907,20 @@ function WeekRow({
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
       fontWeight: 700,
       fontSize: 14.5
     }
-  }, "Semana at\xE9 ", dLabel(w.week)), /*#__PURE__*/React.createElement("span", {
+  }, "Semana ", weekLabel(w.week)), mKey(weekStart(w.week)) !== mKey(w.week) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.inkSoft,
+      marginTop: 1
+    }
+  }, "semana que vira o m\xEAs \xB7 fecha em ", dLabel(w.week))), /*#__PURE__*/React.createElement("span", {
     style: {
       fontWeight: 800,
       fontSize: 15,
@@ -4984,7 +5000,8 @@ function AlertToaster({
         push({
           tone: a.tone,
           title: a.tone === C.red ? 'Atenção na banca' : 'Aviso',
-          text: a.text
+          text: a.text,
+          items: a.items
         });
         s.add(a.text);
         mudou = true;
@@ -5062,8 +5079,9 @@ function SemanalGeral({
   curMonth
 }) {
   const [hist, setHist] = useState(false);
-  const atuais = geral.filter(g => g.mes === curMonth),
-    antigas = geral.filter(g => g.mes !== curMonth);
+  // "deste mês" = a semana encosta no mês corrente, mesmo que ela feche só no mês seguinte
+  const atuais = geral.filter(g => weekInMonth(g.week, curMonth)),
+    antigas = geral.filter(g => !weekInMonth(g.week, curMonth));
   const Row = g => /*#__PURE__*/React.createElement("div", {
     key: g.week,
     style: {
@@ -5083,7 +5101,7 @@ function SemanalGeral({
       fontWeight: 700,
       fontSize: 14
     }
-  }, "Semana at\xE9 ", dLabel(g.week)), /*#__PURE__*/React.createElement("div", {
+  }, "Semana ", weekLabel(g.week)), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: C.inkSoft,
@@ -5135,8 +5153,8 @@ function SemanalPlayer({
 }) {
   const [hist, setHist] = useState(false);
   const arr = [...weeks].reverse();
-  const atuais = arr.filter(w => w.week.slice(0, 7) === curMonth),
-    antigas = arr.filter(w => w.week.slice(0, 7) !== curMonth);
+  const atuais = arr.filter(w => weekInMonth(w.week, curMonth)),
+    antigas = arr.filter(w => !weekInMonth(w.week, curMonth));
   return /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
@@ -6393,15 +6411,17 @@ function Dashboard({
   }].filter(n => !solo || n.id !== 'saques'); // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
 
   /* ---------- mensal ---------- */
-  const monthList = [...new Set(allWeeks.map(w => w.slice(0, 7)).concat([todayISO().slice(0, 7)]))].sort();
+  // O mês é o mês do CALENDÁRIO em que o dia foi jogado: lançou dia 28/07, conta em julho.
+  // (o rateio semanal — make-up, split, saque — continua semanal e aparece na semana em que fecha)
+  const monthList = [...new Set(daily.map(e => mKey(e.entry_date)).concat(allWeeks.map(mKey)).concat([todayISO().slice(0, 7)]))].sort();
   const monthIdx = monthList.indexOf(month);
   const goMonth = d => {
     const i = monthIdx + d;
     if (i >= 0 && i < monthList.length) setMonth(monthList[i]);
   };
-  const monthWeeks = players.flatMap(p => (weeksByPlayer[p] || []).filter(w => w.week.slice(0, 7) === month));
-  const monthDaily = daily.filter(e => weekEnding(e.entry_date).slice(0, 7) === month);
-  const mRes = monthWeeks.reduce((s, w) => s + w.resultado, 0);
+  const monthWeeks = players.flatMap(p => (weeksByPlayer[p] || []).filter(w => mKey(w.week) === month)); // semanas FECHADAS no mês (só pro rateio)
+  const monthDaily = daily.filter(e => mKey(e.entry_date) === month);
+  const mRes = monthDaily.reduce((s, e) => s + resultadoDia(e), 0);
   const mLucroDiv = monthWeeks.reduce((s, w) => s + w.lucroDiv, 0);
   const mPool = monthWeeks.reduce((s, w) => s + w.partePool, 0);
   const mTorneios = monthDaily.reduce((s, e) => s + num(e.qtd_torneios), 0);
@@ -6416,10 +6436,10 @@ function Dashboard({
   }));
   const melhorDia = dayResults.length ? dayResults.reduce((a, b) => b.r > a.r ? b : a) : null;
   const piorDia = dayResults.length ? dayResults.reduce((a, b) => b.r < a.r ? b : a) : null;
-  const monthToursOf = p => tours.filter(t => t.player === p && weekEnding(t.entry_date).slice(0, 7) === month);
+  const monthToursOf = p => tours.filter(t => t.player === p && mKey(t.entry_date) === month);
   const perPlayerMonth = players.map(p => {
     const ed = monthDaily.filter(e => e.player === p);
-    const res = monthWeeks.filter(w => w.player === p).reduce((s, w) => s + w.resultado, 0);
+    const res = ed.reduce((s, e) => s + resultadoDia(e), 0);
     const vol = ed.reduce((s, e) => s + num(e.total_buyins), 0);
     const torneios = ed.reduce((s, e) => s + num(e.qtd_torneios), 0);
     const entradas = ed.reduce((s, e) => s + (num(e.qtd_entradas) || num(e.qtd_torneios)), 0);
@@ -6428,10 +6448,7 @@ function Dashboard({
     const abi = entradas > 0 ? vol / entradas : 0;
     const roi = vol > 0 ? res / vol * 100 : 0;
     const itm = torneios > 0 ? cashes / torneios * 100 : 0;
-    const makeAberto = (() => {
-      const ws = (weeksByPlayer[p] || []).filter(w => w.week.slice(0, 7) === month);
-      return ws.length ? ws[ws.length - 1].makeFinal : makeUpAt(p, month + '-31');
-    })();
+    const makeAberto = makeUpAt(p, month + '-31'); // make-up depois da última semana fechada até o fim do mês
     return {
       p,
       res,
@@ -6449,7 +6466,7 @@ function Dashboard({
   const maisLucrativo = perPlayerMonth.length ? perPlayerMonth.reduce((a, b) => b.res > a.res ? b : a) : null;
   const maiorVolume = perPlayerMonth.length ? perPlayerMonth.reduce((a, b) => b.vol > a.vol ? b : a) : null;
   // desempenho por site e por modalidade (usa os campos que já são lançados em cada torneio)
-  const monthTours = tours.filter(t => weekEnding(t.entry_date).slice(0, 7) === month);
+  const monthTours = tours.filter(t => mKey(t.entry_date) === month);
   // "Onde vocês lucram" com filtro Geral/jogador
   const monthToursWho = mensalWho === 'Geral' ? monthTours : monthTours.filter(t => t.player === mensalWho);
   const breakdownBy = (key, list) => {
@@ -6818,7 +6835,7 @@ function Dashboard({
     bg: resSemanaAtual >= 0 ? C.greenSoft : C.redSoft,
     label: "Resultado da semana",
     value: fmt(resSemanaAtual),
-    sub: resSemanaAtual === 0 && !daily.some(e => weekEnding(e.entry_date) === CURWK) ? `semana começando · até ${dLabel(CURWK)}` : `semana até ${dLabel(CURWK)}`
+    sub: resSemanaAtual === 0 && !daily.some(e => weekEnding(e.entry_date) === CURWK) ? `semana começando · ${weekLabel(CURWK)}` : weekLabel(CURWK)
   }), !solo && /*#__PURE__*/React.createElement(Stat, {
     Icon: IcoAlert,
     tone: makeUpTotal > 0 ? C.gold : C.greenMid,
@@ -7440,7 +7457,7 @@ function Dashboard({
   }, "\u2039"), /*#__PURE__*/React.createElement(RoundBtn, {
     disabled: monthIdx >= monthList.length - 1,
     onClick: () => goMonth(1)
-  }, "\u203A"))), /*#__PURE__*/React.createElement("div", {
+  }, "\u203A"))), !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: C.inkSoft,
@@ -7460,7 +7477,7 @@ function Dashboard({
     style: {
       lineHeight: 1.4
     }
-  }, "Cada semana conta no m\xEAs do ", /*#__PURE__*/React.createElement("b", null, "domingo que a fecha"), " \u2014 por isso um dia do fim do m\xEAs pode aparecer no m\xEAs seguinte.")), /*#__PURE__*/React.createElement("button", {
+  }, "Resultado, torneios e ROI contam pelo ", /*#__PURE__*/React.createElement("b", null, "dia jogado"), ". S\xF3 a ", /*#__PURE__*/React.createElement("b", null, "divis\xE3o de lucro"), " segue as semanas que ", /*#__PURE__*/React.createElement("b", null, "fecharam"), " neste m\xEAs \u2014 o rateio da pool \xE9 semanal.")), /*#__PURE__*/React.createElement("button", {
     onClick: () => setReport({
       type: 'mensal'
     }),
@@ -7494,9 +7511,9 @@ function Dashboard({
     Icon: IcoChip,
     tone: C.green,
     bg: C.greenSoft,
-    label: "Lucro dividido",
+    label: "Dividido nas semanas",
     value: fmt(mLucroDiv),
-    sub: `pool ficou com ${fmt(mPool)}`
+    sub: `pool ficou com ${fmt(mPool)} · ${monthWeeks.length} semana${monthWeeks.length !== 1 ? 's' : ''} fechada${monthWeeks.length !== 1 ? 's' : ''}`
   }), /*#__PURE__*/React.createElement(Stat, {
     Icon: IcoTrophy,
     tone: C.gold,
@@ -7651,13 +7668,7 @@ function Dashboard({
     style: {
       whiteSpace: 'nowrap'
     }
-  }, fmt(melhorDia.r)), melhorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.green,
-      fontWeight: 600,
-      fontSize: 11
-    }
-  }, " \xB7 semana deste m\xEAs")) : '—')), /*#__PURE__*/React.createElement("div", {
+  }, fmt(melhorDia.r))) : '—')), /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12,
       borderRadius: 12,
@@ -7678,13 +7689,7 @@ function Dashboard({
     style: {
       whiteSpace: 'nowrap'
     }
-  }, fmt(piorDia.r)), piorDia.d.slice(0, 7) !== month && /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.red,
-      fontWeight: 600,
-      fontSize: 11
-    }
-  }, " \xB7 semana deste m\xEAs")) : '—')))), monthTours.length > 0 && /*#__PURE__*/React.createElement(Card, {
+  }, fmt(piorDia.r))) : '—')))), monthTours.length > 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -8675,45 +8680,49 @@ function Dashboard({
           color: C.inkSoft,
           marginTop: 4
         }
-      }, "Nenhum all-in com cartas reveladas no per\xEDodo \u2014 ainda n\xE3o h\xE1 sorte pra medir.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      }, "Nenhum all-in de cartas viradas no per\xEDodo \u2014 n\xE3o h\xE1 sorte pra medir ainda. Ela aparece assim que voc\xEA importar m\xE3os que foram all-in e chegaram ao showdown.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
         style: {
           fontFamily: "'Space Grotesk',sans-serif",
           fontSize: 17.5,
           fontWeight: 600,
           color: tone,
-          marginTop: 4
+          marginTop: 4,
+          lineHeight: 1.25
         }
-      }, neutro ? 'Neutro — variância dentro do normal' : `Você está ${grau} com ${sorte >= 0 ? 'SORTE' : 'AZAR'}`, /*#__PURE__*/React.createElement("span", {
+      }, neutro ? 'Você correu dentro do normal' : `Você correu ${grau} ${sorte >= 0 ? 'BEM' : 'MAL'}`), /*#__PURE__*/React.createElement("div", {
         style: {
-          fontSize: 13.5,
-          fontWeight: 700
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: tone,
+          marginTop: 2
         }
-      }, " (", luck100 >= 0 ? '+' : '−', Math.abs(luck100).toFixed(1).replace('.', ','), " bb/100 ", sorte >= 0 ? 'acima' : 'abaixo', " do justo)")), /*#__PURE__*/React.createElement("div", {
+      }, neutro ? 'a sorte quase não mexeu no seu resultado' : /*#__PURE__*/React.createElement(React.Fragment, null, Math.abs(luck100).toFixed(1).replace('.', ','), " bb/100 ", sorte >= 0 ? 'acima' : 'abaixo', " do que era justo")), /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 12.5,
           color: C.ink,
           lineHeight: 1.6,
-          marginTop: 6
+          marginTop: 8
         }
-      }, "Seu bb/100 real no per\xEDodo \xE9 ", /*#__PURE__*/React.createElement("b", {
+      }, "No per\xEDodo voc\xEA fez ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: bb100 >= 0 ? C.greenMid : C.red
         }
-      }, fmtBB(bb100)), " \u2014 tirando a sorte dos all-ins, seria ", /*#__PURE__*/React.createElement("b", {
+      }, fmtBB(bb100)), "/100 m\xE3os. Tirando a sorte dos all-ins, seriam ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: adj >= 0 ? C.greenMid : C.red
         }
-      }, fmtBB(adj)), ". Esse segundo n\xFAmero \xE9 o term\xF4metro mais honesto do seu jogo.", pctEV != null && /*#__PURE__*/React.createElement(React.Fragment, null, " Nos all-ins, voc\xEA recebeu ", /*#__PURE__*/React.createElement("b", null, Math.abs(pctEV).toFixed(0).replace('.', ','), "% ", pctEV >= 0 ? 'a mais' : 'a menos'), " do que a equity mandava.")), curta && /*#__PURE__*/React.createElement("div", {
+      }, fmtBB(adj)), "/100 \u2014 ", /*#__PURE__*/React.createElement("b", null, "\xE9 esse o n\xFAmero mais perto do seu jogo de verdade"), ".", pctEV != null && /*#__PURE__*/React.createElement(React.Fragment, null, " Nos all-ins, caiu ", /*#__PURE__*/React.createElement("b", null, Math.abs(pctEV).toFixed(0), "% ", pctEV >= 0 ? 'a mais' : 'a menos'), " do que a equity mandava.")), curta && /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 11.5,
           color: C.inkSoft,
-          marginTop: 6
+          marginTop: 8,
+          lineHeight: 1.5
         }
-      }, "\u26A0\uFE0F Amostra curta (", allins, " all-in", allins !== 1 ? 's' : '', " em ", hands, " m\xE3o", hands !== 1 ? 's' : '', ") \u2014 esse term\xF4metro ainda oscila muito; leve como tend\xEAncia, n\xE3o como veredito final.")));
+      }, "\u26A0\uFE0F Amostra curta (", allins, " all-in", allins !== 1 ? 's' : '', " em ", hands, " m\xE3o", hands !== 1 ? 's' : '', "). Com pouca m\xE3o esse n\xFAmero pula muito de um dia pro outro \u2014 leia como tend\xEAncia, n\xE3o como veredito.")));
     })(), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))',
+        gridTemplateColumns: '1fr 1fr',
         gap: 8,
         marginBottom: 12
       }
@@ -8721,7 +8730,8 @@ function Dashboard({
       style: {
         padding: '10px 12px',
         borderRadius: 12,
-        background: C.bg
+        background: C.bg,
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -8729,18 +8739,20 @@ function Dashboard({
         color: C.inkSoft,
         fontWeight: 700
       }
-    }, "O QUE ACONTECEU"), /*#__PURE__*/React.createElement("div", {
+    }, "CAIU DE VERDADE"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 18,
         fontWeight: 600,
-        color: netbb >= 0 ? C.greenMid : C.red
+        color: netbb >= 0 ? C.greenMid : C.red,
+        whiteSpace: 'nowrap'
       }
     }, fmtBB(netbb))), /*#__PURE__*/React.createElement("div", {
       style: {
         padding: '10px 12px',
         borderRadius: 12,
-        background: C.bg
+        background: C.bg,
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -8748,18 +8760,21 @@ function Dashboard({
         color: C.inkSoft,
         fontWeight: 700
       }
-    }, "O QUE ERA \"JUSTO\" (EV)"), /*#__PURE__*/React.createElement("div", {
+    }, "ERA JUSTO (EV)"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 18,
         fontWeight: 600,
-        color: evbb >= 0 ? C.greenMid : C.red
+        color: evbb >= 0 ? C.greenMid : C.red,
+        whiteSpace: 'nowrap'
       }
     }, fmtBB(evbb))), /*#__PURE__*/React.createElement("div", {
       style: {
+        gridColumn: '1 / -1',
         padding: '10px 12px',
         borderRadius: 12,
-        background: sorte >= 0 ? C.greenSoft : C.redSoft
+        background: sorte >= 0 ? C.greenSoft : C.redSoft,
+        minWidth: 0
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -8767,47 +8782,100 @@ function Dashboard({
         color: sorte >= 0 ? C.green : C.red,
         fontWeight: 700
       }
-    }, "SORTE (DIFEREN\xC7A)"), /*#__PURE__*/React.createElement("div", {
+    }, "SORTE \u2014 A DIFEREN\xC7A ENTRE OS DOIS"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 18,
         fontWeight: 600,
-        color: sorte >= 0 ? C.greenMid : C.red
+        color: sorte >= 0 ? C.greenMid : C.red,
+        whiteSpace: 'nowrap'
       }
     }, fmtBB(sorte)))), /*#__PURE__*/React.createElement("div", {
       style: {
+        fontSize: 12,
+        fontWeight: 800,
+        color: C.gold,
+        textTransform: 'uppercase',
+        letterSpacing: '.05em',
+        marginBottom: 6
+      }
+    }, "De onde sai esse n\xFAmero"), /*#__PURE__*/React.createElement("div", {
+      style: {
         fontSize: 12.5,
         color: C.inkSoft,
-        lineHeight: 1.6
+        lineHeight: 1.6,
+        marginBottom: 10
       }
-    }, "Toda vez que o dinheiro entra ", /*#__PURE__*/React.createElement("b", null, "all-in e as cartas viram"), ", d\xE1 pra calcular a chance real da sua m\xE3o (a ", /*#__PURE__*/React.createElement("b", null, "equity"), "). Se AA vs KK fosse pago \"na justi\xE7a\", voc\xEA levaria ~82% do pote \u2014 o ", /*#__PURE__*/React.createElement("b", null, "EV"), " soma esse valor justo de cada all-in. O ", /*#__PURE__*/React.createElement("b", null, "\"o que aconteceu\""), " \xE9 o resultado real. A diferen\xE7a entre os dois \xE9 ", /*#__PURE__*/React.createElement("b", null, "pura vari\xE2ncia"), ": ", /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        color: C.red,
-        fontWeight: 700
+        marginBottom: 5
       }
-    }, "negativa = azar"), ", ", /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "1."), " Quando o dinheiro entra all-in e ", /*#__PURE__*/React.createElement("b", null, "as cartas viram"), ", d\xE1 pra saber a chance real de cada m\xE3o \u2014 a ", /*#__PURE__*/React.createElement("b", null, "equity"), ". AA contra KK ganha ~82% das vezes."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 5
+      }
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "2."), " Se o pote fosse repartido por essa chance, sem correr as cartas, voc\xEA levaria a sua fatia. Somando todos os all-ins do per\xEDodo, isso \xE9 o ", /*#__PURE__*/React.createElement("b", null, "\"era justo (EV)\""), "."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "3."), " O que ", /*#__PURE__*/React.createElement("b", null, "caiu de verdade"), " quase nunca \xE9 igual. Essa diferen\xE7a \xE9 a ", /*#__PURE__*/React.createElement("b", null, "sorte"), ": ", /*#__PURE__*/React.createElement("span", {
       style: {
         color: C.greenMid,
         fontWeight: 700
       }
-    }, "positiva = sorte"), " \u2014 e vale lembrar que ela ", /*#__PURE__*/React.createElement("b", null, "n\xE3o diz se o all-in foi uma boa decis\xE3o"), ", s\xF3 separa o resultado da execu\xE7\xE3o."), /*#__PURE__*/React.createElement("div", {
+    }, "positiva voc\xEA correu bem"), ", ", /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: 12,
-        color: C.inkSoft,
-        marginTop: 8,
-        lineHeight: 1.5
+        color: C.red,
+        fontWeight: 700
       }
-    }, "\u26A0\uFE0F ", /*#__PURE__*/React.createElement("b", null, "Limites da medida"), " (honestidade de reg): ela cobre s\xF3 os all-ins de cartas viradas. Sorte ", /*#__PURE__*/React.createElement("b", null, "antes"), " do all-in (cooler, distribui\xE7\xE3o de cartas, runout sem all-in), ", /*#__PURE__*/React.createElement("b", null, "bounty de PKO"), " (um call negativo em fichas pode ser positivo em dinheiro pelo pr\xEAmio) e ", /*#__PURE__*/React.createElement("b", null, "ICM de mesa final"), " ficam fora. Use como hip\xF3tese forte sobre a vari\xE2ncia \u2014 n\xE3o como senten\xE7a sobre o seu jogo."), /*#__PURE__*/React.createElement("div", {
+    }, "negativa voc\xEA correu mal"), ".")), /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 12,
-        color: C.inkSoft,
-        marginTop: 8,
-        padding: '8px 10px',
+        fontSize: 12.5,
+        color: C.ink,
+        lineHeight: 1.6,
+        padding: '9px 11px',
         borderRadius: 10,
-        background: C.bg,
-        lineHeight: 1.5
+        background: C.plumSoft,
+        marginBottom: 10
       }
-    }, "\uD83D\uDCA1 ", /*#__PURE__*/React.createElement("b", null, "Na pr\xE1tica:"), " preju\xEDzo com sorte muito negativa = provavelmente \xE9 vari\xE2ncia, mant\xE9m o plano e a grade. Lucro com sorte muito positiva = o winrate real \xE9 menor do que parece, n\xE3o suba de grade ainda. S\xF3 all-ins com cartas reveladas entram na conta (", S('allin_cnt'), " at\xE9 aqui).")))), /*#__PURE__*/React.createElement(Card, {
+    }, "Repare: a sorte ", /*#__PURE__*/React.createElement("b", null, "n\xE3o julga a sua decis\xE3o"), ". Um all-in ruim pode ganhar e um all-in perfeito pode perder. Ela s\xF3 separa o que foi ", /*#__PURE__*/React.createElement("b", null, "escolha sua"), " do que foi ", /*#__PURE__*/React.createElement("b", null, "a carta que veio"), "."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        lineHeight: 1.55,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "\u26A0\uFE0F O que ela n\xE3o enxerga."), " S\xF3 entram all-ins de cartas viradas (", S('allin_cnt'), " no per\xEDodo). Ficam de fora: o ", /*#__PURE__*/React.createElement("b", null, "cooler antes do all-in"), " (AA contra KK \xE9 azar, mas a conta come\xE7a depois de virar), as ", /*#__PURE__*/React.createElement("b", null, "cartas que voc\xEA simplesmente n\xE3o recebeu"), ", o ", /*#__PURE__*/React.createElement("b", null, "pr\xEAmio de bounty do PKO"), " (um call ruim em fichas pode ser \xF3timo em dinheiro) e o ", /*#__PURE__*/React.createElement("b", null, "ICM"), " de bolha e mesa final. Ou seja: \xE9 a melhor pista que voc\xEA tem sobre a vari\xE2ncia \u2014 ", /*#__PURE__*/React.createElement("b", null, "n\xE3o \xE9 uma nota do seu jogo"), "."), (() => {
+      // o "e daí?" — uma frase só, escolhida pelo cenário do jogador
+      const luck100 = hands > 0 ? sorte / hands * 100 : 0,
+        mag = Math.abs(luck100);
+      if (S('allin_cnt') === 0) return null;
+      let txt;
+      if (mag < 1) txt = /*#__PURE__*/React.createElement(React.Fragment, null, "a sorte est\xE1 ", /*#__PURE__*/React.createElement("b", null, "neutra"), " \u2014 esse resultado \xE9 o seu jogo mesmo, pra melhor ou pra pior. \xC9 a hora mais confi\xE1vel pra olhar as outras stats e decidir o que ajustar.");else if (luck100 < 0 && bb100 < 0) txt = /*#__PURE__*/React.createElement(React.Fragment, null, "voc\xEA est\xE1 ", /*#__PURE__*/React.createElement("b", null, "perdendo e correndo mal ao mesmo tempo"), ". Boa parte do preju\xEDzo \xE9 vari\xE2ncia cobrando \u2014 o certo aqui \xE9 ", /*#__PURE__*/React.createElement("b", null, "manter a grade e o plano"), ", n\xE3o aumentar buy-in pra recuperar.");else if (luck100 < 0 && bb100 >= 0) txt = /*#__PURE__*/React.createElement(React.Fragment, null, "voc\xEA est\xE1 ", /*#__PURE__*/React.createElement("b", null, "no azul mesmo correndo mal"), ". \xC9 o cen\xE1rio mais saud\xE1vel que existe: o resultado veio do jogo, n\xE3o da carta.");else if (luck100 > 0 && bb100 >= 0) txt = /*#__PURE__*/React.createElement(React.Fragment, null, "parte do seu lucro ", /*#__PURE__*/React.createElement("b", null, "veio da sorte"), ". O winrate real \xE9 menor do que a tela mostra \u2014 n\xE3o use este per\xEDodo como prova pra subir de limite.");else txt = /*#__PURE__*/React.createElement(React.Fragment, null, "voc\xEA est\xE1 ", /*#__PURE__*/React.createElement("b", null, "no vermelho apesar de correr bem"), ". A\xED n\xE3o d\xE1 pra culpar a vari\xE2ncia: o ajuste \xE9 no jogo. Vale revisar as leituras acima antes de aumentar volume.");
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12.5,
+          color: C.ink,
+          marginTop: 2,
+          padding: '9px 11px',
+          borderRadius: 10,
+          background: C.bg,
+          lineHeight: 1.55
+        }
+      }, "\uD83D\uDCA1 ", /*#__PURE__*/React.createElement("b", null, "E da\xED?"), " No per\xEDodo de ", /*#__PURE__*/React.createElement("b", null, periodoLabel), ", ", txt);
+    })()))), /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 0,
         overflow: 'hidden'
@@ -10276,12 +10344,12 @@ function Dashboard({
           fontWeight: 700
         }
       }, fmt(pm.res)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.roi)), /*#__PURE__*/React.createElement("td", null, pctFmt(pm.itm)), !solo && /*#__PURE__*/React.createElement("td", null, fmt(pm.makeAberto))))))), /*#__PURE__*/React.createElement(Sec, {
-        t: "Semana a semana"
+        t: "Semana a semana (fechadas no m\xEAs)"
       }, wkRows.length ? /*#__PURE__*/React.createElement("table", {
         className: "reptable"
-      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana at\xE9"), !solo && /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Resultado"), !solo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado")))), /*#__PURE__*/React.createElement("tbody", null, wkRows.map((w, i) => /*#__PURE__*/React.createElement("tr", {
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana"), !solo && /*#__PURE__*/React.createElement("th", null, "Jogador"), /*#__PURE__*/React.createElement("th", null, "Resultado"), !solo && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado")))), /*#__PURE__*/React.createElement("tbody", null, wkRows.map((w, i) => /*#__PURE__*/React.createElement("tr", {
         key: i
-      }, /*#__PURE__*/React.createElement("td", null, dLabel(w.week)), !solo && /*#__PURE__*/React.createElement("td", null, w.pl), /*#__PURE__*/React.createElement("td", {
+      }, /*#__PURE__*/React.createElement("td", null, weekLabel(w.week)), !solo && /*#__PURE__*/React.createElement("td", null, w.pl), /*#__PURE__*/React.createElement("td", {
         style: {
           color: w.resultado >= 0 ? C.greenMid : C.red,
           fontWeight: 700
@@ -10498,9 +10566,9 @@ function Dashboard({
         t: "\xDAltimas semanas na pool"
       }, pWk8.length ? /*#__PURE__*/React.createElement("table", {
         className: "reptable"
-      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana at\xE9"), /*#__PURE__*/React.createElement("th", null, "Resultado"), /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado"))), /*#__PURE__*/React.createElement("tbody", null, pWk8.map(w => /*#__PURE__*/React.createElement("tr", {
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Semana"), /*#__PURE__*/React.createElement("th", null, "Resultado"), /*#__PURE__*/React.createElement("th", null, "Make-up"), /*#__PURE__*/React.createElement("th", null, "Parte do jogador"), /*#__PURE__*/React.createElement("th", null, "Saque autorizado"), /*#__PURE__*/React.createElement("th", null, "Sacado"))), /*#__PURE__*/React.createElement("tbody", null, pWk8.map(w => /*#__PURE__*/React.createElement("tr", {
         key: w.week
-      }, /*#__PURE__*/React.createElement("td", null, dLabel(w.week)), /*#__PURE__*/React.createElement("td", {
+      }, /*#__PURE__*/React.createElement("td", null, weekLabel(w.week)), /*#__PURE__*/React.createElement("td", {
         style: {
           color: w.resultado >= 0 ? C.greenMid : C.red,
           fontWeight: 700
@@ -11309,7 +11377,12 @@ function Dashboard({
     }
   }, toasts.map(t => /*#__PURE__*/React.createElement("div", {
     key: t.id,
-    onClick: () => setToasts(l => l.filter(x => x.id !== t.id)),
+    onClick: () => {
+      setToasts(l => l.filter(x => x.id !== t.id));
+      if (t.items && t.items.length) setAlertDetail({
+        items: t.items
+      });
+    },
     className: "ftfade",
     style: {
       pointerEvents: 'auto',
