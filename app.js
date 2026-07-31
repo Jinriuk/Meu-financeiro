@@ -943,6 +943,76 @@ function mergeHH(a, b) {
   out.hand_ids = [...new Set([...(a.hand_ids || []), ...(b.hand_ids || [])])];
   return out;
 }
+// decodifica dando conta de BOM/UTF-16 (arquivo salvo como "Unicode" no Windows/celular)
+const decodeSmart = u => {
+  if (u[0] === 0xFE && u[1] === 0xFF) return new TextDecoder('utf-16be').decode(u);
+  if (u[0] === 0xFF && u[1] === 0xFE) return new TextDecoder('utf-16le').decode(u);
+  let nul = 0;
+  const n = Math.min(u.length, 400);
+  for (let i = 0; i < n; i++) if (u[i] === 0) nul++;
+  if (nul > n / 4) return new TextDecoder(u[0] === 0 ? 'utf-16be' : 'utf-16le').decode(u); // UTF-16 sem BOM
+  return new TextDecoder().decode(u); // UTF-8 (o decoder já tira o BOM)
+};
+const isZip = u => u.length > 3 && u[0] === 0x50 && u[1] === 0x4B && u[2] <= 8; // "PK…" mesmo se renomearam a extensão
+/* ---------- resumo de torneio (Tournament Summary) ----------
+   O caminho preguiçoso e certo de lançar torneio: em vez de digitar um a um, o jogador joga a
+   pasta de resumos do dia (GG/PokerCraft ou PokerStars) e o sistema lê nome, buy-in, re-entries,
+   field, posição e premiação de cada arquivo. Diferente do hand history, o resumo é UM torneio
+   por arquivo e traz o resultado oficial do site — é a fonte da verdade do que aconteceu. */
+const TS_START = /^(?:PokerStars |GGPoker )?Tournament #\d+[,\s]/m;
+// "$9,815.75" -> 9815.75 (vírgula só é separador de milhar nesses arquivos, que são sempre en-US)
+const tsMoney = s => {
+  const n = parseFloat(String(s).replace(/[^\d.,-]/g, '').replace(/,(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+};
+function parseSummaries(text) {
+  const rows = [];
+  // um arquivo pode trazer vários resumos colados (transcript por e-mail do PokerStars)
+  const blocks = String(text || '').replace(/\f/g, '\n').split(/(?=^(?:PokerStars |GGPoker )?Tournament #\d+[,\s])/m).filter(b => /Tournament #\d+/.test(b));
+  for (const b of blocks) {
+    const head = b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+),\s*(.*)$/m);
+    if (!head) continue;
+    // cabeçalho GG: "Bounty Hunters Special $5.40, Hold'em No Limit" · PS às vezes só traz o jogo
+    const parts = head[2].split(',').map(x => x.trim()).filter(Boolean);
+    const GAME = /(hold\s*'?em|omaha|stud|razz|badugi|draw|\baof\b)/i;
+    let game = null;
+    if (parts.length && GAME.test(parts[parts.length - 1])) game = parts.pop();
+    const name = parts.join(', ') || null;
+    const bi = b.match(/^Buy-?[Ii]n:\s*(.+)$/m);
+    // GG separa por "+", PokerStars por "/" — somamos todas as parcelas ($base, taxa e bounty)
+    const pedacos = bi ? (bi[1].match(/\$\s?[\d.,]+/g) || []).map(tsMoney) : [];
+    const fld = b.match(/^([\d,]+)\s+[Pp]layers/m);
+    const dt = b.match(/Tournament started\s+(\d{4})\/(\d{2})\/(\d{2})/);
+    const pos = b.match(/You finished (?:the tournament )?in (\d+)(?:st|nd|rd|th)? place/i);
+    const rec = b.match(/You (?:made (\d+) re-?(?:entries|entry|buys|buy) and )?received a total of \$\s?([\d.,]+)/i);
+    const re2 = b.match(/You made (\d+) re-?(?:entries|entry|buys|buy)/i);
+    // PKO: o buy-in vem em 3 parcelas ($prêmio + taxa + bounty) ou o nome anuncia a bounty
+    const bounty = pedacos.length >= 3 || /bounty|knockout|\bko\b|progressive|mystery/i.test((name || '') + ' ' + (game || ''));
+    rows.push({
+      tid: head[1],
+      name,
+      game,
+      bounty,
+      psite: /^PokerStars/.test(b.trim()) ? 'PokerStars' : null,
+      buyin: Math.round(pedacos.reduce((s, x) => s + x, 0) * 100) / 100,
+      reentries: rec && rec[1] ? parseInt(rec[1], 10) : re2 ? parseInt(re2[1], 10) : 0,
+      field: fld ? parseInt(fld[1].replace(/,/g, ''), 10) : 0,
+      date: dt ? `${dt[1]}-${dt[2]}-${dt[3]}` : null,
+      position: pos ? parseInt(pos[1], 10) : null,
+      prize: rec ? tsMoney(rec[2]) : 0
+    });
+  }
+  return rows;
+}
+// escolhe a modalidade do jogador (Ajustes) que combina com o torneio lido
+const tsModalidade = (mods, bounty) => {
+  const m = mods && mods.length ? mods : ['MTT'];
+  const acha = re => m.find(x => re.test(x));
+  if (bounty) return acha(/pko|bount|knock|\bko\b/i) || acha(/mtt|torneio|vanilla/i) || m[0];
+  return acha(/vanilla/i) || acha(/^mtt$/i) || acha(/mtt|torneio/i) || m[0];
+};
+// nome comparável: "Daily Classic $3" e "daily classic 3" são o mesmo torneio
+const tsNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
 const HH_BANDS = {
   vpip: [18, 27],
@@ -5260,6 +5330,13 @@ function Dashboard({
     prog: '',
     res: null
   }); // estado do import de HH
+  const [tsImp, setTsImp] = useState({
+    busy: false,
+    prog: '',
+    preview: null,
+    res: null
+  }); // import de resumos de torneio
+  const [tsSite, setTsSite] = useState('Detectar'); // site dos resumos (WPT usa o mesmo formato da GG)
   const [impPlayer, setImpPlayer] = useState(''); // de quem são os arquivos importados
   const [stF, setStF] = useState({
     player: '',
@@ -5718,6 +5795,215 @@ function Dashboard({
     setLedger(l => [...(data || rows), ...l]);
     setModal(null);
   };
+  /* ---------- importar RESUMOS de torneio (o fim do "lançar um por um") ----------
+     Lê os arquivos de Tournament Summary (GG/PokerCraft, PokerStars ou WPT), monta a prévia e
+     só grava depois que a pessoa confirma. Três destinos possíveis pra cada resumo:
+       · já importado  → tem o mesmo id de torneio do site: não mexe
+       · completa      → casa com um lançamento manual do mesmo dia/buy-in: preenche field,
+                         posição, premiação e re-entries que faltavam (em vez de duplicar)
+       · novo          → entra como torneio novo
+     O id do site fica gravado, então reimportar a mesma pasta é seguro. */
+  const lerResumos = async (files, player) => {
+    if (!files.length) return;
+    setTsImp({
+      busy: true,
+      prog: 'Lendo arquivos…',
+      preview: null,
+      res: null
+    });
+    const issues = [],
+      textos = [];
+    const addZip = (nome, u, depth) => {
+      if (!window.fflate) {
+        issues.push(nome + ': leitor de ZIP não carregou (recarregue a página).');
+        return;
+      }
+      let entries;
+      try {
+        entries = fflate.unzipSync(u);
+      } catch (e) {
+        issues.push(nome + ': zip inválido (' + e.message + ')');
+        return;
+      }
+      for (const [n, b] of Object.entries(entries)) {
+        if (!b.length) continue;
+        if (/\.zip$/i.test(n) || isZip(b)) {
+          if (depth < 3) addZip(nome + ' → ' + n, b, depth + 1);
+          continue;
+        }
+        if (/\.(csv|xlsx?|pdf)$/i.test(n)) continue;
+        textos.push({
+          name: n,
+          text: decodeSmart(b)
+        });
+      }
+    };
+    for (const f of files) {
+      try {
+        const u = new Uint8Array(await f.arrayBuffer());
+        if (/\.zip$/i.test(f.name) || isZip(u)) addZip(f.name, u, 0);else textos.push({
+          name: f.name,
+          text: decodeSmart(u)
+        });
+      } catch (e) {
+        issues.push(f.name + ': ' + e.message);
+      }
+    }
+    setTsImp(s => ({
+      ...s,
+      prog: `Lendo ${textos.length} arquivo${textos.length !== 1 ? 's' : ''}…`
+    }));
+    await new Promise(r => setTimeout(r, 0));
+    let lidos = [],
+      maos = 0;
+    for (const t of textos) {
+      const rs = parseSummaries(t.text);
+      if (rs.length) {
+        rs.forEach(r => lidos.push({
+          ...r,
+          arquivo: t.name
+        }));
+        continue;
+      }
+      // erro clássico: mandar o HAND HISTORY (as mãos) no lugar do resumo
+      if (/^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #/m.test(t.text)) maos++;else issues.push(t.name + ': não parece um resumo de torneio (a 1ª linha tem que começar com "Tournament #").');
+    }
+    if (maos) issues.unshift(`${maos} arquivo${maos !== 1 ? 's' : ''} de MÃOS (hand history) — esse${maos !== 1 ? 's' : ''} vai${maos !== 1 ? 'o' : ''} na aba Stats. Aqui entra o resumo do torneio (o resultado).`);
+    // mesmo torneio em dois arquivos: fica um só
+    const vistos = new Set();
+    lidos = lidos.filter(r => {
+      const k = r.tid;
+      if (vistos.has(k)) return false;
+      vistos.add(k);
+      return true;
+    });
+    const semData = lidos.filter(r => !r.date || !(r.buyin > 0));
+    lidos = lidos.filter(r => r.date && r.buyin > 0).sort((a, b) => a.date === b.date ? a.tid < b.tid ? -1 : 1 : a.date < b.date ? -1 : 1);
+    if (semData.length) issues.push(`${semData.length} resumo(s) sem data ou sem buy-in legível — deixei de fora.`);
+
+    // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
+    // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
+    const meus = tours.filter(t => t.player === player);
+    const usados = new Set();
+    const novos = [],
+      completa = [],
+      repetidos = [];
+    for (const r of lidos) {
+      const site = tsSite !== 'Detectar' ? tsSite : r.psite || sites.find(x => /gg/i.test(x)) || 'GG Poker';
+      const linha = {
+        entry_date: r.date,
+        player,
+        site,
+        site_tournament_id: r.tid,
+        tournament_name: r.name || 'Torneio #' + r.tid,
+        modality: tsModalidade(modalidades, r.bounty),
+        buyin: r.buyin,
+        reentries: r.reentries,
+        field_size: r.field,
+        final_position: r.position,
+        prize: r.prize
+      };
+      const jaTid = meus.find(t => String(t.site_tournament_id || '') === r.tid);
+      if (jaTid) {
+        repetidos.push({
+          r,
+          linha,
+          atual: jaTid
+        });
+        continue;
+      }
+      const manual = meus.find(t => !t.site_tournament_id && !usados.has(t.id) && t.entry_date === r.date && Math.abs(num(t.buyin) - r.buyin) < 0.005 && (!r.name || !t.tournament_name || tsNorm(t.tournament_name) === tsNorm(r.name)));
+      if (manual) {
+        usados.add(manual.id);
+        completa.push({
+          r,
+          linha,
+          atual: manual
+        });
+        continue;
+      }
+      novos.push({
+        r,
+        linha
+      });
+    }
+    const fora = [...novos, ...completa].filter(x => x.linha.buyin > abiMaxFor(config, player, x.linha.entry_date));
+    setTsImp({
+      busy: false,
+      prog: '',
+      res: null,
+      preview: {
+        player,
+        novos,
+        completa,
+        repetidos,
+        issues,
+        fora,
+        arquivos: textos.length
+      }
+    });
+  };
+  const salvarResumos = async () => {
+    const pv = tsImp.preview;
+    if (!pv) return;
+    setTsImp(s => ({
+      ...s,
+      busy: true,
+      prog: 'Salvando…'
+    }));
+    let inseridos = 0,
+      completados = 0;
+    const erros = [];
+    if (pv.novos.length) {
+      // em blocos, pra não estourar o tamanho da requisição num import de vários dias
+      for (let i = 0; i < pv.novos.length; i += 100) {
+        const chunk = pv.novos.slice(i, i + 100).map(x => x.linha);
+        const {
+          data,
+          error
+        } = await sb.from('tournaments').insert(chunk).select();
+        // 23505 = o índice único do id do torneio barrou: alguém já importou (outra aba/aparelho)
+        if (error) {
+          erros.push(error.code === '23505' ? 'Esses torneios já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.' : error.message);
+        } else {
+          inseridos += (data || []).length;
+          setTours(t => [...(data || []), ...t]);
+        }
+      }
+    }
+    for (const x of pv.completa) {
+      const {
+        data,
+        error
+      } = await sb.from('tournaments').update({
+        site_tournament_id: x.linha.site_tournament_id,
+        tournament_name: x.linha.tournament_name,
+        modality: x.linha.modality,
+        site: x.linha.site,
+        reentries: x.linha.reentries,
+        field_size: x.linha.field_size,
+        final_position: x.linha.final_position,
+        prize: x.linha.prize
+      }).eq('id', x.atual.id).select().single();
+      if (error) {
+        erros.push(error.message);
+      } else {
+        completados++;
+        setTours(t => t.map(y => y.id === x.atual.id ? data : y));
+      }
+    }
+    setTsImp({
+      busy: false,
+      prog: '',
+      preview: null,
+      res: {
+        inseridos,
+        completados,
+        repetidos: pv.repetidos.length,
+        erros
+      }
+    });
+  };
   /* importa hand histories (.txt ou .zip): parseia no navegador, agrega por torneio e
      sobe SÓ os agregados (upsert por player+site+torneio — reimportar substitui, não duplica) */
   const importHH = async (files, player) => {
@@ -5738,17 +6024,6 @@ function Dashboard({
       zips: [],
       texts: []
     };
-    // decodifica dando conta de BOM/UTF-16 (arquivo salvo como "Unicode" no Windows/celular)
-    const decodeSmart = u => {
-      if (u[0] === 0xFE && u[1] === 0xFF) return new TextDecoder('utf-16be').decode(u);
-      if (u[0] === 0xFF && u[1] === 0xFE) return new TextDecoder('utf-16le').decode(u);
-      let nul = 0;
-      const n = Math.min(u.length, 400);
-      for (let i = 0; i < n; i++) if (u[i] === 0) nul++;
-      if (nul > n / 4) return new TextDecoder(u[0] === 0 ? 'utf-16be' : 'utf-16le').decode(u); // UTF-16 sem BOM
-      return new TextDecoder().decode(u); // UTF-8 (o decoder já tira o BOM)
-    };
-    const isZip = u => u.length > 3 && u[0] === 0x50 && u[1] === 0x4B && u[2] <= 8; // "PK…" mesmo se renomearam a extensão
     const HH_START = /^(?:PokerStars Hand|PokerStars Game|Mão PokerStars|Poker Hand|GGPoker Hand) #/m;
     // o export do PokerCraft (GG) às vezes vem com OUTROS zips dentro — abre tudo, até 3 níveis
     const addZip = (name, u, depth) => {
@@ -5854,7 +6129,7 @@ function Dashboard({
         ign: achou - maosArq
       });
     }
-    if (resumos) issues.unshift(`${resumos} arquivo${resumos !== 1 ? 's' : ''} ${resumos !== 1 ? 'são' : 'é'} o RESUMO do torneio (resultado, sem as mãos). No PokerCraft, baixe o HAND HISTORY do torneio (as mãos jogadas), não o Tournament Summary.`);
+    if (resumos) issues.unshift(`${resumos} arquivo${resumos !== 1 ? 's' : ''} ${resumos !== 1 ? 'são' : 'é'} o RESUMO do torneio (resultado, sem as mãos) — esse${resumos !== 1 ? 's' : ''} serve${resumos !== 1 ? 'm' : ''} na aba TORNEIOS, em "Importar do site", que lança os torneios pra você. Aqui na Stats entra o HAND HISTORY (as mãos jogadas).`);
     /* dedup: cada torneio guarda o nº das mãos já importadas (hand_ids). Aqui separamos
        mão NOVA de mão REPETIDA — arquivos sobrepostos (transcript geral + avulsos) podem
        ser importados em qualquer ordem sem contar nada 2x nem perder o que já existia. */
@@ -7081,7 +7356,103 @@ function Dashboard({
       }
     }, /*#__PURE__*/React.createElement(IcoPlus, {
       s: 18
-    }), "Adicionar")), /*#__PURE__*/React.createElement(DayCard, {
+    }), "Adicionar")), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 18
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 17,
+        fontWeight: 600,
+        margin: '0 0 4px'
+      }
+    }, "Importar do site (sem digitar)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginBottom: 10,
+        lineHeight: 1.5
+      }
+    }, "Baixe os ", /*#__PURE__*/React.createElement("b", null, "resumos de torneio"), " do dia e solte aqui \u2014 pode ser a pasta inteira ou o .zip. O sistema l\xEA nome, buy-in, re-entries, field, posi\xE7\xE3o e premia\xE7\xE3o de cada um. Voc\xEA ", /*#__PURE__*/React.createElement("b", null, "confere antes de salvar"), ", e reimportar a mesma pasta n\xE3o duplica nada."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 10,
+        flexWrap: 'wrap',
+        alignItems: 'flex-end'
+      }
+    }, !solo && /*#__PURE__*/React.createElement(Seg, {
+      label: "De quem s\xE3o os arquivos",
+      value: impPlayer || players[0],
+      options: players,
+      onChange: setImpPlayer
+    }), sites.length > 1 && /*#__PURE__*/React.createElement(Seg, {
+      label: "Site",
+      value: tsSite,
+      options: ['Detectar', ...sites],
+      onChange: setTsSite
+    }), /*#__PURE__*/React.createElement("input", {
+      id: "tsfile",
+      type: "file",
+      multiple: true,
+      accept: ".txt,.zip",
+      style: {
+        display: 'none'
+      },
+      onChange: e => {
+        const fs = [...e.target.files];
+        e.target.value = '';
+        lerResumos(fs, impPlayer || players[0]);
+      }
+    }), /*#__PURE__*/React.createElement("label", {
+      htmlFor: "tsfile",
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        background: tsImp.busy ? C.bg : P,
+        color: tsImp.busy ? C.inkSoft : '#fff',
+        padding: '11px 16px',
+        borderRadius: 13,
+        fontWeight: 700,
+        fontSize: 14,
+        cursor: tsImp.busy ? 'default' : 'pointer',
+        pointerEvents: tsImp.busy ? 'none' : 'auto'
+      }
+    }, /*#__PURE__*/React.createElement(IcoPlus, {
+      s: 16
+    }), tsImp.busy ? 'Lendo…' : 'Escolher arquivos')), tsImp.busy && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        fontSize: 12.5,
+        color: P,
+        fontWeight: 600
+      }
+    }, tsImp.prog), tsImp.res && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        padding: '10px 12px',
+        borderRadius: 12,
+        background: tsImp.res.erros.length ? C.redSoft : C.greenSoft,
+        fontSize: 12.5,
+        color: C.ink,
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("b", null, tsImp.res.inseridos, " torneio", tsImp.res.inseridos !== 1 ? 's' : '', " lan\xE7ado", tsImp.res.inseridos !== 1 ? 's' : ''), tsImp.res.completados > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 ", tsImp.res.completados, " lan\xE7amento", tsImp.res.completados !== 1 ? 's' : '', " seu", tsImp.res.completados !== 1 ? 's' : '', " completado", tsImp.res.completados !== 1 ? 's' : '', " com os dados do site"), tsImp.res.repetidos > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 ", tsImp.res.repetidos, " j\xE1 ", tsImp.res.repetidos !== 1 ? 'estavam' : 'estava', " no sistema"), tsImp.res.erros.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 6,
+        color: C.red
+      }
+    }, tsImp.res.erros.map((x, i) => /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, "\u2022 ", x)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 10,
+        lineHeight: 1.5
+      }
+    }, "\u2139\uFE0F ", /*#__PURE__*/React.createElement("b", null, "GG / WPT"), ": PokerCraft \u2192 o arquivo de ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " (o resultado do torneio). ", /*#__PURE__*/React.createElement("b", null, "PokerStars"), ": o resumo que chega por e-mail ou o do hist\xF3rico. Os arquivos de ", /*#__PURE__*/React.createElement("b", null, "m\xE3os"), " (hand history) v\xE3o na aba Stats \u2014 l\xE1 eles viram estat\xEDstica de jogo.")), /*#__PURE__*/React.createElement(DayCard, {
       today: true,
       date: today,
       dayTours: tours.filter(t => t.entry_date === today),
@@ -10869,7 +11240,305 @@ function Dashboard({
       fontSize: 15.5,
       cursor: 'pointer'
     }
-  }, "Entendi"))), alertDetail && /*#__PURE__*/React.createElement("div", {
+  }, "Entendi"))), tsImp.preview && (() => {
+    const pv = tsImp.preview,
+      entrando = [...pv.novos, ...pv.completa];
+    const inv = entrando.reduce((s, x) => s + x.linha.buyin * (1 + x.linha.reentries), 0);
+    const prem = entrando.reduce((s, x) => s + x.linha.prize, 0);
+    const dias = [...new Set(entrando.map(x => x.linha.entry_date))].sort();
+    const nada = entrando.length === 0;
+    return /*#__PURE__*/React.createElement("div", {
+      onClick: () => setTsImp(s => ({
+        ...s,
+        preview: null
+      })),
+      style: {
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(20,18,30,.45)',
+        backdropFilter: 'blur(3px)',
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        zIndex: 60
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      onClick: e => e.stopPropagation(),
+      className: "ftfade",
+      style: {
+        background: C.surface,
+        width: '100%',
+        maxWidth: 540,
+        borderRadius: '24px 24px 0 0',
+        padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+        maxHeight: '86vh',
+        overflowY: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 20,
+        fontWeight: 600,
+        margin: 0
+      }
+    }, "Confere antes de salvar"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setTsImp(s => ({
+        ...s,
+        preview: null
+      })),
+      style: {
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        border: 'none',
+        background: C.bg,
+        cursor: 'pointer',
+        display: 'grid',
+        placeItems: 'center',
+        color: C.inkSoft
+      }
+    }, /*#__PURE__*/React.createElement(IcoX, {
+      s: 20
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginBottom: 14
+      }
+    }, pv.arquivos, " arquivo", pv.arquivos !== 1 ? 's' : '', " lido", pv.arquivos !== 1 ? 's' : '', !solo && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 lan\xE7ando para ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, pv.player)), ". Nada foi salvo ainda."), nada ? /*#__PURE__*/React.createElement(Empty, null, pv.repetidos.length ? `Esses ${pv.repetidos.length} torneios já estão no sistema — nada novo pra lançar.` : 'Nenhum torneio pra lançar nesses arquivos.') : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 10,
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '11px 13px',
+        borderRadius: 12,
+        background: C.plumSoft
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: P,
+        fontWeight: 800,
+        textTransform: 'uppercase'
+      }
+    }, "V\xE3o entrar"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 19,
+        fontWeight: 600,
+        color: P
+      }
+    }, entrando.length, " torneio", entrando.length !== 1 ? 's' : ''), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 1
+      }
+    }, dias.length, " dia", dias.length !== 1 ? 's' : '', " \xB7 ", dLabel(dias[0]), " a ", dLabel(dias[dias.length - 1]))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '11px 13px',
+        borderRadius: 12,
+        background: prem - inv >= 0 ? C.greenSoft : C.redSoft
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: prem - inv >= 0 ? C.green : C.red,
+        fontWeight: 800,
+        textTransform: 'uppercase'
+      }
+    }, "Resultado"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 19,
+        fontWeight: 600,
+        color: prem - inv >= 0 ? C.greenMid : C.red,
+        whiteSpace: 'nowrap'
+      }
+    }, prem - inv >= 0 ? '+' : '−', fmt(Math.abs(prem - inv))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 1
+      }
+    }, "investido ", fmt(inv), " \xB7 pr\xEAmios ", fmt(prem)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 6,
+        flexWrap: 'wrap',
+        marginBottom: 12,
+        fontSize: 11.5,
+        fontWeight: 700
+      }
+    }, pv.novos.length > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '4px 10px',
+        borderRadius: 99,
+        background: C.greenSoft,
+        color: C.green
+      }
+    }, pv.novos.length, " novo", pv.novos.length !== 1 ? 's' : ''), pv.completa.length > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '4px 10px',
+        borderRadius: 99,
+        background: C.goldSoft,
+        color: C.gold
+      }
+    }, pv.completa.length, " completa", pv.completa.length !== 1 ? 'm' : '', " um lan\xE7amento seu"), pv.repetidos.length > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '4px 10px',
+        borderRadius: 99,
+        background: C.bg,
+        color: C.inkSoft
+      }
+    }, pv.repetidos.length, " j\xE1 no sistema")), pv.fora.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '10px 12px',
+        borderRadius: 12,
+        background: C.redSoft,
+        fontSize: 12.5,
+        color: C.ink,
+        marginBottom: 12,
+        lineHeight: 1.5
+      }
+    }, "\u26A0\uFE0F ", /*#__PURE__*/React.createElement("b", null, pv.fora.length, " torneio", pv.fora.length !== 1 ? 's' : '', " fora da grade"), " (", pv.fora.map(x => fmt(x.linha.buyin)).filter((v, i, a) => a.indexOf(v) === i).join(', '), " \xB7 teto ", fmt(abiMaxFor(config, pv.player, pv.fora[0].linha.entry_date)), "). V\xE3o entrar assim mesmo \u2014 o registro \xE9 do que aconteceu."), dias.map(d => {
+      const doDia = entrando.filter(x => x.linha.entry_date === d);
+      const rd = doDia.reduce((s, x) => s + x.linha.prize - x.linha.buyin * (1 + x.linha.reentries), 0);
+      return /*#__PURE__*/React.createElement("div", {
+        key: d,
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 4
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          fontWeight: 800,
+          color: C.gold,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em'
+        }
+      }, dLabel(d)), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11.5,
+          color: C.inkSoft
+        }
+      }, doDia.length, " torneio", doDia.length !== 1 ? 's' : ''), /*#__PURE__*/React.createElement("span", {
+        style: {
+          marginLeft: 'auto',
+          fontWeight: 800,
+          fontSize: 13.5,
+          color: rd >= 0 ? C.greenMid : C.red
+        }
+      }, rd >= 0 ? '+' : '−', fmt(Math.abs(rd)))), doDia.map(x => /*#__PURE__*/React.createElement("div", {
+        key: x.linha.site_tournament_id,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 0',
+          borderBottom: `1px solid ${C.border}`
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontWeight: 700,
+          fontSize: 13.5,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }
+      }, x.linha.tournament_name, x.atual && /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.gold,
+          fontWeight: 700,
+          fontSize: 11
+        }
+      }, " \xB7 completa o seu")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: C.inkSoft
+        }
+      }, "buy-in ", fmt(x.linha.buyin), x.linha.reentries > 0 ? ` · ${x.linha.reentries} re-entry${x.linha.reentries !== 1 ? 's' : ''}` : '', " \xB7 ", x.linha.modality, " \xB7 ", x.linha.final_position ? `${x.linha.final_position}º de ${x.linha.field_size}` : `${x.linha.field_size} jogadores`)), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 800,
+          fontSize: 13.5,
+          flexShrink: 0,
+          color: x.linha.prize > 0 ? C.greenMid : C.inkSoft
+        }
+      }, x.linha.prize > 0 ? fmt(x.linha.prize) : '—'))));
+    })), pv.issues.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.red,
+        lineHeight: 1.5,
+        marginTop: 4
+      }
+    }, pv.issues.map((x, i) => /*#__PURE__*/React.createElement("div", {
+      key: i
+    }, "\u2022 ", x))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 10,
+        marginTop: 16
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setTsImp(s => ({
+        ...s,
+        preview: null
+      })),
+      style: {
+        flex: 1,
+        padding: '13px 16px',
+        borderRadius: 13,
+        border: `1.5px solid ${C.border}`,
+        background: C.surface,
+        color: C.inkSoft,
+        fontWeight: 700,
+        fontSize: 14.5,
+        cursor: 'pointer'
+      }
+    }, "Cancelar"), !nada && /*#__PURE__*/React.createElement("button", {
+      onClick: salvarResumos,
+      disabled: tsImp.busy,
+      style: {
+        flex: 2,
+        padding: '13px 16px',
+        borderRadius: 13,
+        border: 'none',
+        background: tsImp.busy ? C.bg : P,
+        color: tsImp.busy ? C.inkSoft : '#fff',
+        fontWeight: 700,
+        fontSize: 14.5,
+        cursor: tsImp.busy ? 'default' : 'pointer'
+      }
+    }, tsImp.busy ? 'Salvando…' : `Salvar ${entrando.length} torneio${entrando.length !== 1 ? 's' : ''}`))));
+  })(), alertDetail && /*#__PURE__*/React.createElement("div", {
     onClick: () => setAlertDetail(null),
     style: {
       position: 'fixed',
