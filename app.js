@@ -184,16 +184,24 @@ function downloadCSV(name, rows) {
 // resultado do dia: se veio derivado dos torneios usa e.resultado; senão cai na fórmula antiga (compat)
 const resultadoDia = e => e.resultado != null ? num(e.resultado) : num(e.saldo_final) + num(e.saque) - num(e.saldo_inicial) - num(e.deposito);
 // ABI médio = investido / nº de entradas (re-entry conta como entrada); mede o nível de buy-in
+// ABI = nível médio enfrentado -> usa o buy-in NOMINAL (bilhete conta o valor cheio).
+// O ||total_buyins é compatibilidade com linha antiga do Diário, que só tinha o campo de dinheiro.
 const abiMedioDia = e => {
   const ent = num(e.qtd_entradas) || num(e.qtd_torneios);
-  return ent > 0 ? num(e.total_buyins) / ent : 0;
+  return ent > 0 ? (num(e.buyins_nominal) || num(e.total_buyins)) / ent : 0;
 };
 function gradeStatus(e, abiMax) {
   if (num(e.maior_buyin) > abiMax) return 'FORA DA GRADE';
   if ((num(e.qtd_entradas) || num(e.qtd_torneios)) > 0 && abiMedioDia(e) >= abiMax * 0.9) return 'ATENÇÃO';
   return 'OK';
 }
-const totalInvestido = t => num(t.buyin) * (1 + num(t.reentries));
+/* Dois números que costumavam ser um só:
+   · NOMINAL = o nível que o jogador enfrentou (define ABI, grade e stop loss em buy-ins)
+   · INVESTIDO = o dinheiro que realmente saiu da banca
+   Entrada por BILHETE (ticket/T$ ganho num satélite) tem nominal cheio e investido zero — o
+   custo já foi pago quando o satélite foi jogado; contar de novo seria cobrar duas vezes. */
+const nominalTorneio = t => num(t.buyin) * (1 + num(t.reentries));
+const totalInvestido = t => t.ticket ? 0 : nominalTorneio(t);
 const lucroTorneio = t => num(t.prize) - totalInvestido(t);
 // ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido.
 // Com `date`, devolve o ABI vigente NAQUELE dia: desfaz as mudanças registradas depois dele —
@@ -223,6 +231,8 @@ function deriveDaily(tours) {
       qtd_torneios: 0,
       qtd_entradas: 0,
       total_buyins: 0,
+      buyins_nominal: 0,
+      tickets: 0,
       maior_buyin: 0,
       maior_premiacao: 0,
       resultado: 0
@@ -231,8 +241,10 @@ function deriveDaily(tours) {
       inv = totalInvestido(t);
     m.qtd_torneios += 1;
     m.qtd_entradas += 1 + num(t.reentries);
-    m.total_buyins += inv;
-    m.maior_buyin = Math.max(m.maior_buyin, num(t.buyin));
+    m.total_buyins += inv; // dinheiro que saiu (bilhete não soma)
+    m.buyins_nominal += nominalTorneio(t); // nível enfrentado (bilhete soma cheio)
+    if (t.ticket) m.tickets += 1;
+    m.maior_buyin = Math.max(m.maior_buyin, num(t.buyin)); // grade julga pelo nível, não pelo custo
     m.maior_premiacao = Math.max(m.maior_premiacao, num(t.prize));
     m.resultado += num(t.prize) - inv;
   });
@@ -970,13 +982,14 @@ function parseSummaries(text) {
   // um arquivo pode trazer vários resumos colados (transcript por e-mail do PokerStars)
   const blocks = String(text || '').replace(/\f/g, '\n').split(/(?=^(?:PokerStars |GGPoker )?Tournament #\d+[,\s])/m).filter(b => /Tournament #\d+/.test(b));
   for (const b of blocks) {
-    const head = b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+),\s*(.*)$/m);
+    const head = b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+)(?:,\s*(.*))?$/m);
     if (!head) continue;
     // cabeçalho GG: "Bounty Hunters Special $5.40, Hold'em No Limit" · PS às vezes só traz o jogo
-    const parts = head[2].split(',').map(x => x.trim()).filter(Boolean);
+    const parts = String(head[2] || '').split(',').map(x => x.trim()).filter(Boolean);
     const GAME = /(hold\s*'?em|omaha|stud|razz|badugi|draw|\baof\b)/i;
     let game = null;
-    if (parts.length && GAME.test(parts[parts.length - 1])) game = parts.pop();
+    // só tira o último pedaço se sobrar nome: "Omaha Special" sozinho é NOME, não modalidade
+    if (parts.length > 1 && GAME.test(parts[parts.length - 1])) game = parts.pop();
     const name = parts.join(', ') || null;
     const bi = b.match(/^Buy-?[Ii]n:\s*(.+)$/m);
     // GG separa por "+", PokerStars por "/" — somamos todas as parcelas ($base, taxa e bounty)
@@ -986,6 +999,10 @@ function parseSummaries(text) {
     const pos = b.match(/You finished (?:the tournament )?in (\d+)(?:st|nd|rd|th)? place/i);
     const rec = b.match(/You (?:made (\d+) re-?(?:entries|entry|buys|buy) and )?received a total of \$\s?([\d.,]+)/i);
     const re2 = b.match(/You made (\d+) re-?(?:entries|entry|buys|buy)/i);
+    // prêmio pago em BILHETE (satélite): não é dinheiro na banca — vira 0 e fica na observação.
+    // Olha SÓ a linha do "You received": torneio chamado "... Ticket ..." não pode zerar prêmio.
+    const linhaRec = (b.match(/^You .*received.*$/im) || [''])[0];
+    const premioTicket = /ticket/i.test(linhaRec) && !rec;
     // PKO: o buy-in vem em 3 parcelas ($prêmio + taxa + bounty) ou o nome anuncia a bounty
     const bounty = pedacos.length >= 3 || /bounty|knockout|\bko\b|progressive|mystery/i.test((name || '') + ' ' + (game || ''));
     rows.push({
@@ -999,7 +1016,9 @@ function parseSummaries(text) {
       field: fld ? parseInt(fld[1].replace(/,/g, ''), 10) : 0,
       date: dt ? `${dt[1]}-${dt[2]}-${dt[3]}` : null,
       position: pos ? parseInt(pos[1], 10) : null,
-      prize: rec ? tsMoney(rec[2]) : 0
+      prize: rec ? tsMoney(rec[2]) : 0,
+      premioTicket,
+      satelite: tsCheiroSatelite(name)
     });
   }
   return rows;
@@ -1011,6 +1030,9 @@ const tsModalidade = (mods, bounty) => {
   if (bounty) return acha(/pko|bount|knock|\bko\b/i) || acha(/mtt|torneio|vanilla/i) || m[0];
   return acha(/vanilla/i) || acha(/^mtt$/i) || acha(/mtt|torneio/i) || m[0];
 };
+// torneio com CARA de satélite: é onde normalmente se entra (ou se ganha) bilhete. O arquivo do
+// site NÃO diz se a entrada foi paga com ticket, então isso é só um palpite pra sugerir a marcação.
+const tsCheiroSatelite = nome => /(^|\W)(step\s*\d|sat\b|satellite|sat[ée]lite|qualifier|classific|ticket|seat)/i.test(String(nome || ''));
 // nome comparável: "Daily Classic $3" e "daily classic 3" são o mesmo torneio
 const tsNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
@@ -2673,7 +2695,7 @@ function AddModal({
     fields.forEach(fd => {
       let v = editing ? editing[fd.k] : initial && initial[fd.k] != null ? initial[fd.k] : fd.def;
       if (v == null) v = fd.type === 'select' ? fd.opts[0] || '' : '';
-      if ((fd.type === 'money' || fd.type === 'int') && typeof v === 'number') v = String(v).replace('.', ',');
+      if (fd.type === 'toggle') v = !!v;else if ((fd.type === 'money' || fd.type === 'int') && typeof v === 'number') v = String(v).replace('.', ',');
       o[fd.k] = v;
     });
     return o;
@@ -2686,6 +2708,10 @@ function AddModal({
     const out = {};
     for (const fd of fields) {
       let v = f[fd.k];
+      if (fd.type === 'toggle') {
+        out[fd.k] = !!v;
+        continue;
+      }
       if (fd.type === 'money') v = parseValor(v);else if (fd.type === 'int') v = Math.round(parseValor(v));else if (typeof v === 'string') v = v.trim();
       out[fd.k] = v === '' ? null : v;
     }
@@ -2753,7 +2779,55 @@ function AddModal({
     s: 20
   }))), /*#__PURE__*/React.createElement("div", {
     className: "modalgrid"
-  }, fields.map(fd => /*#__PURE__*/React.createElement("div", {
+  }, fields.map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
+    key: fd.k,
+    type: "button",
+    className: fd.full ? 'full' : '',
+    onClick: () => set(fd.k, !f[fd.k]),
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '12px 14px',
+      borderRadius: 13,
+      cursor: 'pointer',
+      textAlign: 'left',
+      border: `1.5px solid ${f[fd.k] ? P : C.border}`,
+      background: f[fd.k] ? C.plumSoft : C.surface
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 20,
+      height: 20,
+      borderRadius: 6,
+      flexShrink: 0,
+      display: 'grid',
+      placeItems: 'center',
+      fontSize: 13,
+      fontWeight: 800,
+      border: `1.5px solid ${f[fd.k] ? P : C.border}`,
+      background: f[fd.k] ? P : 'transparent',
+      color: '#fff'
+    }
+  }, f[fd.k] ? '✓' : ''), /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13.5,
+      color: f[fd.k] ? P : C.ink
+    }
+  }, fd.label), fd.hint && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontSize: 11.5,
+      color: C.inkSoft,
+      lineHeight: 1.4,
+      marginTop: 1
+    }
+  }, fd.hint))) : /*#__PURE__*/React.createElement("div", {
     key: fd.k,
     className: fd.full ? 'full' : ''
   }, /*#__PURE__*/React.createElement("label", {
@@ -4408,7 +4482,17 @@ function TourRow({
         flexWrap: 'wrap',
         marginTop: 2
       }
-    }, "buy-in ", fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : '', t.final_position ? ` · ${t.final_position}º` : '', " ", st === 'FORA DA GRADE' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Badge, {
+    }, "buy-in ", fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : '', t.final_position ? ` · ${t.final_position}º` : '', t.ticket && /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '1px 7px',
+        borderRadius: 99,
+        background: C.plumSoft,
+        color: P,
+        fontWeight: 800,
+        fontSize: 10.5,
+        whiteSpace: 'nowrap'
+      }
+    }, "BILHETE"), st === 'FORA DA GRADE' && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Badge, {
       text: st
     }), /*#__PURE__*/React.createElement("span", {
       style: {
@@ -4959,7 +5043,7 @@ function WeekRow({
   solo
 }) {
   const wkTorn = w.entries.reduce((s, e) => s + num(e.qtd_torneios), 0);
-  const wkBuyins = w.entries.reduce((s, e) => s + num(e.total_buyins), 0);
+  const wkBuyins = w.entries.reduce((s, e) => s + (num(e.buyins_nominal) || num(e.total_buyins)), 0); // nível, não dinheiro
   const wkEnt = w.entries.reduce((s, e) => s + (num(e.qtd_entradas) || num(e.qtd_torneios)), 0);
   const wkAbi = wkEnt > 0 ? wkBuyins / wkEnt : 0,
     pAbi = abiMaxFor(config, player, w.week);
@@ -5066,14 +5150,16 @@ function AlertToaster({
     const s = new Set(seen);
     let mudou = false;
     alerts.forEach(a => {
-      if (!s.has(a.text)) {
+      const k = a.key || a.text;
+      if (!s.has(k)) {
         push({
+          key: k,
           tone: a.tone,
           title: a.tone === C.red ? 'Atenção na banca' : 'Aviso',
           text: a.text,
           items: a.items
         });
-        s.add(a.text);
+        s.add(k);
         mudou = true;
       }
     });
@@ -5082,8 +5168,178 @@ function AlertToaster({
         localStorage.setItem('gb_alerts_seen', JSON.stringify([...s].slice(-80)));
       } catch (e) {}
     }
-  }, [alerts.map(a => a.text).join('|')]);
+  }, [alerts.map(a => a.key || a.text).join('|')]);
   return null;
+}
+// bloco recolhível: o padrão pra tirar texto/gráfico da frente sem apagar a informação
+function Recolhivel({
+  titulo,
+  sub,
+  chip,
+  children,
+  aberto
+}) {
+  const [open, setOpen] = useState(!!aberto);
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: 'hidden'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setOpen(o => !o),
+    style: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '15px 18px',
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      textAlign: 'left'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0,
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 16,
+      fontWeight: 600
+    }
+  }, titulo), sub && /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontSize: 11.5,
+      color: C.inkSoft,
+      marginTop: 1
+    }
+  }, sub)), chip && /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: '3px 10px',
+      borderRadius: 99,
+      fontSize: 11,
+      fontWeight: 800,
+      color: C.inkSoft,
+      background: C.bg,
+      whiteSpace: 'nowrap'
+    }
+  }, chip), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft,
+      fontSize: 20,
+      transform: open ? 'rotate(90deg)' : 'none',
+      transition: 'transform .2s'
+    }
+  }, "\u203A")), open && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0 18px 18px'
+    }
+  }, children));
+}
+// resuminho de torneios: total jogado e a divisão por pessoa. Sem números demais de propósito.
+function ResumoTorneios({
+  tours,
+  players,
+  solo,
+  periodo,
+  abi
+}) {
+  const porP = players.map((p, i) => {
+    const ts = tours.filter(t => t.player === p);
+    return {
+      p,
+      i,
+      n: ts.length,
+      res: ts.reduce((s, t) => s + lucroTorneio(t), 0)
+    };
+  });
+  const dias = [...new Set(tours.map(t => t.entry_date))].length;
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'flex-end',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0,
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.inkSoft,
+      fontWeight: 800,
+      textTransform: 'uppercase',
+      letterSpacing: '.05em'
+    }
+  }, "Torneios jogados", periodo ? ` · ${periodo}` : ''), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 34,
+      fontWeight: 600,
+      lineHeight: 1.1
+    }
+  }, tours.length)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      textAlign: 'right',
+      flexShrink: 0,
+      lineHeight: 1.5
+    }
+  }, "em ", dias, " dia", dias !== 1 ? 's' : '', abi > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "ABI m\xE9dio ", fmt(abi)))), !solo && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 12,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 7
+    }
+  }, porP.map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.p,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      fontSize: 13.5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 9,
+      height: 9,
+      borderRadius: 99,
+      background: PLAYER_COLORS[x.i] || C.inkSoft,
+      flexShrink: 0
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      minWidth: 0,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, x.p), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft,
+      flexShrink: 0
+    }
+  }, x.n), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 'auto',
+      fontWeight: 800,
+      color: x.res >= 0 ? C.greenMid : C.red,
+      whiteSpace: 'nowrap'
+    }
+  }, x.res >= 0 ? '+' : '−', fmt(Math.abs(x.res)))))));
 }
 // "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
 function VerMais({
@@ -5357,9 +5613,10 @@ function Dashboard({
   const [toasts, setToasts] = useState([]); // avisos flutuantes (ex: fora da grade do outro jogador)
   const localIds = React.useRef(new Set()); // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq = React.useRef(0);
+  // mesma chave = mesmo aviso: troca o que está na tela em vez de empilhar dois pop-ups iguais
   const pushToast = t => {
     const id = ++seq.current;
-    setToasts(l => [...l, {
+    setToasts(l => [...(t.key ? l.filter(x => x.key !== t.key) : l), {
       ...t,
       id
     }]);
@@ -5877,9 +6134,9 @@ function Dashboard({
       vistos.add(k);
       return true;
     });
-    const semData = lidos.filter(r => !r.date || !(r.buyin > 0));
-    lidos = lidos.filter(r => r.date && r.buyin > 0).sort((a, b) => a.date === b.date ? a.tid < b.tid ? -1 : 1 : a.date < b.date ? -1 : 1);
-    if (semData.length) issues.push(`${semData.length} resumo(s) sem data ou sem buy-in legível — deixei de fora.`);
+    const semData = lidos.filter(r => !r.date); // freeroll (buy-in 0) é torneio de verdade e entra
+    lidos = lidos.filter(r => r.date).sort((a, b) => a.date === b.date ? a.tid < b.tid ? -1 : 1 : a.date < b.date ? -1 : 1);
+    if (semData.length) issues.push(`${semData.length} resumo(s) sem data legível — deixei de fora.`);
 
     // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
     // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
@@ -5901,7 +6158,10 @@ function Dashboard({
         reentries: r.reentries,
         field_size: r.field,
         final_position: r.position,
-        prize: r.prize
+        prize: r.premioTicket ? 0 : r.prize,
+        ticket: false,
+        // o arquivo do site não diz — quem marca é o jogador, na prévia
+        observacoes: r.premioTicket ? 'Premiação paga em bilhete (não entrou dinheiro).' : null
       };
       const jaTid = meus.find(t => String(t.site_tournament_id || '') === r.tid);
       if (jaTid) {
@@ -5943,6 +6203,25 @@ function Dashboard({
       }
     });
   };
+  // liga/desliga "entrei com bilhete" numa linha da prévia (o resumo do site não traz esse dado)
+  const marcarBilhete = tid => setTsImp(s => {
+    if (!s.preview) return s;
+    const vira = l => l.map(x => x.linha.site_tournament_id === tid ? {
+      ...x,
+      linha: {
+        ...x.linha,
+        ticket: !x.linha.ticket
+      }
+    } : x);
+    return {
+      ...s,
+      preview: {
+        ...s.preview,
+        novos: vira(s.preview.novos),
+        completa: vira(s.preview.completa)
+      }
+    };
+  });
   const salvarResumos = async () => {
     const pv = tsImp.preview;
     if (!pv) return;
@@ -5962,13 +6241,24 @@ function Dashboard({
           data,
           error
         } = await sb.from('tournaments').insert(chunk).select();
-        // 23505 = o índice único do id do torneio barrou: alguém já importou (outra aba/aparelho)
-        if (error) {
-          erros.push(error.code === '23505' ? 'Esses torneios já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.' : error.message);
-        } else {
+        if (!error) {
           inseridos += (data || []).length;
           setTours(t => [...(data || []), ...t]);
+          continue;
         }
+        // o bloco inteiro caiu por causa de UMA linha: repete um a um pra não perder o resto
+        let barrados = 0;
+        for (const row of chunk) {
+          const r1 = await sb.from('tournaments').insert(row).select();
+          if (r1.error) {
+            if (r1.error.code === '23505') barrados++;else if (erros.length < 3) erros.push(r1.error.message);
+          } else {
+            inseridos += (r1.data || []).length;
+            setTours(t => [...(r1.data || []), ...t]);
+          }
+        }
+        // 23505 = o índice único do id do torneio barrou: já tinha sido importado em outro lugar
+        if (barrados) erros.push(`${barrados} torneio(s) já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.`);
       }
     }
     for (const x of pv.completa) {
@@ -5983,7 +6273,8 @@ function Dashboard({
         reentries: x.linha.reentries,
         field_size: x.linha.field_size,
         final_position: x.linha.final_position,
-        prize: x.linha.prize
+        prize: x.linha.prize,
+        ticket: x.linha.ticket
       }).eq('id', x.atual.id).select().single();
       if (error) {
         erros.push(error.message);
@@ -6362,17 +6653,20 @@ function Dashboard({
   const alerts = [];
   if (!solo) players.forEach(p => {
     if (curMakeUp[p] > num(config.makeup_max_recomendado)) alerts.push({
+      key: 'makeup:' + p,
       tone: C.red,
       text: `Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`
     });
   });
   if (bancaAtual < piso) alerts.push({
+    key: 'piso',
     tone: C.red,
     text: `Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`
   });
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours = tours.filter(t => weekEnding(t.entry_date) === CURWK && num(t.buyin) > abiMaxFor(config, t.player, t.entry_date));
   if (foraGradeTours.length) alerts.push({
+    key: 'grade:' + CURWK,
     tone: C.red,
     text: `${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,
     items: foraGradeTours
@@ -6381,6 +6675,7 @@ function Dashboard({
     const r = curWeek[p] ? curWeek[p].resultado : 0;
     const lim = num(config.stoploss_weekly_pct) * bancaAtual;
     if (lim > 0 && r < 0 && r <= -lim) alerts.push({
+      key: 'slsem:' + p + ':' + CURWK,
       tone: C.red,
       text: `${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`
     });
@@ -6388,6 +6683,7 @@ function Dashboard({
   daily.filter(e => weekEnding(e.entry_date) === CURWK).forEach(e => {
     const sl = num(config.stoploss_daily_buyins) * abiMaxFor(config, e.player, e.entry_date);
     if (sl > 0 && resultadoDia(e) <= -sl) alerts.push({
+      key: 'sldia:' + e.player + ':' + e.entry_date,
       tone: C.red,
       text: `${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`
     });
@@ -6402,6 +6698,7 @@ function Dashboard({
     if (ultimo) {
       const dias = Math.round((Date.parse(todayISO()) - Date.parse(ultimo)) / 86400000);
       if (dias >= 2) alerts.push({
+        key: 'parado',
         tone: C.gold,
         text: `Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`
       });
@@ -6523,6 +6820,12 @@ function Dashboard({
       label: 'Premiação (US$)',
       type: 'money',
       def: '0'
+    }, {
+      k: 'ticket',
+      label: 'Entrei com bilhete',
+      type: 'toggle',
+      full: true,
+      hint: 'Ticket/T$ ganho antes. O buy-in conta como nível jogado, mas nenhum dinheiro sai da banca (já saiu no satélite).'
     }, {
       k: 'observacoes',
       label: 'Observações',
@@ -6701,8 +7004,10 @@ function Dashboard({
   const mPool = monthWeeks.reduce((s, w) => s + w.partePool, 0);
   const mTorneios = monthDaily.reduce((s, e) => s + num(e.qtd_torneios), 0);
   const mEntradas = monthDaily.reduce((s, e) => s + (num(e.qtd_entradas) || num(e.qtd_torneios)), 0);
-  const mBuyins = monthDaily.reduce((s, e) => s + num(e.total_buyins), 0);
-  const mAbi = mEntradas > 0 ? mBuyins / mEntradas : 0;
+  const mBuyins = monthDaily.reduce((s, e) => s + num(e.total_buyins), 0); // dinheiro investido
+  const mNominal = monthDaily.reduce((s, e) => s + (num(e.buyins_nominal) || num(e.total_buyins)), 0); // nível jogado
+  const mTickets = monthDaily.reduce((s, e) => s + num(e.tickets), 0);
+  const mAbi = mEntradas > 0 ? mNominal / mEntradas : 0;
   const mRoi = mBuyins > 0 ? mRes / mBuyins * 100 : 0;
   const dayResults = monthDaily.map(e => ({
     d: e.entry_date,
@@ -6715,12 +7020,13 @@ function Dashboard({
   const perPlayerMonth = players.map(p => {
     const ed = monthDaily.filter(e => e.player === p);
     const res = ed.reduce((s, e) => s + resultadoDia(e), 0);
-    const vol = ed.reduce((s, e) => s + num(e.total_buyins), 0);
+    const vol = ed.reduce((s, e) => s + num(e.total_buyins), 0); // dinheiro
+    const volNom = ed.reduce((s, e) => s + (num(e.buyins_nominal) || num(e.total_buyins)), 0); // nível
     const torneios = ed.reduce((s, e) => s + num(e.qtd_torneios), 0);
     const entradas = ed.reduce((s, e) => s + (num(e.qtd_entradas) || num(e.qtd_torneios)), 0);
     const premios = monthToursOf(p).reduce((s, t) => s + num(t.prize), 0);
     const cashes = monthToursOf(p).filter(t => num(t.prize) > 0).length;
-    const abi = entradas > 0 ? vol / entradas : 0;
+    const abi = entradas > 0 ? volNom / entradas : 0;
     const roi = vol > 0 ? res / vol * 100 : 0;
     const itm = torneios > 0 ? cashes / torneios * 100 : 0;
     const makeAberto = makeUpAt(p, month + '-31'); // make-up depois da última semana fechada até o fim do mês
@@ -6796,7 +7102,8 @@ function Dashboard({
     const res = dd.reduce((s, e) => s + resultadoDia(e), 0);
     const torneios = dd.reduce((s, e) => s + num(e.qtd_torneios), 0);
     const entradas = dd.reduce((s, e) => s + (num(e.qtd_entradas) || num(e.qtd_torneios)), 0);
-    const buyins = dd.reduce((s, e) => s + num(e.total_buyins), 0);
+    const buyins = dd.reduce((s, e) => s + num(e.total_buyins), 0); // dinheiro
+    const nominal = dd.reduce((s, e) => s + (num(e.buyins_nominal) || num(e.total_buyins)), 0); // nível
     const premios = diaryTours.reduce((s, t) => s + num(t.prize), 0);
     const cashes = diaryTours.filter(t => num(t.prize) > 0).length;
     return {
@@ -6805,7 +7112,8 @@ function Dashboard({
       entradas,
       buyins,
       premios,
-      abi: entradas > 0 ? buyins / entradas : 0,
+      tickets: dd.reduce((s, e) => s + num(e.tickets), 0),
+      abi: entradas > 0 ? nominal / entradas : 0,
       roi: buyins > 0 ? res / buyins * 100 : 0,
       itm: torneios > 0 ? cashes / torneios * 100 : 0,
       dias: [...new Set(dd.map(e => e.entry_date))].length
@@ -6975,7 +7283,7 @@ function Dashboard({
       cursor: 'pointer',
       flexShrink: 0
     }
-  }, "Assinar")), installCard && /*#__PURE__*/React.createElement(Card, {
+  }, "Assinar")), installCard && trialDaysLeft == null && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: '14px 16px',
       display: 'flex',
@@ -7098,7 +7406,49 @@ function Dashboard({
   }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), /*#__PURE__*/React.createElement(AlertToaster, {
     alerts: alerts,
     push: pushToast
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement(ResumoTorneios, {
+    tours: tours,
+    players: players,
+    solo: solo,
+    abi: tours.length ? tours.reduce((s, t) => s + nominalTorneio(t), 0) / tours.reduce((s, t) => s + 1 + num(t.reentries), 0) : 0
+  }), /*#__PURE__*/React.createElement(StopLossCard, {
+    players: players,
+    config: config,
+    daily: daily,
+    curWeek: curWeek,
+    bancaAtual: bancaAtual
+  }), foraGradeTours.length > 0 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setAlertDetail({
+      items: foraGradeTours
+    }),
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 9,
+      width: '100%',
+      textAlign: 'left',
+      cursor: 'pointer',
+      padding: '12px 15px',
+      borderRadius: 14,
+      border: `1.5px solid ${C.red}55`,
+      background: C.redSoft,
+      color: C.red,
+      fontWeight: 700,
+      fontSize: 13.5
+    }
+  }, /*#__PURE__*/React.createElement(IcoAlert, {
+    s: 17
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, foraGradeTours.length, " torneio", foraGradeTours.length !== 1 ? 's' : '', " fora da grade nesta semana"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 18,
+      flexShrink: 0
+    }
+  }, "\u203A")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
@@ -7132,37 +7482,11 @@ function Dashboard({
     label: solo ? 'Lucro acumulado' : 'Lucro da pool (acum.)',
     value: fmt(solo ? resTotalGeral : lucroPoolAcum),
     sub: solo ? 'desde o começo' : `pago em saques: ${fmt(totalPago)}`
-  }), solo && /*#__PURE__*/React.createElement(Stat, {
-    Icon: IcoTrophy,
-    tone: C.gold,
-    bg: C.goldSoft,
-    label: "Torneios jogados",
-    value: String(tours.length),
-    sub: `ABI médio ${fmt(tours.length ? tours.reduce((s, t) => s + totalInvestido(t), 0) / tours.reduce((s, t) => s + 1 + num(t.reentries), 0) : 0)}`
-  })), /*#__PURE__*/React.createElement(StopLossCard, {
-    players: players,
-    config: config,
-    daily: daily,
-    curWeek: curWeek,
-    bancaAtual: bancaAtual
-  }), !solo && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: {
-      fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 18,
-      fontWeight: 600,
-      margin: '0 0 4px'
-    }
-  }, "Divis\xE3o do dinheiro"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.inkSoft,
-      marginBottom: 12
-    }
-  }, "O que cada jogador tem autorizado e ainda n\xE3o sacou, e o que j\xE1 ficou pra pool. ", /*#__PURE__*/React.createElement("b", null, "\"A receber\""), " \xE9 o acumulado (autorizado \u2212 pago); o quanto d\xE1 pra sacar ", /*#__PURE__*/React.createElement("b", null, "agora"), " respeita o piso \u2014 veja \"Saque autorizado\" acima."), /*#__PURE__*/React.createElement("div", {
+  })), !solo && /*#__PURE__*/React.createElement(Recolhivel, {
+    titulo: "Divis\xE3o do dinheiro",
+    sub: "Acumulado autorizado e ainda n\xE3o sacado",
+    chip: fmt(players.reduce((s, p) => s + aReceber[p], 0))
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
@@ -7219,7 +7543,17 @@ function Dashboard({
       color: C.green,
       marginTop: 4
     }
-  }, fmt(lucroPoolAcum))))), /*#__PURE__*/React.createElement(Card, {
+  }, fmt(lucroPoolAcum))))), /*#__PURE__*/React.createElement(Recolhivel, {
+    titulo: "Gr\xE1ficos",
+    sub: "curva de lucro, banca, semana a semana e volume",
+    chip: `${solo ? 3 : 5} gráficos`
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -7236,7 +7570,7 @@ function Dashboard({
       color: C.inkSoft,
       marginBottom: 12
     }
-  }, "A curva de cada um ao longo do tempo. Passe o dedo pra ver os valores."), /*#__PURE__*/React.createElement(MultiLineChart, {
+  }, "Passe o dedo pra ver os valores."), /*#__PURE__*/React.createElement(MultiLineChart, {
     labels: lucroLabels,
     series: lucroSeries
   })), /*#__PURE__*/React.createElement("div", {
@@ -7306,7 +7640,7 @@ function Dashboard({
       name: 'Torneios',
       color: C.greenMid
     }]
-  })))), view === 'torneios' && (() => {
+  })))))), view === 'torneios' && (() => {
     const today = todayISO();
     const dates = [...new Set(tours.map(t => t.entry_date))].sort((a, b) => a < b ? 1 : -1);
     const past = dates.filter(d => d !== today);
@@ -7330,7 +7664,7 @@ function Dashboard({
         color: C.inkSoft,
         fontWeight: 600
       }
-    }, "Lan\xE7a torneio a torneio \xB7 o Di\xE1rio e a banca se ajustam sozinhos"), /*#__PURE__*/React.createElement("div", {
+    }, "O Di\xE1rio e a banca se ajustam sozinhos"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 24,
@@ -7356,42 +7690,39 @@ function Dashboard({
       }
     }, /*#__PURE__*/React.createElement(IcoPlus, {
       s: 18
-    }), "Adicionar")), /*#__PURE__*/React.createElement(Card, {
+    }), "Adicionar")), /*#__PURE__*/React.createElement(ResumoTorneios, {
+      tours: tours,
+      players: players,
+      solo: solo
+    }), /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 18
       }
-    }, /*#__PURE__*/React.createElement("h3", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0,
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 17,
-        fontWeight: 600,
-        margin: '0 0 4px'
+        fontWeight: 600
       }
-    }, "Importar do site (sem digitar)"), /*#__PURE__*/React.createElement("div", {
+    }, "Importar do site"), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft,
-        marginBottom: 10,
-        lineHeight: 1.5
+        marginTop: 1
       }
-    }, "Baixe os ", /*#__PURE__*/React.createElement("b", null, "resumos de torneio"), " do dia e solte aqui \u2014 pode ser a pasta inteira ou o .zip. O sistema l\xEA nome, buy-in, re-entries, field, posi\xE7\xE3o e premia\xE7\xE3o de cada um. Voc\xEA ", /*#__PURE__*/React.createElement("b", null, "confere antes de salvar"), ", e reimportar a mesma pasta n\xE3o duplica nada."), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        gap: 10,
-        flexWrap: 'wrap',
-        alignItems: 'flex-end'
-      }
-    }, !solo && /*#__PURE__*/React.createElement(Seg, {
-      label: "De quem s\xE3o os arquivos",
-      value: impPlayer || players[0],
-      options: players,
-      onChange: setImpPlayer
-    }), sites.length > 1 && /*#__PURE__*/React.createElement(Seg, {
-      label: "Site",
-      value: tsSite,
-      options: ['Detectar', ...sites],
-      onChange: setTsSite
-    }), /*#__PURE__*/React.createElement("input", {
+    }, "Solte os resumos do dia \u2014 sem digitar nada.")), /*#__PURE__*/React.createElement("input", {
       id: "tsfile",
       type: "file",
       multiple: true,
@@ -7417,11 +7748,30 @@ function Dashboard({
         fontWeight: 700,
         fontSize: 14,
         cursor: tsImp.busy ? 'default' : 'pointer',
-        pointerEvents: tsImp.busy ? 'none' : 'auto'
+        pointerEvents: tsImp.busy ? 'none' : 'auto',
+        flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement(IcoPlus, {
       s: 16
-    }), tsImp.busy ? 'Lendo…' : 'Escolher arquivos')), tsImp.busy && /*#__PURE__*/React.createElement("div", {
+    }), tsImp.busy ? 'Lendo…' : 'Escolher arquivos')), (!solo || sites.length > 1) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 10,
+        flexWrap: 'wrap',
+        alignItems: 'flex-end',
+        marginTop: 12
+      }
+    }, !solo && /*#__PURE__*/React.createElement(Seg, {
+      label: "De quem",
+      value: impPlayer || players[0],
+      options: players,
+      onChange: setImpPlayer
+    }), sites.length > 1 && /*#__PURE__*/React.createElement(Seg, {
+      label: "Site",
+      value: tsSite,
+      options: ['Detectar', ...sites],
+      onChange: setTsSite
+    })), tsImp.busy && /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10,
         fontSize: 12.5,
@@ -7445,14 +7795,24 @@ function Dashboard({
       }
     }, tsImp.res.erros.map((x, i) => /*#__PURE__*/React.createElement("div", {
       key: i
-    }, "\u2022 ", x)))), /*#__PURE__*/React.createElement("div", {
+    }, "\u2022 ", x))))), /*#__PURE__*/React.createElement(Recolhivel, {
+      titulo: "Onde pego esse arquivo?",
+      sub: "GG \xB7 WPT \xB7 PokerStars"
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 12.5,
         color: C.inkSoft,
-        marginTop: 10,
-        lineHeight: 1.5
+        lineHeight: 1.6
       }
-    }, "\u2139\uFE0F ", /*#__PURE__*/React.createElement("b", null, "GG / WPT"), ": PokerCraft \u2192 o arquivo de ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " (o resultado do torneio). ", /*#__PURE__*/React.createElement("b", null, "PokerStars"), ": o resumo que chega por e-mail ou o do hist\xF3rico. Os arquivos de ", /*#__PURE__*/React.createElement("b", null, "m\xE3os"), " (hand history) v\xE3o na aba Stats \u2014 l\xE1 eles viram estat\xEDstica de jogo.")), /*#__PURE__*/React.createElement(DayCard, {
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "GG e WPT:"), " PokerCraft \u2192 o ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " do torneio (o resultado, n\xE3o as m\xE3os). Pode mandar a pasta toda ou o .zip.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "PokerStars:"), " o resumo que chega por e-mail, ou o do hist\xF3rico local.", /*#__PURE__*/React.createElement("br", null), "O sistema l\xEA nome, buy-in, re-entries, field, coloca\xE7\xE3o e premia\xE7\xE3o \u2014 voc\xEA ", /*#__PURE__*/React.createElement("b", null, "confere antes de salvar"), " e reimportar a mesma pasta n\xE3o duplica nada.", /*#__PURE__*/React.createElement("br", null), "Os arquivos de ", /*#__PURE__*/React.createElement("b", null, "m\xE3os"), " (hand history) v\xE3o na aba ", /*#__PURE__*/React.createElement("b", null, "Stats"), ", n\xE3o aqui.")), /*#__PURE__*/React.createElement(DayCard, {
       today: true,
       date: today,
       dayTours: tours.filter(t => t.entry_date === today),
@@ -10779,7 +11139,8 @@ function Dashboard({
       const pT = tours.filter(t => t.player === sp2);
       const pDias = [...new Set(pT.map(t => t.entry_date))].sort();
       const pWeeks = weeksByPlayer[sp2] || [];
-      const pInv = pT.reduce((s, t) => s + totalInvestido(t), 0);
+      const pInv = pT.reduce((s, t) => s + totalInvestido(t), 0); // dinheiro
+      const pNom = pT.reduce((s, t) => s + nominalTorneio(t), 0); // nível (ABI)
       const pPrem = pT.reduce((s, t) => s + num(t.prize), 0);
       const pRes = pPrem - pInv;
       const pEntr = pT.reduce((s, t) => s + 1 + num(t.reentries), 0);
@@ -10905,7 +11266,7 @@ function Dashboard({
         tone: pRes >= 0 ? C.greenMid : C.red
       }), /*#__PURE__*/React.createElement(Big, {
         label: "ABI m\xE9dio",
-        value: pEntr > 0 ? fmt(pInv / pEntr) : '—'
+        value: pEntr > 0 ? fmt(pNom / pEntr) : '—'
       }), /*#__PURE__*/React.createElement(Big, {
         label: "ITM",
         value: pT.length ? pctFmt(pCash / pT.length * 100) : '—'
@@ -11243,7 +11604,9 @@ function Dashboard({
   }, "Entendi"))), tsImp.preview && (() => {
     const pv = tsImp.preview,
       entrando = [...pv.novos, ...pv.completa];
-    const inv = entrando.reduce((s, x) => s + x.linha.buyin * (1 + x.linha.reentries), 0);
+    const inv = entrando.reduce((s, x) => s + (x.linha.ticket ? 0 : x.linha.buyin * (1 + x.linha.reentries)), 0);
+    const nBilhete = entrando.filter(x => x.linha.ticket).length;
+    const nSat = entrando.filter(x => !x.linha.ticket && x.r.satelite).length;
     const prem = entrando.reduce((s, x) => s + x.linha.prize, 0);
     const dias = [...new Set(entrando.map(x => x.linha.entry_date))].sort();
     const nada = entrando.length === 0;
@@ -11406,7 +11769,24 @@ function Dashboard({
         background: C.bg,
         color: C.inkSoft
       }
-    }, pv.repetidos.length, " j\xE1 no sistema")), pv.fora.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, pv.repetidos.length, " j\xE1 no sistema"), nBilhete > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '4px 10px',
+        borderRadius: 99,
+        background: C.plumSoft,
+        color: P
+      }
+    }, "\uD83C\uDF9F ", nBilhete, " com bilhete")), nSat > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '9px 11px',
+        borderRadius: 12,
+        background: C.goldSoft,
+        fontSize: 12,
+        color: C.ink,
+        marginBottom: 12,
+        lineHeight: 1.5
+      }
+    }, "\uD83C\uDF9F ", /*#__PURE__*/React.createElement("b", null, nSat, " com cara de sat\xE9lite."), " O arquivo do site n\xE3o diz se voc\xEA entrou com bilhete \u2014 se entrou, toque no \uD83C\uDF9F da linha pra n\xE3o contar o buy-in duas vezes."), pv.fora.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         padding: '10px 12px',
         borderRadius: 12,
@@ -11418,7 +11798,7 @@ function Dashboard({
       }
     }, "\u26A0\uFE0F ", /*#__PURE__*/React.createElement("b", null, pv.fora.length, " torneio", pv.fora.length !== 1 ? 's' : '', " fora da grade"), " (", pv.fora.map(x => fmt(x.linha.buyin)).filter((v, i, a) => a.indexOf(v) === i).join(', '), " \xB7 teto ", fmt(abiMaxFor(config, pv.player, pv.fora[0].linha.entry_date)), "). V\xE3o entrar assim mesmo \u2014 o registro \xE9 do que aconteceu."), dias.map(d => {
       const doDia = entrando.filter(x => x.linha.entry_date === d);
-      const rd = doDia.reduce((s, x) => s + x.linha.prize - x.linha.buyin * (1 + x.linha.reentries), 0);
+      const rd = doDia.reduce((s, x) => s + x.linha.prize - (x.linha.ticket ? 0 : x.linha.buyin * (1 + x.linha.reentries)), 0);
       return /*#__PURE__*/React.createElement("div", {
         key: d,
         style: {
@@ -11484,7 +11864,20 @@ function Dashboard({
           fontSize: 11.5,
           color: C.inkSoft
         }
-      }, "buy-in ", fmt(x.linha.buyin), x.linha.reentries > 0 ? ` · ${x.linha.reentries} re-entry${x.linha.reentries !== 1 ? 's' : ''}` : '', " \xB7 ", x.linha.modality, " \xB7 ", x.linha.final_position ? `${x.linha.final_position}º de ${x.linha.field_size}` : `${x.linha.field_size} jogadores`)), /*#__PURE__*/React.createElement("span", {
+      }, "buy-in ", fmt(x.linha.buyin), x.linha.reentries > 0 ? ` · ${x.linha.reentries} re-entry${x.linha.reentries !== 1 ? 's' : ''}` : '', " \xB7 ", x.linha.modality, " \xB7 ", x.linha.final_position ? `${x.linha.final_position}º de ${x.linha.field_size}` : `${x.linha.field_size} jogadores`), /*#__PURE__*/React.createElement("button", {
+        onClick: () => marcarBilhete(x.linha.site_tournament_id),
+        style: {
+          marginTop: 4,
+          padding: '3px 9px',
+          borderRadius: 99,
+          cursor: 'pointer',
+          fontSize: 10.5,
+          fontWeight: 800,
+          border: `1.5px solid ${x.linha.ticket ? P : x.r.satelite ? C.gold : C.border}`,
+          background: x.linha.ticket ? C.plumSoft : 'transparent',
+          color: x.linha.ticket ? P : x.r.satelite ? C.gold : C.inkSoft
+        }
+      }, x.linha.ticket ? '🎟 BILHETE · não saiu dinheiro' : x.r.satelite ? '🎟 parece satélite — entrou com bilhete?' : '🎟 entrei com bilhete')), /*#__PURE__*/React.createElement("span", {
         style: {
           fontWeight: 800,
           fontSize: 13.5,

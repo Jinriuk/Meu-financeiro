@@ -72,10 +72,15 @@ create table if not exists public.tournaments (
   final_position int,
   prize numeric not null default 0,
   observacoes text,
+  -- id do torneio no site (GG "Tournament #301071014"): permite importar o resumo do torneio
+  -- sem duplicar o que já foi lançado, e reimportar a mesma pasta sem medo
+  site_tournament_id text,
+  -- entrada paga com BILHETE (ticket/T$ ganho num satélite): conta como nível jogado, mas
+  -- nenhum dinheiro sai da banca — o custo já foi pago quando o satélite foi jogado
+  ticket boolean not null default false,
   created_by uuid references auth.users(id) default auth.uid(),
   created_at timestamptz not null default now()
 );
-
 -- ---------- Banca central (ledger) ----------
 create table if not exists public.bankroll_ledger (
   id uuid primary key default gen_random_uuid(),
@@ -378,6 +383,11 @@ drop index if exists pool_config_single_row;
 create unique index if not exists pool_config_one_per_ws on public.pool_config (workspace_id);
 alter table public.hh_tournament_stats drop constraint if exists hh_tournament_stats_player_site_site_tournament_id_key;
 create unique index if not exists hh_stats_ws_key on public.hh_tournament_stats (workspace_id, player, site, site_tournament_id);
+-- import de resumo de torneio sem duplicar: dois jogadores da pool podem jogar o MESMO
+-- torneio, então a chave inclui o jogador. Parcial: lançamento manual (sem id) não entra.
+create unique index if not exists tournaments_site_tid_uniq
+  on public.tournaments (workspace_id, player, site, site_tournament_id)
+  where site_tournament_id is not null;
 alter table public.player_wallets drop constraint if exists player_wallets_player_wallet_key;
 create unique index if not exists player_wallets_ws_key on public.player_wallets (workspace_id, player, wallet);
 

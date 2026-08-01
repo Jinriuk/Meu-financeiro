@@ -102,13 +102,21 @@ function downloadCSV(name,rows){
 // resultado do dia: se veio derivado dos torneios usa e.resultado; senão cai na fórmula antiga (compat)
 const resultadoDia = e => e.resultado!=null ? num(e.resultado) : num(e.saldo_final)+num(e.saque)-num(e.saldo_inicial)-num(e.deposito);
 // ABI médio = investido / nº de entradas (re-entry conta como entrada); mede o nível de buy-in
-const abiMedioDia  = e => { const ent=num(e.qtd_entradas)||num(e.qtd_torneios); return ent>0 ? num(e.total_buyins)/ent : 0; };
+// ABI = nível médio enfrentado -> usa o buy-in NOMINAL (bilhete conta o valor cheio).
+// O ||total_buyins é compatibilidade com linha antiga do Diário, que só tinha o campo de dinheiro.
+const abiMedioDia  = e => { const ent=num(e.qtd_entradas)||num(e.qtd_torneios); return ent>0 ? (num(e.buyins_nominal)||num(e.total_buyins))/ent : 0; };
 function gradeStatus(e, abiMax){
   if(num(e.maior_buyin) > abiMax) return 'FORA DA GRADE';
   if((num(e.qtd_entradas)||num(e.qtd_torneios))>0 && abiMedioDia(e) >= abiMax*0.9) return 'ATENÇÃO';
   return 'OK';
 }
-const totalInvestido = t => num(t.buyin)*(1+num(t.reentries));
+/* Dois números que costumavam ser um só:
+   · NOMINAL = o nível que o jogador enfrentou (define ABI, grade e stop loss em buy-ins)
+   · INVESTIDO = o dinheiro que realmente saiu da banca
+   Entrada por BILHETE (ticket/T$ ganho num satélite) tem nominal cheio e investido zero — o
+   custo já foi pago quando o satélite foi jogado; contar de novo seria cobrar duas vezes. */
+const nominalTorneio = t => num(t.buyin)*(1+num(t.reentries));
+const totalInvestido = t => t.ticket ? 0 : nominalTorneio(t);
 const lucroTorneio   = t => num(t.prize)-totalInvestido(t);
 // ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido.
 // Com `date`, devolve o ABI vigente NAQUELE dia: desfaz as mudanças registradas depois dele —
@@ -129,12 +137,14 @@ function deriveDaily(tours){
   const map={};
   tours.forEach(t=>{
     const k=t.player+'|'+t.entry_date;
-    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:t.player, qtd_torneios:0, qtd_entradas:0, total_buyins:0, maior_buyin:0, maior_premiacao:0, resultado:0};
+    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:t.player, qtd_torneios:0, qtd_entradas:0, total_buyins:0, buyins_nominal:0, tickets:0, maior_buyin:0, maior_premiacao:0, resultado:0};
     const m=map[k], inv=totalInvestido(t);
     m.qtd_torneios+=1;
     m.qtd_entradas+=1+num(t.reentries);
-    m.total_buyins+=inv;
-    m.maior_buyin=Math.max(m.maior_buyin, num(t.buyin));
+    m.total_buyins+=inv;                        // dinheiro que saiu (bilhete não soma)
+    m.buyins_nominal+=nominalTorneio(t);        // nível enfrentado (bilhete soma cheio)
+    if(t.ticket) m.tickets+=1;
+    m.maior_buyin=Math.max(m.maior_buyin, num(t.buyin));   // grade julga pelo nível, não pelo custo
     m.maior_premiacao=Math.max(m.maior_premiacao, num(t.prize));
     m.resultado+=num(t.prize)-inv;
   });
@@ -438,13 +448,14 @@ function parseSummaries(text){
   // um arquivo pode trazer vários resumos colados (transcript por e-mail do PokerStars)
   const blocks=String(text||'').replace(/\f/g,'\n').split(/(?=^(?:PokerStars |GGPoker )?Tournament #\d+[,\s])/m).filter(b=>/Tournament #\d+/.test(b));
   for(const b of blocks){
-    const head=b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+),\s*(.*)$/m);
+    const head=b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+)(?:,\s*(.*))?$/m);
     if(!head) continue;
     // cabeçalho GG: "Bounty Hunters Special $5.40, Hold'em No Limit" · PS às vezes só traz o jogo
-    const parts=head[2].split(',').map(x=>x.trim()).filter(Boolean);
+    const parts=String(head[2]||'').split(',').map(x=>x.trim()).filter(Boolean);
     const GAME=/(hold\s*'?em|omaha|stud|razz|badugi|draw|\baof\b)/i;
     let game=null;
-    if(parts.length&&GAME.test(parts[parts.length-1])) game=parts.pop();
+    // só tira o último pedaço se sobrar nome: "Omaha Special" sozinho é NOME, não modalidade
+    if(parts.length>1&&GAME.test(parts[parts.length-1])) game=parts.pop();
     const name=parts.join(', ')||null;
     const bi=b.match(/^Buy-?[Ii]n:\s*(.+)$/m);
     // GG separa por "+", PokerStars por "/" — somamos todas as parcelas ($base, taxa e bounty)
@@ -454,6 +465,10 @@ function parseSummaries(text){
     const pos=b.match(/You finished (?:the tournament )?in (\d+)(?:st|nd|rd|th)? place/i);
     const rec=b.match(/You (?:made (\d+) re-?(?:entries|entry|buys|buy) and )?received a total of \$\s?([\d.,]+)/i);
     const re2=b.match(/You made (\d+) re-?(?:entries|entry|buys|buy)/i);
+    // prêmio pago em BILHETE (satélite): não é dinheiro na banca — vira 0 e fica na observação.
+    // Olha SÓ a linha do "You received": torneio chamado "... Ticket ..." não pode zerar prêmio.
+    const linhaRec=(b.match(/^You .*received.*$/im)||[''])[0];
+    const premioTicket=/ticket/i.test(linhaRec)&&!rec;
     // PKO: o buy-in vem em 3 parcelas ($prêmio + taxa + bounty) ou o nome anuncia a bounty
     const bounty=pedacos.length>=3||/bounty|knockout|\bko\b|progressive|mystery/i.test((name||'')+' '+(game||''));
     rows.push({
@@ -465,6 +480,7 @@ function parseSummaries(text){
       date:dt?`${dt[1]}-${dt[2]}-${dt[3]}`:null,
       position:pos?parseInt(pos[1],10):null,
       prize:rec?tsMoney(rec[2]):0,
+      premioTicket, satelite:tsCheiroSatelite(name),
     });
   }
   return rows;
@@ -476,6 +492,9 @@ const tsModalidade=(mods,bounty)=>{
   if(bounty) return acha(/pko|bount|knock|\bko\b/i)||acha(/mtt|torneio|vanilla/i)||m[0];
   return acha(/vanilla/i)||acha(/^mtt$/i)||acha(/mtt|torneio/i)||m[0];
 };
+// torneio com CARA de satélite: é onde normalmente se entra (ou se ganha) bilhete. O arquivo do
+// site NÃO diz se a entrada foi paga com ticket, então isso é só um palpite pra sugerir a marcação.
+const tsCheiroSatelite = nome => /(^|\W)(step\s*\d|sat\b|satellite|sat[ée]lite|qualifier|classific|ticket|seat)/i.test(String(nome||''));
 // nome comparável: "Daily Classic $3" e "daily classic 3" são o mesmo torneio
 const tsNorm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
@@ -924,7 +943,8 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
     fields.forEach(fd=>{
       let v = editing ? editing[fd.k] : (initial && initial[fd.k]!=null ? initial[fd.k] : fd.def);
       if(v==null) v = fd.type==='select' ? (fd.opts[0]||'') : '';
-      if((fd.type==='money'||fd.type==='int') && typeof v==='number') v=String(v).replace('.',',');
+      if(fd.type==='toggle') v=!!v;
+      else if((fd.type==='money'||fd.type==='int') && typeof v==='number') v=String(v).replace('.',',');
       o[fd.k]=v;
     });
     return o;
@@ -934,6 +954,7 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
     const out={};
     for(const fd of fields){
       let v=f[fd.k];
+      if(fd.type==='toggle'){ out[fd.k]=!!v; continue; }
       if(fd.type==='money') v=parseValor(v);
       else if(fd.type==='int') v=Math.round(parseValor(v));
       else if(typeof v==='string') v=v.trim();
@@ -951,7 +972,16 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
           <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div className="modalgrid">
-          {fields.map(fd=><div key={fd.k} className={fd.full?'full':''}>
+          {fields.map(fd=>fd.type==='toggle'
+            ? <button key={fd.k} type="button" className={fd.full?'full':''} onClick={()=>set(fd.k,!f[fd.k])}
+                style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:13,cursor:'pointer',textAlign:'left',
+                  border:`1.5px solid ${f[fd.k]?P:C.border}`,background:f[fd.k]?C.plumSoft:C.surface}}>
+                <span style={{width:20,height:20,borderRadius:6,flexShrink:0,display:'grid',placeItems:'center',fontSize:13,fontWeight:800,
+                  border:`1.5px solid ${f[fd.k]?P:C.border}`,background:f[fd.k]?P:'transparent',color:'#fff'}}>{f[fd.k]?'✓':''}</span>
+                <span style={{minWidth:0}}><span style={{fontWeight:700,fontSize:13.5,color:f[fd.k]?P:C.ink}}>{fd.label}</span>
+                {fd.hint&&<span style={{display:'block',fontSize:11.5,color:C.inkSoft,lineHeight:1.4,marginTop:1}}>{fd.hint}</span>}</span>
+              </button>
+            : <div key={fd.k} className={fd.full?'full':''}>
             <label style={labelStyle}>{fd.label}</label>
             {fd.type==='select' ? <Select value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)} opts={fd.opts}/>
               : fd.type==='date' ? <input type="date" style={inputStyle} value={f[fd.k]} onChange={e=>set(fd.k,e.target.value)}/>
@@ -1360,7 +1390,9 @@ function TourRow({t,config,players,onEdit,onDelete}){
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
-      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''} {st==='FORA DA GRADE'&&<><Badge text={st}/><span style={{color:C.red,fontWeight:700}}>buy-in {fmt(t.buyin)} · teto {fmt(abiMax)}</span></>}</div></div></>}
+      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''}
+        {t.ticket&&<span style={{padding:'1px 7px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>BILHETE</span>}
+        {st==='FORA DA GRADE'&&<><Badge text={st}/><span style={{color:C.red,fontWeight:700}}>buy-in {fmt(t.buyin)} · teto {fmt(abiMax)}</span></>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
@@ -1468,7 +1500,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
 // linha de uma semana (por jogador) no Semanal — SEM status de saque (isso só aparece na aba Saques)
 function WeekRow({w,player,config,solo}){
   const wkTorn=w.entries.reduce((s,e)=>s+num(e.qtd_torneios),0);
-  const wkBuyins=w.entries.reduce((s,e)=>s+num(e.total_buyins),0);
+  const wkBuyins=w.entries.reduce((s,e)=>s+(num(e.buyins_nominal)||num(e.total_buyins)),0);  // nível, não dinheiro
   const wkEnt=w.entries.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
   const wkAbi=wkEnt>0?wkBuyins/wkEnt:0, pAbi=abiMaxFor(config,player,w.week);
   return <div style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
@@ -1492,10 +1524,50 @@ function AlertToaster({alerts,push}){
     if(!alerts.length) return;
     let seen=[]; try{ seen=JSON.parse(localStorage.getItem('gb_alerts_seen')||'[]'); }catch(e){}
     const s=new Set(seen); let mudou=false;
-    alerts.forEach(a=>{ if(!s.has(a.text)){ push({tone:a.tone,title:a.tone===C.red?'Atenção na banca':'Aviso',text:a.text,items:a.items}); s.add(a.text); mudou=true; } });
+    alerts.forEach(a=>{ const k=a.key||a.text; if(!s.has(k)){ push({key:k,tone:a.tone,title:a.tone===C.red?'Atenção na banca':'Aviso',text:a.text,items:a.items}); s.add(k); mudou=true; } });
     if(mudou){ try{ localStorage.setItem('gb_alerts_seen',JSON.stringify([...s].slice(-80))); }catch(e){} }
-  },[alerts.map(a=>a.text).join('|')]);
+  },[alerts.map(a=>a.key||a.text).join('|')]);
   return null;
+}
+// bloco recolhível: o padrão pra tirar texto/gráfico da frente sem apagar a informação
+function Recolhivel({titulo,sub,chip,children,aberto}){
+  const [open,setOpen]=useState(!!aberto);
+  return <Card style={{padding:0,overflow:'hidden'}}>
+    <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+      <span style={{minWidth:0,flex:1}}>
+        <span style={{display:'block',fontFamily:"'Space Grotesk',sans-serif",fontSize:16,fontWeight:600}}>{titulo}</span>
+        {sub&&<span style={{display:'block',fontSize:11.5,color:C.inkSoft,marginTop:1}}>{sub}</span>}
+      </span>
+      {chip&&<span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:C.inkSoft,background:C.bg,whiteSpace:'nowrap'}}>{chip}</span>}
+      <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+    </button>
+    {open&&<div style={{padding:'0 18px 18px'}}>{children}</div>}
+  </Card>;
+}
+// resuminho de torneios: total jogado e a divisão por pessoa. Sem números demais de propósito.
+function ResumoTorneios({tours,players,solo,periodo,abi}){
+  const porP=players.map((p,i)=>{
+    const ts=tours.filter(t=>t.player===p);
+    return {p,i,n:ts.length,res:ts.reduce((s,t)=>s+lucroTorneio(t),0)};
+  });
+  const dias=[...new Set(tours.map(t=>t.entry_date))].length;
+  return <Card style={{padding:18}}>
+    <div style={{display:'flex',alignItems:'flex-end',gap:12}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontSize:11,color:C.inkSoft,fontWeight:800,textTransform:'uppercase',letterSpacing:'.05em'}}>Torneios jogados{periodo?` · ${periodo}`:''}</div>
+        <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:34,fontWeight:600,lineHeight:1.1}}>{tours.length}</div>
+      </div>
+      <div style={{fontSize:12,color:C.inkSoft,textAlign:'right',flexShrink:0,lineHeight:1.5}}>em {dias} dia{dias!==1?'s':''}{abi>0&&<><br/>ABI médio {fmt(abi)}</>}</div>
+    </div>
+    {!solo&&<div style={{marginTop:12,display:'flex',flexDirection:'column',gap:7}}>
+      {porP.map(x=><div key={x.p} style={{display:'flex',alignItems:'center',gap:8,fontSize:13.5}}>
+        <span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[x.i]||C.inkSoft,flexShrink:0}}/>
+        <span style={{fontWeight:700,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.p}</span>
+        <span style={{color:C.inkSoft,flexShrink:0}}>{x.n}</span>
+        <span style={{marginLeft:'auto',fontWeight:800,color:x.res>=0?C.greenMid:C.red,whiteSpace:'nowrap'}}>{x.res>=0?'+':'−'}{fmt(Math.abs(x.res))}</span>
+      </div>)}
+    </div>}
+  </Card>;
 }
 // "Ver mais": paginação das listas longas (Torneios/Diário) — mostra em blocos em vez do pancadão
 function VerMais({resta,bloco,onClick,rotulo}){
@@ -1586,7 +1658,8 @@ function Dashboard({session,profile}){
   const [toasts,setToasts]=useState([]);        // avisos flutuantes (ex: fora da grade do outro jogador)
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
-  const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...l,{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
+  // mesma chave = mesmo aviso: troca o que está na tela em vez de empilhar dois pop-ups iguais
+  const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...(t.key?l.filter(x=>x.key!==t.key):l),{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair=()=>{ try{ localStorage.removeItem('gb_signup'); }catch(e){} sb.auth.signOut(); };
 
@@ -1836,9 +1909,9 @@ function Dashboard({session,profile}){
     if(maos) issues.unshift(`${maos} arquivo${maos!==1?'s':''} de MÃOS (hand history) — esse${maos!==1?'s':''} vai${maos!==1?'o':''} na aba Stats. Aqui entra o resumo do torneio (o resultado).`);
     // mesmo torneio em dois arquivos: fica um só
     const vistos=new Set(); lidos=lidos.filter(r=>{ const k=r.tid; if(vistos.has(k)) return false; vistos.add(k); return true; });
-    const semData=lidos.filter(r=>!r.date||!(r.buyin>0));
-    lidos=lidos.filter(r=>r.date&&r.buyin>0).sort((a,b)=>a.date===b.date?(a.tid<b.tid?-1:1):(a.date<b.date?-1:1));
-    if(semData.length) issues.push(`${semData.length} resumo(s) sem data ou sem buy-in legível — deixei de fora.`);
+    const semData=lidos.filter(r=>!r.date);   // freeroll (buy-in 0) é torneio de verdade e entra
+    lidos=lidos.filter(r=>r.date).sort((a,b)=>a.date===b.date?(a.tid<b.tid?-1:1):(a.date<b.date?-1:1));
+    if(semData.length) issues.push(`${semData.length} resumo(s) sem data legível — deixei de fora.`);
 
     // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
     // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
@@ -1852,7 +1925,9 @@ function Dashboard({session,profile}){
         tournament_name:r.name||('Torneio #'+r.tid),
         modality:tsModalidade(modalidades,r.bounty),
         buyin:r.buyin, reentries:r.reentries, field_size:r.field,
-        final_position:r.position, prize:r.prize,
+        final_position:r.position, prize:r.premioTicket?0:r.prize,
+        ticket:false,   // o arquivo do site não diz — quem marca é o jogador, na prévia
+        observacoes:r.premioTicket?'Premiação paga em bilhete (não entrou dinheiro).':null,
       };
       const jaTid=meus.find(t=>String(t.site_tournament_id||'')===r.tid);
       if(jaTid){ repetidos.push({r,linha,atual:jaTid}); continue; }
@@ -1865,6 +1940,12 @@ function Dashboard({session,profile}){
     const fora=[...novos,...completa].filter(x=>x.linha.buyin>abiMaxFor(config,player,x.linha.entry_date));
     setTsImp({busy:false,prog:'',res:null,preview:{player,novos,completa,repetidos,issues,fora,arquivos:textos.length}});
   };
+  // liga/desliga "entrei com bilhete" numa linha da prévia (o resumo do site não traz esse dado)
+  const marcarBilhete = tid => setTsImp(s=>{
+    if(!s.preview) return s;
+    const vira=l=>l.map(x=>x.linha.site_tournament_id===tid?{...x,linha:{...x.linha,ticket:!x.linha.ticket}}:x);
+    return {...s,preview:{...s.preview,novos:vira(s.preview.novos),completa:vira(s.preview.completa)}};
+  });
   const salvarResumos = async ()=>{
     const pv=tsImp.preview; if(!pv) return;
     setTsImp(s=>({...s,busy:true,prog:'Salvando…'}));
@@ -1874,9 +1955,16 @@ function Dashboard({session,profile}){
       for(let i=0;i<pv.novos.length;i+=100){
         const chunk=pv.novos.slice(i,i+100).map(x=>x.linha);
         const {data,error}=await sb.from('tournaments').insert(chunk).select();
-        // 23505 = o índice único do id do torneio barrou: alguém já importou (outra aba/aparelho)
-        if(error){ erros.push(error.code==='23505'?'Esses torneios já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.':error.message); }
-        else { inseridos+=(data||[]).length; setTours(t=>[...(data||[]),...t]); }
+        if(!error){ inseridos+=(data||[]).length; setTours(t=>[...(data||[]),...t]); continue; }
+        // o bloco inteiro caiu por causa de UMA linha: repete um a um pra não perder o resto
+        let barrados=0;
+        for(const row of chunk){
+          const r1=await sb.from('tournaments').insert(row).select();
+          if(r1.error){ if(r1.error.code==='23505') barrados++; else if(erros.length<3) erros.push(r1.error.message); }
+          else { inseridos+=(r1.data||[]).length; setTours(t=>[...(r1.data||[]),...t]); }
+        }
+        // 23505 = o índice único do id do torneio barrou: já tinha sido importado em outro lugar
+        if(barrados) erros.push(`${barrados} torneio(s) já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.`);
       }
     }
     for(const x of pv.completa){
@@ -1884,6 +1972,7 @@ function Dashboard({session,profile}){
         site_tournament_id:x.linha.site_tournament_id, tournament_name:x.linha.tournament_name,
         modality:x.linha.modality, site:x.linha.site, reentries:x.linha.reentries,
         field_size:x.linha.field_size, final_position:x.linha.final_position, prize:x.linha.prize,
+        ticket:x.linha.ticket,
       }).eq('id',x.atual.id).select().single();
       if(error){ erros.push(error.message); } else { completados++; setTours(t=>t.map(y=>y.id===x.atual.id?data:y)); }
     }
@@ -2070,19 +2159,19 @@ function Dashboard({session,profile}){
 
   /* alertas */
   const alerts=[];
-  if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
-  if(bancaAtual<piso) alerts.push({tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
+  if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({key:'makeup:'+p,tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
+  if(bancaAtual<piso) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player,t.entry_date));
-  if(foraGradeTours.length) alerts.push({tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
-  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
-  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
   // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
   if(tours.length>0){
     const ultimo=tours.reduce((m,t)=>{ const d=String(t.created_at||t.entry_date||'').slice(0,10); return d>m?d:m; },'');
     if(ultimo){ const dias=Math.round((Date.parse(todayISO())-Date.parse(ultimo))/86400000);
-      if(dias>=2) alerts.push({tone:C.gold,text:`Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
+      if(dias>=2) alerts.push({key:'parado',tone:C.gold,text:`Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
   }
 
   /* dados dos gráficos */
@@ -2126,6 +2215,7 @@ function Dashboard({session,profile}){
       {k:'field_size',label:'Field (jogadores)',type:'int',def:'0'},
       {k:'final_position',label:'Posição final',type:'int'},
       {k:'prize',label:'Premiação (US$)',type:'money',def:'0'},
+      {k:'ticket',label:'Entrei com bilhete',type:'toggle',full:true,hint:'Ticket/T$ ganho antes. O buy-in conta como nível jogado, mas nenhum dinheiro sai da banca (já saiu no satélite).'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
     ],
     bank:[
@@ -2186,8 +2276,10 @@ function Dashboard({session,profile}){
   const mPool=monthWeeks.reduce((s,w)=>s+w.partePool,0);
   const mTorneios=monthDaily.reduce((s,e)=>s+num(e.qtd_torneios),0);
   const mEntradas=monthDaily.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
-  const mBuyins=monthDaily.reduce((s,e)=>s+num(e.total_buyins),0);
-  const mAbi=mEntradas>0?mBuyins/mEntradas:0;
+  const mBuyins=monthDaily.reduce((s,e)=>s+num(e.total_buyins),0);              // dinheiro investido
+  const mNominal=monthDaily.reduce((s,e)=>s+(num(e.buyins_nominal)||num(e.total_buyins)),0); // nível jogado
+  const mTickets=monthDaily.reduce((s,e)=>s+num(e.tickets),0);
+  const mAbi=mEntradas>0?mNominal/mEntradas:0;
   const mRoi=mBuyins>0?(mRes/mBuyins)*100:0;
   const dayResults=monthDaily.map(e=>({d:e.entry_date,r:resultadoDia(e),p:e.player}));
   const melhorDia=dayResults.length?dayResults.reduce((a,b)=>b.r>a.r?b:a):null;
@@ -2196,12 +2288,13 @@ function Dashboard({session,profile}){
   const perPlayerMonth=players.map(p=>{
     const ed=monthDaily.filter(e=>e.player===p);
     const res=ed.reduce((s,e)=>s+resultadoDia(e),0);
-    const vol=ed.reduce((s,e)=>s+num(e.total_buyins),0);
+    const vol=ed.reduce((s,e)=>s+num(e.total_buyins),0);                          // dinheiro
+    const volNom=ed.reduce((s,e)=>s+(num(e.buyins_nominal)||num(e.total_buyins)),0); // nível
     const torneios=ed.reduce((s,e)=>s+num(e.qtd_torneios),0);
     const entradas=ed.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
     const premios=monthToursOf(p).reduce((s,t)=>s+num(t.prize),0);
     const cashes=monthToursOf(p).filter(t=>num(t.prize)>0).length;
-    const abi=entradas>0?vol/entradas:0;
+    const abi=entradas>0?volNom/entradas:0;
     const roi=vol>0?(res/vol)*100:0;
     const itm=torneios>0?(cashes/torneios)*100:0;
     const makeAberto=makeUpAt(p,month+'-31');   // make-up depois da última semana fechada até o fim do mês
@@ -2243,11 +2336,12 @@ function Dashboard({session,profile}){
     const res=dd.reduce((s,e)=>s+resultadoDia(e),0);
     const torneios=dd.reduce((s,e)=>s+num(e.qtd_torneios),0);
     const entradas=dd.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
-    const buyins=dd.reduce((s,e)=>s+num(e.total_buyins),0);
+    const buyins=dd.reduce((s,e)=>s+num(e.total_buyins),0);                          // dinheiro
+    const nominal=dd.reduce((s,e)=>s+(num(e.buyins_nominal)||num(e.total_buyins)),0);  // nível
     const premios=diaryTours.reduce((s,t)=>s+num(t.prize),0);
     const cashes=diaryTours.filter(t=>num(t.prize)>0).length;
-    return {res,torneios,entradas,buyins,premios,
-      abi:entradas>0?buyins/entradas:0, roi:buyins>0?(res/buyins)*100:0, itm:torneios>0?(cashes/torneios)*100:0,
+    return {res,torneios,entradas,buyins,premios,tickets:dd.reduce((s,e)=>s+num(e.tickets),0),
+      abi:entradas>0?nominal/entradas:0, roi:buyins>0?(res/buyins)*100:0, itm:torneios>0?(cashes/torneios)*100:0,
       dias:[...new Set(dd.map(e=>e.entry_date))].length};
   })();
 
@@ -2291,7 +2385,7 @@ function Dashboard({session,profile}){
           <button onClick={()=>abrirCheckout(plan==='pro'?'pro':'gestao','mensal',session.user.email)} style={{padding:'9px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>Assinar</button>
         </Card>}
         {/* convite pra instalar na tela inicial (some quando já instalado ou dispensado) */}
-        {installCard&&<Card style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${P}`,background:C.plumSoft}}>
+        {installCard&&trialDaysLeft==null&&<Card style={{padding:'14px 16px',display:'flex',alignItems:'center',gap:12,border:`1.5px solid ${P}`,background:C.plumSoft}}>
           <span style={{width:40,height:40,borderRadius:12,background:'#fff',display:'grid',placeItems:'center',color:P,flexShrink:0}}><IcoChip s={22}/></span>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:800,fontSize:14,color:C.ink}}>Deixe o GrinderBank na tela inicial</div>
@@ -2319,19 +2413,28 @@ function Dashboard({session,profile}){
         {/* avisos como pop-up: aparecem uma vez e somem (nada de card fixo poluindo o Painel) */}
         <AlertToaster alerts={alerts} push={pushToast}/>
 
+        <ResumoTorneios tours={tours} players={players} solo={solo}
+          abi={tours.length?tours.reduce((s,t)=>s+nominalTorneio(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0}/>
+
+        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaAtual={bancaAtual}/>
+
+        {/* fora da grade fica FIXO: o pop-up passa em 8s e some pra sempre, e essa é a
+            informação que o produto existe pra mostrar. Uma linha, sem parágrafo. */}
+        {foraGradeTours.length>0&&<button onClick={()=>setAlertDetail({items:foraGradeTours})}
+          style={{display:'flex',alignItems:'center',gap:9,width:'100%',textAlign:'left',cursor:'pointer',
+            padding:'12px 15px',borderRadius:14,border:`1.5px solid ${C.red}55`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5}}>
+          <IcoAlert s={17}/><span style={{flex:1,minWidth:0}}>{foraGradeTours.length} torneio{foraGradeTours.length!==1?'s':''} fora da grade nesta semana</span>
+          <span style={{fontSize:18,flexShrink:0}}>›</span>
+        </button>}
+
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
           <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · ${weekLabel(CURWK)}`:weekLabel(CURWK)}/>
           {!solo&&<Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>}
           {!solo&&<Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>}
           <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Lucro acumulado':'Lucro da pool (acum.)'} value={fmt(solo?resTotalGeral:lucroPoolAcum)} sub={solo?'desde o começo':`pago em saques: ${fmt(totalPago)}`}/>
-          {solo&&<Stat Icon={IcoTrophy} tone={C.gold} bg={C.goldSoft} label="Torneios jogados" value={String(tours.length)} sub={`ABI médio ${fmt(tours.length?tours.reduce((s,t)=>s+totalInvestido(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0)}`}/>}
         </div>
 
-        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaAtual={bancaAtual}/>
-
-        {!solo&&<Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Divisão do dinheiro</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>O que cada jogador tem autorizado e ainda não sacou, e o que já ficou pra pool. <b>"A receber"</b> é o acumulado (autorizado − pago); o quanto dá pra sacar <b>agora</b> respeita o piso — veja "Saque autorizado" acima.</div>
+        {!solo&&<Recolhivel titulo="Divisão do dinheiro" sub='Acumulado autorizado e ainda não sacado' chip={fmt(players.reduce((s,p)=>s+aReceber[p],0))}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
             {players.map((p,i)=><div key={p} style={{padding:14,borderRadius:14,background:C.plumSoft}}>
               <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12.5,color:P,fontWeight:700}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[i]}}/>A receber · {p}</div>
@@ -2342,11 +2445,15 @@ function Dashboard({session,profile}){
               <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:C.green,marginTop:4}}>{fmt(lucroPoolAcum)}</div>
             </div>
           </div>
-        </Card>}
+        </Recolhivel>}
 
+        {/* os gráficos ficam recolhidos: o Painel abre com o que exige decisão (banca, semana,
+            stop loss, torneios) e a curva fica a um toque, em vez de cinco telas de rolagem */}
+        <Recolhivel titulo="Gráficos" sub="curva de lucro, banca, semana a semana e volume" chip={`${solo?3:5} gráficos`}>
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>A curva de cada um ao longo do tempo. Passe o dedo pra ver os valores.</div>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>Passe o dedo pra ver os valores.</div>
           <MultiLineChart labels={lucroLabels} series={lucroSeries}/>
         </Card>
 
@@ -2368,6 +2475,8 @@ function Dashboard({session,profile}){
             <MultiBars data={volChart} series={[{name:'Torneios',color:C.greenMid}]}/>
           </Card>
         </div>
+        </div>
+        </Recolhivel>
       </div>}
 
       {/* ---------------- TORNEIOS (lançamento: hoje + relatórios dos dias anteriores) ---------------- */}
@@ -2377,19 +2486,25 @@ function Dashboard({session,profile}){
         const past=dates.filter(d=>d!==today);
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
-            <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Lança torneio a torneio · o Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
+            <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>O Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
             <button onClick={()=>addTourOn(today)} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>
           </div>
-          {/* import de resumos: o jeito preguiçoso (e mais fiel) de lançar o dia inteiro */}
+          <ResumoTorneios tours={tours} players={players} solo={solo}/>
+          {/* import de resumos: o jeito preguiçoso (e mais fiel) de lançar o dia inteiro.
+              O passo a passo fica recolhido — quem já sabe só toca no botão. */}
           <Card style={{padding:18}}>
-            <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 4px'}}>Importar do site (sem digitar)</h3>
-            <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Baixe os <b>resumos de torneio</b> do dia e solte aqui — pode ser a pasta inteira ou o .zip. O sistema lê nome, buy-in, re-entries, field, posição e premiação de cada um. Você <b>confere antes de salvar</b>, e reimportar a mesma pasta não duplica nada.</div>
-            <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
-              {!solo&&<Seg label="De quem são os arquivos" value={impPlayer||players[0]} options={players} onChange={setImpPlayer}/>}
-              {sites.length>1&&<Seg label="Site" value={tsSite} options={['Detectar',...sites]} onChange={setTsSite}/>}
+            <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600}}>Importar do site</div>
+                <div style={{fontSize:12.5,color:C.inkSoft,marginTop:1}}>Solte os resumos do dia — sem digitar nada.</div>
+              </div>
               <input id="tsfile" type="file" multiple accept=".txt,.zip" style={{display:'none'}} onChange={e=>{const fs=[...e.target.files]; e.target.value=''; lerResumos(fs,impPlayer||players[0]);}}/>
-              <label htmlFor="tsfile" style={{display:'inline-flex',alignItems:'center',gap:6,background:tsImp.busy?C.bg:P,color:tsImp.busy?C.inkSoft:'#fff',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14,cursor:tsImp.busy?'default':'pointer',pointerEvents:tsImp.busy?'none':'auto'}}><IcoPlus s={16}/>{tsImp.busy?'Lendo…':'Escolher arquivos'}</label>
+              <label htmlFor="tsfile" style={{display:'inline-flex',alignItems:'center',gap:6,background:tsImp.busy?C.bg:P,color:tsImp.busy?C.inkSoft:'#fff',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14,cursor:tsImp.busy?'default':'pointer',pointerEvents:tsImp.busy?'none':'auto',flexShrink:0}}><IcoPlus s={16}/>{tsImp.busy?'Lendo…':'Escolher arquivos'}</label>
             </div>
+            {(!solo||sites.length>1)&&<div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginTop:12}}>
+              {!solo&&<Seg label="De quem" value={impPlayer||players[0]} options={players} onChange={setImpPlayer}/>}
+              {sites.length>1&&<Seg label="Site" value={tsSite} options={['Detectar',...sites]} onChange={setTsSite}/>}
+            </div>}
             {tsImp.busy&&<div style={{marginTop:10,fontSize:12.5,color:P,fontWeight:600}}>{tsImp.prog}</div>}
             {tsImp.res&&<div style={{marginTop:10,padding:'10px 12px',borderRadius:12,background:tsImp.res.erros.length?C.redSoft:C.greenSoft,fontSize:12.5,color:C.ink,lineHeight:1.5}}>
               <b>{tsImp.res.inseridos} torneio{tsImp.res.inseridos!==1?'s':''} lançado{tsImp.res.inseridos!==1?'s':''}</b>
@@ -2397,8 +2512,15 @@ function Dashboard({session,profile}){
               {tsImp.res.repetidos>0&&<> · {tsImp.res.repetidos} já {tsImp.res.repetidos!==1?'estavam':'estava'} no sistema</>}
               {tsImp.res.erros.length>0&&<div style={{marginTop:6,color:C.red}}>{tsImp.res.erros.map((x,i)=><div key={i}>• {x}</div>)}</div>}
             </div>}
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>GG / WPT</b>: PokerCraft → o arquivo de <b>Tournament Summary</b> (o resultado do torneio). <b>PokerStars</b>: o resumo que chega por e-mail ou o do histórico. Os arquivos de <b>mãos</b> (hand history) vão na aba Stats — lá eles viram estatística de jogo.</div>
           </Card>
+          <Recolhivel titulo="Onde pego esse arquivo?" sub="GG · WPT · PokerStars">
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              <b style={{color:C.ink}}>GG e WPT:</b> PokerCraft → o <b>Tournament Summary</b> do torneio (o resultado, não as mãos). Pode mandar a pasta toda ou o .zip.<br/>
+              <b style={{color:C.ink}}>PokerStars:</b> o resumo que chega por e-mail, ou o do histórico local.<br/>
+              O sistema lê nome, buy-in, re-entries, field, colocação e premiação — você <b>confere antes de salvar</b> e reimportar a mesma pasta não duplica nada.<br/>
+              Os arquivos de <b>mãos</b> (hand history) vão na aba <b>Stats</b>, não aqui.
+            </div>
+          </Recolhivel>
           <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
           {past.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.inkSoft,margin:'4px 2px 0'}}>Dias anteriores</div>}
           {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
@@ -3103,7 +3225,8 @@ function Dashboard({session,profile}){
         const pT=tours.filter(t=>t.player===sp2);
         const pDias=[...new Set(pT.map(t=>t.entry_date))].sort();
         const pWeeks=weeksByPlayer[sp2]||[];
-        const pInv=pT.reduce((s,t)=>s+totalInvestido(t),0);
+        const pInv=pT.reduce((s,t)=>s+totalInvestido(t),0);        // dinheiro
+        const pNom=pT.reduce((s,t)=>s+nominalTorneio(t),0);         // nível (ABI)
         const pPrem=pT.reduce((s,t)=>s+num(t.prize),0);
         const pRes=pPrem-pInv;
         const pEntr=pT.reduce((s,t)=>s+1+num(t.reentries),0);
@@ -3149,7 +3272,7 @@ function Dashboard({session,profile}){
               <Big label="Premiação" value={fmt(pPrem)}/>
               <Big label="Resultado na pool" value={fmt(pRes)} tone={pRes>=0?C.greenMid:C.red}/>
               <Big label="ROI" value={pInv>0?pctFmt(pRes/pInv*100):'—'} tone={pRes>=0?C.greenMid:C.red}/>
-              <Big label="ABI médio" value={pEntr>0?fmt(pInv/pEntr):'—'}/>
+              <Big label="ABI médio" value={pEntr>0?fmt(pNom/pEntr):'—'}/>
               <Big label="ITM" value={pT.length?pctFmt(pCash/pT.length*100):'—'}/>
               <Big label="Make-up atual" value={fmt(curMakeUp[sp2])} tone={num(curMakeUp[sp2])>0?C.red:C.greenMid}/>
               <Big label="Lucro dividido (dele)" value={fmt(pParteJog)}/>
@@ -3240,7 +3363,9 @@ function Dashboard({session,profile}){
     {/* prévia do import de resumos: nada entra no banco antes de o jogador conferir aqui */}
     {tsImp.preview&&(()=>{
       const pv=tsImp.preview, entrando=[...pv.novos,...pv.completa];
-      const inv=entrando.reduce((s,x)=>s+x.linha.buyin*(1+x.linha.reentries),0);
+      const inv=entrando.reduce((s,x)=>s+(x.linha.ticket?0:x.linha.buyin*(1+x.linha.reentries)),0);
+      const nBilhete=entrando.filter(x=>x.linha.ticket).length;
+      const nSat=entrando.filter(x=>!x.linha.ticket&&x.r.satelite).length;
       const prem=entrando.reduce((s,x)=>s+x.linha.prize,0);
       const dias=[...new Set(entrando.map(x=>x.linha.entry_date))].sort();
       const nada=entrando.length===0;
@@ -3263,11 +3388,13 @@ function Dashboard({session,profile}){
                 {pv.novos.length>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.greenSoft,color:C.green}}>{pv.novos.length} novo{pv.novos.length!==1?'s':''}</span>}
                 {pv.completa.length>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.goldSoft,color:C.gold}}>{pv.completa.length} completa{pv.completa.length!==1?'m':''} um lançamento seu</span>}
                 {pv.repetidos.length>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.bg,color:C.inkSoft}}>{pv.repetidos.length} já no sistema</span>}
+                {nBilhete>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.plumSoft,color:P}}>🎟 {nBilhete} com bilhete</span>}
               </div>
+              {nSat>0&&<div style={{padding:'9px 11px',borderRadius:12,background:C.goldSoft,fontSize:12,color:C.ink,marginBottom:12,lineHeight:1.5}}>🎟 <b>{nSat} com cara de satélite.</b> O arquivo do site não diz se você entrou com bilhete — se entrou, toque no 🎟 da linha pra não contar o buy-in duas vezes.</div>}
               {pv.fora.length>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.redSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>⚠️ <b>{pv.fora.length} torneio{pv.fora.length!==1?'s':''} fora da grade</b> ({pv.fora.map(x=>fmt(x.linha.buyin)).filter((v,i,a)=>a.indexOf(v)===i).join(', ')} · teto {fmt(abiMaxFor(config,pv.player,pv.fora[0].linha.entry_date))}). Vão entrar assim mesmo — o registro é do que aconteceu.</div>}
               {dias.map(d=>{
                 const doDia=entrando.filter(x=>x.linha.entry_date===d);
-                const rd=doDia.reduce((s,x)=>s+x.linha.prize-x.linha.buyin*(1+x.linha.reentries),0);
+                const rd=doDia.reduce((s,x)=>s+x.linha.prize-(x.linha.ticket?0:x.linha.buyin*(1+x.linha.reentries)),0);
                 return <div key={d} style={{marginBottom:12}}>
                   <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
                     <span style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em'}}>{dLabel(d)}</span>
@@ -3278,6 +3405,9 @@ function Dashboard({session,profile}){
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontWeight:700,fontSize:13.5,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{x.linha.tournament_name}{x.atual&&<span style={{color:C.gold,fontWeight:700,fontSize:11}}> · completa o seu</span>}</div>
                       <div style={{fontSize:11.5,color:C.inkSoft}}>buy-in {fmt(x.linha.buyin)}{x.linha.reentries>0?` · ${x.linha.reentries} re-entry${x.linha.reentries!==1?'s':''}`:''} · {x.linha.modality} · {x.linha.final_position?`${x.linha.final_position}º de ${x.linha.field_size}`:`${x.linha.field_size} jogadores`}</div>
+                      <button onClick={()=>marcarBilhete(x.linha.site_tournament_id)} style={{marginTop:4,padding:'3px 9px',borderRadius:99,cursor:'pointer',fontSize:10.5,fontWeight:800,
+                        border:`1.5px solid ${x.linha.ticket?P:(x.r.satelite?C.gold:C.border)}`,background:x.linha.ticket?C.plumSoft:'transparent',color:x.linha.ticket?P:(x.r.satelite?C.gold:C.inkSoft)}}>
+                        {x.linha.ticket?'🎟 BILHETE · não saiu dinheiro':(x.r.satelite?'🎟 parece satélite — entrou com bilhete?':'🎟 entrei com bilhete')}</button>
                     </div>
                     <span style={{fontWeight:800,fontSize:13.5,flexShrink:0,color:x.linha.prize>0?C.greenMid:C.inkSoft}}>{x.linha.prize>0?fmt(x.linha.prize):'—'}</span>
                   </div>)}
