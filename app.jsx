@@ -1253,6 +1253,7 @@ function SetupSolo({profile,ws,onDone}){
   const [step,setStep]=useState(1);
   const [nome,setNome]=useState((profile&&profile.nickname)||'');
   const [banca,setBanca]=useState('');
+  const [abi,setAbi]=useState('');            // teto de buy-in — SEM isso todo torneio vira "fora da grade"
   const [sites,setSites]=useState(['GG Poker','PokerStars']);
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   const toggleSite=s=>setSites(x=>x.includes(s)?x.filter(y=>y!==s):[...x,s]);
@@ -1266,8 +1267,10 @@ function SetupSolo({profile,ws,onDone}){
       // NUNCA cria uma segunda config: se um retry chegar aqui com a config já salva, só conclui
       const {data:jaTem}=await sb.from('pool_config').select('id').limit(1);
       if(!jaTem||!jaTem.length){
+        // o teto vem do que a pessoa respondeu; só cai no padrão se ela pulou a pergunta
+        const teto=parseValor(abi)>0?parseValor(abi):2;
         const {error}=await sb.from('pool_config').insert({player1_name:nome.trim(),player2_name:'',player_pct:1,
-          banca_inicial:parseValor(banca)||0,piso_minimo:0,makeup_max_recomendado:0,abi_max:2,abi_max_player1:2,abi_max_player2:0,
+          banca_inicial:parseValor(banca)||0,piso_minimo:0,makeup_max_recomendado:0,abi_max:teto,abi_max_player1:teto,abi_max_player2:0,
           week_start_date:todayISO(),sites_permitidos:sites.length?sites:['GG Poker'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
         if(error) throw error;
       }
@@ -1277,7 +1280,7 @@ function SetupSolo({profile,ws,onDone}){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:420}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
-      <div style={{fontSize:11,fontWeight:700,color:C.inkSoft,textTransform:'uppercase',letterSpacing:'.06em',textAlign:'center',marginBottom:6}}>Passo {step} de 3</div>
+      <div style={{fontSize:11,fontWeight:700,color:C.inkSoft,textTransform:'uppercase',letterSpacing:'.06em',textAlign:'center',marginBottom:6}}>Passo {step} de 4</div>
       {step===1&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Como te chamamos?</h3>
         <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nome} placeholder="Ex: rafa_grinder" onChange={e=>setNome(e.target.value)} autoFocus/></div>
@@ -1293,7 +1296,24 @@ function SetupSolo({profile,ws,onDone}){
           </div></div>
         <button onClick={()=>setStep(3)} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Continuar</button>
       </div>}
-      {step===3&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
+      {step===3&&(()=>{
+        // Pergunta DESCRITIVA ("qual você joga"), não prescritiva. A referência de 100 buy-ins
+        // fica ao lado como informação de gestão — sem empurrar ninguém pra cima nem pra baixo.
+        const b=parseValor(banca), ref=b>0?b/100:0;
+        return <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Sua grade</h3>
+          <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.6,textAlign:'center',marginTop:-6}}>Qual o <b>maior buy-in</b> que você joga hoje? É esse número que o app usa pra avisar quando um torneio passou do seu limite.</div>
+          <div><label style={labelStyle}>Maior buy-in (US$)</label>
+            <input style={inputStyle} inputMode="decimal" value={abi} placeholder="Ex: 5,50" onChange={e=>setAbi(e.target.value)} autoFocus/></div>
+          <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+            {['2,50','3,20','5,50','11,00','22,00'].map(v=><button key={v} onClick={()=>setAbi(v)} style={{padding:'7px 12px',borderRadius:99,border:`1.5px solid ${abi===v?P:C.border}`,background:abi===v?C.plumSoft:'transparent',color:abi===v?P:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>US$ {v}</button>)}
+          </div>
+          {ref>0&&<div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5,padding:'9px 11px',borderRadius:10,background:C.bg}}>ℹ️ Só como referência: a régua clássica de MTT é ter <b>100 buy-ins</b> de banca. Com {fmt(b)}, isso daria <b>{fmt(ref)}</b>. Não é obrigação — é o número que costuma segurar a variância. Dá pra mudar quando quiser nos Ajustes.</div>}
+          {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
+          <button onClick={()=>{ if(!(parseValor(abi)>0)){setErr('Preenche o maior buy-in que você joga.');return;} setErr(''); setStep(4); }} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer'}}>Continuar</button>
+        </div>;
+      })()}
+      {step===4&&<div style={{display:'flex',flexDirection:'column',gap:14}}>
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,textAlign:'center'}}>Tudo pronto, {nome.trim().split(' ')[0]}!</h3>
         <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.7}}>✓ Lança seus torneios na aba <b>Torneios</b><br/>✓ Acompanha banca e semana no <b>Painel</b><br/>✓ Importa suas mãos na aba <b>Stats</b> pra ver suas estatísticas e leituras</div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
@@ -1659,7 +1679,11 @@ function Dashboard({session,profile}){
   const localIds=React.useRef(new Set());       // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq=React.useRef(0);
   // mesma chave = mesmo aviso: troca o que está na tela em vez de empilhar dois pop-ups iguais
-  const pushToast=(t)=>{ const id=++seq.current; setToasts(l=>[...(t.key?l.filter(x=>x.key!==t.key):l),{...t,id}]); setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),8000); };
+  // mesma chave = mesmo aviso (troca em vez de empilhar) e no máximo 3 na tela: um lote de
+  // lançamentos não pode cobrir o app de pop-up.
+  const pushToast=(t)=>{ const id=++seq.current;
+    setToasts(l=>[...(t.key?l.filter(x=>x.key!==t.key):l),{...t,id}].slice(-3));
+    setTimeout(()=>setToasts(l=>l.filter(x=>x.id!==id)),6000); };
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair=()=>{ try{ localStorage.removeItem('gb_signup'); }catch(e){} sb.auth.signOut(); };
 
@@ -1753,7 +1777,9 @@ function Dashboard({session,profile}){
     // avisa o OUTRO jogador quando um torneio fora da grade chega pelo tempo real (não avisa quem lançou)
     const onTour=p=>{
       apply(setTours)(p);
-      if(p.eventType==='INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current){
+      // o aviso é pro OUTRO jogador da pool: em conta solo não existe "outro" — seria o app
+      // avisando a pessoa sobre ela mesma, no meio do lançamento dela.
+      if(p.eventType==='INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current && !soloRef.current){
         const c=configRef.current, mx=abiMaxFor(c,p.new.player,p.new.entry_date);
         if(num(p.new.buyin)>mx) pushToast({tone:C.red,title:`${p.new.player} jogou fora da grade`,text:`${p.new.tournament_name||'Torneio'} · buy-in ${fmt(p.new.buyin)} (máx ${fmt(mx)}). Fique atento e verifique com ${p.new.player.split(' ')[0]}.`});
       }
@@ -1778,14 +1804,25 @@ function Dashboard({session,profile}){
   const configRef=React.useRef(null);
   useEffect(()=>{configRef.current=config;},[config]);
 
-  const [gradeWarn,setGradeWarn]=useState(null); // torneio recém-salvo fora da grade (aviso pro próprio jogador)
+  // Aviso de fora-da-grade pro próprio jogador. Ele AGRUPA: lançar 10 torneios acima do teto
+  // abre UM aviso com os 10, não dez modais em fila. E para de abrir depois de 2 vezes na
+  // sessão — a faixa fixa do Painel e o selo na lista continuam mostrando, sem sequestrar a tela.
+  const [gradeWarn,setGradeWarn]=useState(null);   // {items:[torneio,...]}
+  const gradeAberturas=React.useRef(0);
+  const soloRef=React.useRef(false);
+  React.useEffect(()=>{ soloRef.current=solo; },[solo]);
+  const avisarForaGrade=row=>setGradeWarn(g=>{
+    if(g) return {items:[...g.items,row]};              // já está aberto: só acumula
+    if(gradeAberturas.current>=2) return null;          // já avisou 2x nesta sessão: silêncio
+    gradeAberturas.current++; return {items:[row]};
+  });
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table,data,setter,list)=>{
     const {data:row,error}=await sb.from(table).insert(data).select().single();
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
     if(table==='tournaments' && row){
       localIds.current.add(row.id);
-      if(config && num(row.buyin)>abiMaxFor(config,row.player,row.entry_date)) setGradeWarn(row); // avisa quem lançou
+      if(config && num(row.buyin)>abiMaxFor(config,row.player,row.entry_date)) avisarForaGrade(row); // avisa quem lançou
     }
     setter([row,...list]); setModal(null);
   };
@@ -3444,8 +3481,28 @@ function Dashboard({session,profile}){
     {gradeWarn&&<div onClick={()=>setGradeWarn(null)} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.5)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,padding:20}}>
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:400,borderRadius:22,padding:24,textAlign:'center'}}>
         <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
-        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>Atenção — fora da grade!</h3>
-        <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 18px'}}>Esse torneio ({gradeWarn.tournament_name||'buy-in'} {fmt(gradeWarn.buyin)}) está <b style={{color:C.red}}>acima {solo?'do teu ABI máximo':`do ABI máximo de ${gradeWarn.player.split(' ')[0]}`}</b> ({fmt(abiMaxFor(config,gradeWarn.player,gradeWarn.entry_date))}). {solo?'Manter a grade é o que segura tua banca no longo prazo — evita subir de stake no impulso.':'Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.'}</p>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>{gradeWarn.items.length>1?`${gradeWarn.items.length} torneios fora da grade`:'Atenção — fora da grade!'}</h3>
+        {(()=>{
+          const it=gradeWarn.items, um=it[0], teto=abiMaxFor(config,um.player,um.entry_date);
+          return <>
+            <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 12px'}}>
+              {it.length>1
+                ? <>Você lançou <b>{it.length} torneios</b> com buy-in acima {solo?'do seu teto':`do teto de ${um.player.split(' ')[0]}`} de <b style={{color:C.red}}>{fmt(teto)}</b>.</>
+                : <>Esse torneio ({um.tournament_name||'buy-in'} {fmt(um.buyin)}) está <b style={{color:C.red}}>acima {solo?'do seu teto':`do teto de ${um.player.split(' ')[0]}`}</b> ({fmt(teto)}).</>}
+            </p>
+            {it.length>1&&<div style={{textAlign:'left',maxHeight:150,overflowY:'auto',marginBottom:12,fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              {it.slice(0,8).map((t,i)=><div key={i} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>· {t.tournament_name||'Torneio'} — <b style={{color:C.red}}>{fmt(t.buyin)}</b></div>)}
+              {it.length>8&&<div>… e mais {it.length-8}</div>}
+            </div>}
+            {/* o teto errado é a causa nº1 desse aviso em massa no primeiro uso */}
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.55,padding:'10px 12px',borderRadius:12,background:C.bg,textAlign:'left',marginBottom:16}}>
+              {it.length>2
+                ? <>Se <b>é assim que você joga mesmo</b>, o teto é que está desatualizado — ajuste em <b>Ajustes → ABI máximo</b> e o aviso para. Se não é, esse é o freio funcionando.</>
+                : (solo?<>Manter a grade é o que segura a banca no longo prazo — evita subir de stake no impulso.</>
+                       :<>Isso fura a gestão da pool. O outro jogador foi avisado.</>)}
+            </div>
+          </>;
+        })()}
         <button onClick={()=>setGradeWarn(null)} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Entendi</button>
       </div>
     </div>}

@@ -3865,6 +3865,7 @@ function SetupSolo({
   const [step, setStep] = useState(1);
   const [nome, setNome] = useState(profile && profile.nickname || '');
   const [banca, setBanca] = useState('');
+  const [abi, setAbi] = useState(''); // teto de buy-in — SEM isso todo torneio vira "fora da grade"
   const [sites, setSites] = useState(['GG Poker', 'PokerStars']);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -3893,6 +3894,8 @@ function SetupSolo({
         data: jaTem
       } = await sb.from('pool_config').select('id').limit(1);
       if (!jaTem || !jaTem.length) {
+        // o teto vem do que a pessoa respondeu; só cai no padrão se ela pulou a pergunta
+        const teto = parseValor(abi) > 0 ? parseValor(abi) : 2;
         const {
           error
         } = await sb.from('pool_config').insert({
@@ -3902,8 +3905,8 @@ function SetupSolo({
           banca_inicial: parseValor(banca) || 0,
           piso_minimo: 0,
           makeup_max_recomendado: 0,
-          abi_max: 2,
-          abi_max_player1: 2,
+          abi_max: teto,
+          abi_max_player1: teto,
           abi_max_player2: 0,
           week_start_date: todayISO(),
           sites_permitidos: sites.length ? sites : ['GG Poker'],
@@ -3948,7 +3951,7 @@ function SetupSolo({
       textAlign: 'center',
       marginBottom: 6
     }
-  }, "Passo ", step, " de 3"), step === 1 && /*#__PURE__*/React.createElement("div", {
+  }, "Passo ", step, " de 4"), step === 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -4051,7 +4054,97 @@ function SetupSolo({
       fontSize: 15.5,
       cursor: 'pointer'
     }
-  }, "Continuar")), step === 3 && /*#__PURE__*/React.createElement("div", {
+  }, "Continuar")), step === 3 && (() => {
+    // Pergunta DESCRITIVA ("qual você joga"), não prescritiva. A referência de 100 buy-ins
+    // fica ao lado como informação de gestão — sem empurrar ninguém pra cima nem pra baixo.
+    const b = parseValor(banca),
+      ref = b > 0 ? b / 100 : 0;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 20,
+        fontWeight: 600,
+        margin: 0,
+        textAlign: 'center'
+      }
+    }, "Sua grade"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.inkSoft,
+        lineHeight: 1.6,
+        textAlign: 'center',
+        marginTop: -6
+      }
+    }, "Qual o ", /*#__PURE__*/React.createElement("b", null, "maior buy-in"), " que voc\xEA joga hoje? \xC9 esse n\xFAmero que o app usa pra avisar quando um torneio passou do seu limite."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: labelStyle
+    }, "Maior buy-in (US$)"), /*#__PURE__*/React.createElement("input", {
+      style: inputStyle,
+      inputMode: "decimal",
+      value: abi,
+      placeholder: "Ex: 5,50",
+      onChange: e => setAbi(e.target.value),
+      autoFocus: true
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 7,
+        flexWrap: 'wrap'
+      }
+    }, ['2,50', '3,20', '5,50', '11,00', '22,00'].map(v => /*#__PURE__*/React.createElement("button", {
+      key: v,
+      onClick: () => setAbi(v),
+      style: {
+        padding: '7px 12px',
+        borderRadius: 99,
+        border: `1.5px solid ${abi === v ? P : C.border}`,
+        background: abi === v ? C.plumSoft : 'transparent',
+        color: abi === v ? P : C.inkSoft,
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: 'pointer'
+      }
+    }, "US$ ", v))), ref > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        lineHeight: 1.5,
+        padding: '9px 11px',
+        borderRadius: 10,
+        background: C.bg
+      }
+    }, "\u2139\uFE0F S\xF3 como refer\xEAncia: a r\xE9gua cl\xE1ssica de MTT \xE9 ter ", /*#__PURE__*/React.createElement("b", null, "100 buy-ins"), " de banca. Com ", fmt(b), ", isso daria ", /*#__PURE__*/React.createElement("b", null, fmt(ref)), ". N\xE3o \xE9 obriga\xE7\xE3o \u2014 \xE9 o n\xFAmero que costuma segurar a vari\xE2ncia. D\xE1 pra mudar quando quiser nos Ajustes."), err && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.red,
+        fontSize: 13.5,
+        fontWeight: 600
+      }
+    }, err), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        if (!(parseValor(abi) > 0)) {
+          setErr('Preenche o maior buy-in que você joga.');
+          return;
+        }
+        setErr('');
+        setStep(4);
+      },
+      style: {
+        padding: '14px 0',
+        borderRadius: 14,
+        border: 'none',
+        background: P,
+        color: '#fff',
+        fontWeight: 700,
+        fontSize: 15.5,
+        cursor: 'pointer'
+      }
+    }, "Continuar"));
+  })(), step === 4 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -5614,13 +5707,15 @@ function Dashboard({
   const localIds = React.useRef(new Set()); // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq = React.useRef(0);
   // mesma chave = mesmo aviso: troca o que está na tela em vez de empilhar dois pop-ups iguais
+  // mesma chave = mesmo aviso (troca em vez de empilhar) e no máximo 3 na tela: um lote de
+  // lançamentos não pode cobrir o app de pop-up.
   const pushToast = t => {
     const id = ++seq.current;
     setToasts(l => [...(t.key ? l.filter(x => x.key !== t.key) : l), {
       ...t,
       id
-    }]);
-    setTimeout(() => setToasts(l => l.filter(x => x.id !== id)), 8000);
+    }].slice(-3));
+    setTimeout(() => setToasts(l => l.filter(x => x.id !== id)), 6000);
   };
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair = () => {
@@ -5791,7 +5886,9 @@ function Dashboard({
     // avisa o OUTRO jogador quando um torneio fora da grade chega pelo tempo real (não avisa quem lançou)
     const onTour = p => {
       apply(setTours)(p);
-      if (p.eventType === 'INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current) {
+      // o aviso é pro OUTRO jogador da pool: em conta solo não existe "outro" — seria o app
+      // avisando a pessoa sobre ela mesma, no meio do lançamento dela.
+      if (p.eventType === 'INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current && !soloRef.current) {
         const c = configRef.current,
           mx = abiMaxFor(c, p.new.player, p.new.entry_date);
         if (num(p.new.buyin) > mx) pushToast({
@@ -5850,7 +5947,26 @@ function Dashboard({
   useEffect(() => {
     configRef.current = config;
   }, [config]);
-  const [gradeWarn, setGradeWarn] = useState(null); // torneio recém-salvo fora da grade (aviso pro próprio jogador)
+
+  // Aviso de fora-da-grade pro próprio jogador. Ele AGRUPA: lançar 10 torneios acima do teto
+  // abre UM aviso com os 10, não dez modais em fila. E para de abrir depois de 2 vezes na
+  // sessão — a faixa fixa do Painel e o selo na lista continuam mostrando, sem sequestrar a tela.
+  const [gradeWarn, setGradeWarn] = useState(null); // {items:[torneio,...]}
+  const gradeAberturas = React.useRef(0);
+  const soloRef = React.useRef(false);
+  React.useEffect(() => {
+    soloRef.current = solo;
+  }, [solo]);
+  const avisarForaGrade = row => setGradeWarn(g => {
+    if (g) return {
+      items: [...g.items, row]
+    }; // já está aberto: só acumula
+    if (gradeAberturas.current >= 2) return null; // já avisou 2x nesta sessão: silêncio
+    gradeAberturas.current++;
+    return {
+      items: [row]
+    };
+  });
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table, data, setter, list) => {
     const {
@@ -5864,7 +5980,7 @@ function Dashboard({
     }
     if (table === 'tournaments' && row) {
       localIds.current.add(row.id);
-      if (config && num(row.buyin) > abiMaxFor(config, row.player, row.entry_date)) setGradeWarn(row); // avisa quem lançou
+      if (config && num(row.buyin) > abiMaxFor(config, row.player, row.entry_date)) avisarForaGrade(row); // avisa quem lançou
     }
     setter([row, ...list]);
     setModal(null);
@@ -12104,18 +12220,59 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 8px'
     }
-  }, "Aten\xE7\xE3o \u2014 fora da grade!"), /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 14,
-      color: C.inkSoft,
-      lineHeight: 1.6,
-      margin: '0 0 18px'
-    }
-  }, "Esse torneio (", gradeWarn.tournament_name || 'buy-in', " ", fmt(gradeWarn.buyin), ") est\xE1 ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: C.red
-    }
-  }, "acima ", solo ? 'do teu ABI máximo' : `do ABI máximo de ${gradeWarn.player.split(' ')[0]}`), " (", fmt(abiMaxFor(config, gradeWarn.player, gradeWarn.entry_date)), "). ", solo ? 'Manter a grade é o que segura tua banca no longo prazo — evita subir de stake no impulso.' : 'Evite jogar fora da grade — isso fura a gestão da pool. O outro jogador foi avisado.'), /*#__PURE__*/React.createElement("button", {
+  }, gradeWarn.items.length > 1 ? `${gradeWarn.items.length} torneios fora da grade` : 'Atenção — fora da grade!'), (() => {
+    const it = gradeWarn.items,
+      um = it[0],
+      teto = abiMaxFor(config, um.player, um.entry_date);
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft,
+        lineHeight: 1.6,
+        margin: '0 0 12px'
+      }
+    }, it.length > 1 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA lan\xE7ou ", /*#__PURE__*/React.createElement("b", null, it.length, " torneios"), " com buy-in acima ", solo ? 'do seu teto' : `do teto de ${um.player.split(' ')[0]}`, " de ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.red
+      }
+    }, fmt(teto)), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Esse torneio (", um.tournament_name || 'buy-in', " ", fmt(um.buyin), ") est\xE1 ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.red
+      }
+    }, "acima ", solo ? 'do seu teto' : `do teto de ${um.player.split(' ')[0]}`), " (", fmt(teto), ").")), it.length > 1 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: 'left',
+        maxHeight: 150,
+        overflowY: 'auto',
+        marginBottom: 12,
+        fontSize: 12.5,
+        color: C.inkSoft,
+        lineHeight: 1.6
+      }
+    }, it.slice(0, 8).map((t, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, "\xB7 ", t.tournament_name || 'Torneio', " \u2014 ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.red
+      }
+    }, fmt(t.buyin)))), it.length > 8 && /*#__PURE__*/React.createElement("div", null, "\u2026 e mais ", it.length - 8)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        lineHeight: 1.55,
+        padding: '10px 12px',
+        borderRadius: 12,
+        background: C.bg,
+        textAlign: 'left',
+        marginBottom: 16
+      }
+    }, it.length > 2 ? /*#__PURE__*/React.createElement(React.Fragment, null, "Se ", /*#__PURE__*/React.createElement("b", null, "\xE9 assim que voc\xEA joga mesmo"), ", o teto \xE9 que est\xE1 desatualizado \u2014 ajuste em ", /*#__PURE__*/React.createElement("b", null, "Ajustes \u2192 ABI m\xE1ximo"), " e o aviso para. Se n\xE3o \xE9, esse \xE9 o freio funcionando.") : solo ? /*#__PURE__*/React.createElement(React.Fragment, null, "Manter a grade \xE9 o que segura a banca no longo prazo \u2014 evita subir de stake no impulso.") : /*#__PURE__*/React.createElement(React.Fragment, null, "Isso fura a gest\xE3o da pool. O outro jogador foi avisado.")));
+  })(), /*#__PURE__*/React.createElement("button", {
     onClick: () => setGradeWarn(null),
     style: {
       width: '100%',
