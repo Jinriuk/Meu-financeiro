@@ -4,12 +4,13 @@
   "installCommand": "echo skip-install",
   "buildCommand": "echo skip-build",
   "outputDirectory": ".",
-  "redirects": [
+  "_comment_redirects": "DESLIGADO EM 02/08/2026: grinderbank.com está suspenso (verificação de e-mail do registrante, regra da ICANN). Com o redirect ligado, a URL da Vercel também morria — ela jogava todo mundo no domínio suspenso e não sobrava NENHUM endereço no ar. Pra religar: renomeie esta chave de volta pra redirects e MANTENHA permanent:false (302). Com permanent:true o navegador cacheia o 301 e continua redirecionando mesmo depois de remover a regra — foi o que quase nos prendeu aqui.",
+  "redirects_desligado": [
     {
       "source": "/:path*",
       "has": [{ "type": "host", "value": "meu-financeiro.*\\.vercel\\.app" }],
       "destination": "https://grinderbank.com/:path*",
-      "permanent": true
+      "permanent": false
     }
   ],
   "headers": [

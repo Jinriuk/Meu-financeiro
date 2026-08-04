@@ -21,8 +21,9 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
 
 // eventos que ATIVAM vs REVOGAM (nomes comuns da Kiwify; confirme no seu painel e ajuste)
-const ATIVA = ['order_approved', 'paid', 'approved', 'subscription_renewed', 'pix_paid'];
-const REVOGA = ['order_refunded', 'refunded', 'chargeback', 'subscription_canceled', 'canceled', 'subscription_late'];
+const ATIVA = ['order_approved', 'paid', 'approved', 'subscription_renewed', 'pix_paid', 'renewed'];
+const REVOGA = ['order_refunded', 'refunded', 'chargeback', 'subscription_canceled', 'canceled',
+  'subscription_late', 'billet_expired', 'subscription_expired'];
 
 // HMAC-SHA1 do corpo com o token como chave (esquema de assinatura da Kiwify), em hex.
 async function hmacSha1Hex(key: string, msg: string): Promise<string> {
@@ -63,7 +64,19 @@ Deno.serve(async (req) => {
   const status = String(ev?.order_status || ev?.webhook_event_type || ev?.event || ev?.status || '').toLowerCase();
   const email = String(ev?.Customer?.email || ev?.customer?.email || ev?.buyer?.email || ev?.email || '').toLowerCase();
   const orderId = String(ev?.order_id || ev?.order_ref || ev?.id || ev?.subscription_id || '');
-  const productId = String(ev?.Product?.product_id || ev?.product_id || ev?.offer_id || ev?.plan_id || '');
+  // ATENÇÃO: com VÁRIOS planos no MESMO produto (Gestão + Pro na mesma ficha), o product_id é
+  // IGUAL pros quatro — mapear por ele entregaria Pro pra quem pagou Gestão. Então a ordem é:
+  // plano da assinatura -> oferta -> produto. O product_id só serve de último recurso.
+  const planoId = String(
+    ev?.subscription?.plan?.id ?? ev?.Subscription?.plan?.id ??
+    ev?.subscription?.plan_id ?? ev?.Subscription?.plan_id ??
+    ev?.plan_id ?? ev?.Plan?.id ?? '');
+  const ofertaId = String(
+    ev?.Commissions?.product_base_price_offer?.id ?? ev?.offer_id ??
+    ev?.Product?.offer_id ?? ev?.checkout_link ?? '');
+  const productId = String(ev?.Product?.product_id || ev?.product_id || '');
+  // tenta cada chave na ordem; a primeira que estiver no mapa vence
+  const chaves = [planoId, ofertaId, productId].filter(Boolean);
 
   if (!email || !orderId) return json({ error: 'payload sem email/order_id' }, 400);
 
@@ -78,11 +91,14 @@ Deno.serve(async (req) => {
   const revoga = REVOGA.some((s) => status.includes(s));
 
   if (ativa) {
-    const plan = PLAN_MAP[productId] || PLAN_MAP['default'];
-    if (!plan) return json({ error: 'produto sem plano no KIWIFY_PLAN_MAP', productId }, 202);
+    const chave = chaves.find((k) => PLAN_MAP[k]);
+    const plan = chave ? PLAN_MAP[chave] : PLAN_MAP['default'];
+    // 202 (não 500) de propósito: a Kiwify não fica reenviando, e o log mostra QUAL id faltou
+    // no mapa — é assim que se descobre o id de um plano novo sem quebrar a cobrança.
+    if (!plan) return json({ error: 'plano não está no KIWIFY_PLAN_MAP', planoId, ofertaId, productId }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
     if (error) return json({ error: error.message }, 500);
-    return json({ ok: true, action: 'ativado', plan });
+    return json({ ok: true, action: 'ativado', plan, chave });
   }
   if (revoga) {
     const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
