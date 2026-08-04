@@ -39,6 +39,25 @@ function safeEqual(a: string, b: string): boolean {
   return d === 0;
 }
 
+// Varre o payload e devolve os campos que parecem identificador (curtos, alfanuméricos),
+// com o caminho completo de cada um. NUNCA inclui dado pessoal: nome, e-mail, telefone, CPF,
+// endereço e afins são pulados por nome de campo, e valores com "@" ou muito longos ficam fora.
+const PESSOAL = /(email|mail|name|nome|phone|fone|cel|cpf|cnpj|doc|address|endereco|cep|street|card|token|secret|signature|ip)/i;
+function idsCandidatos(obj: unknown, caminho = '', out: Record<string, string> = {}, nivel = 0): Record<string, string> {
+  if (nivel > 5 || out['__truncado'] || Object.keys(out).length > 60) return out;
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (PESSOAL.test(k)) continue;
+      idsCandidatos(v, caminho ? `${caminho}.${k}` : k, out, nivel + 1);
+    }
+    return out;
+  }
+  const s = String(obj ?? '');
+  // id típico: 4 a 40 caracteres, sem espaço nem arroba, e não é só pontuação
+  if (s && s.length >= 4 && s.length <= 40 && !/[\s@]/.test(s) && /[A-Za-z0-9]/.test(s)) out[caminho] = s;
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
   // fail-closed: sem os secrets configurados, não processa nada
@@ -93,9 +112,17 @@ Deno.serve(async (req) => {
   if (ativa) {
     const chave = chaves.find((k) => PLAN_MAP[k]);
     const plan = chave ? PLAN_MAP[chave] : PLAN_MAP['default'];
-    // 202 (não 500) de propósito: a Kiwify não fica reenviando, e o log mostra QUAL id faltou
-    // no mapa — é assim que se descobre o id de um plano novo sem quebrar a cobrança.
-    if (!plan) return json({ error: 'plano não está no KIWIFY_PLAN_MAP', planoId, ofertaId, productId }, 202);
+    // 202 (não 500) de propósito: a Kiwify não fica reenviando, e a resposta mostra QUAIS ids
+    // chegaram — é assim que se descobre o identificador do plano quando o painel não exibe.
+    // Junto vai um mapa de TODOS os campos com cara de id, com o caminho de cada um: sem isso,
+    // um painel que esconde o plan_id deixaria a integração emperrada sem pista nenhuma.
+    if (!plan) return json({
+      error: 'plano não está no KIWIFY_PLAN_MAP',
+      candidatos: { planoId, ofertaId, productId },
+      // varre o payload e devolve tudo que PARECE identificador, sem dado pessoal
+      todosOsIds: idsCandidatos(ev),
+      comoUsar: 'escolha o campo que MUDA entre Gestão e Pro e use como chave do KIWIFY_PLAN_MAP',
+    }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
     if (error) return json({ error: error.message }, 500);
     return json({ ok: true, action: 'ativado', plan, chave });
