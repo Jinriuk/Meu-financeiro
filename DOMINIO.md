@@ -4,17 +4,21 @@
 > do Vercel é estrito: qualquer propriedade desconhecida (mesmo `_comment`) derruba o deploy com
 > `should NOT have additional property`. Então a explicação mora aqui.
 
-## Estado atual (02/08/2026)
+## Estado atual (04/08/2026)
 
-`"redirects": []` — **vazio de propósito.**
+**Religado como 302.** O `grinderbank.com` voltou: suspensão removida, DNS apontando pra Vercel,
+domínio no projeto e app respondendo 200.
 
-O redirect que existia mandava `meu-financeiro-*.vercel.app` → `https://grinderbank.com/:path*`.
-Ele foi desligado quando o `grinderbank.com` foi suspenso pela verificação de e-mail do
+O redirect manda `meu-financeiro-*.vercel.app` → `https://grinderbank.com/:path*`.
+Ele ficou desligado por algumas horas em 04/08, quando o `grinderbank.com` foi suspenso pela verificação de e-mail do
 registrante (regra da ICANN para `.com`, prazo de 15 dias). Com o redirect ligado e o domínio
 fora, **a URL da Vercel também morria** — ela empurrava todo mundo para o domínio suspenso e não
 sobrava nenhum endereço no ar.
 
-## Para religar quando o domínio estiver estável
+## Se precisar desligar de novo
+
+Troque o array por `"redirects": []`. Nada de comentário nem chave extra — o schema derruba o
+build. A regra que está no ar é esta:
 
 ```json
 "redirects": [
@@ -27,9 +31,10 @@ sobrava nenhum endereço no ar.
 ]
 ```
 
-**`permanent: false` (302), não `true`.** Estava como `true` (301) e 301 o navegador cacheia: quem
-já tinha acessado a URL da Vercel continuaria sendo mandado para o domínio morto mesmo depois de
-a regra sair do arquivo. Só volte para 301 quando o domínio estiver comprovadamente estável.
+**Está em `permanent: false` (302) de propósito.** Antes era `true` (301), e 301 o navegador
+cacheia: se o domínio cair de novo, quem já acessou continuaria sendo mandado pro domínio morto
+mesmo depois de a regra sair do arquivo. Com 302, desligar resolve na hora. Só volte pra 301
+depois de meses de domínio estável — o ganho de SEO não paga o risco agora.
 
 ## Checklist do domínio (o que precisa estar verdadeiro para o site abrir)
 
