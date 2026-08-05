@@ -20,7 +20,7 @@ const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // um UPDATE — por env exigiria mexer no painel e refazer o deploy da função a cada ajuste.
 // O env continua valendo como fallback pra quem preferir configurar por lá.
 const ENV_TOKEN = Deno.env.get('KIWIFY_WEBHOOK_TOKEN') || '';
-const ENV_MAP = Deno.env.get('kiwify_plan_map') || '';
+const ENV_MAP = Deno.env.get('KIWIFY_PLAN_MAP') || '';
 async function segredos(admin: any): Promise<{ token: string; map: Record<string, string> }> {
   const { data } = await admin.from('app_secrets').select('name,value')
     .in('name', ['kiwify_webhook_token', 'kiwify_plan_map']);
@@ -113,7 +113,15 @@ Deno.serve(async (req) => {
   // tenta cada chave na ordem; a primeira que estiver no mapa vence
   const chaves = [planoId, ofertaId, productId].filter(Boolean);
 
-  if (!email || !orderId) return json({ error: 'payload sem email/order_id' }, 400);
+  // O evento de TESTE da Kiwify costuma vir sem comprador. Antes isso devolvia 400 seco e a
+  // gente perdia a única chance de ver os ids — que é exatamente o que o teste serve pra revelar.
+  if (!email || !orderId) return json({
+    error: 'payload sem email/order_id (normal num evento de teste)',
+    status,
+    candidatos: { planoId, ofertaId, productId },
+    todosOsIds: idsCandidatos(ev),
+    comoUsar: 'compare o teste de um plano Gestão com o de um Pro: o campo que MUDA é a chave do kiwify_plan_map',
+  }, 200);
 
   // idempotência: order+status só processa uma vez
   const eid = orderId + '|' + status;
