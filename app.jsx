@@ -16,9 +16,11 @@ const WALLETS = ['PokerStars','GG Poker','Reserva','Outros'];
 // GrinderBank: checkouts reais da Hotmart (produto Gestão Y106811622J · Pro K106838001X).
 // O e-mail da conta vai pré-preenchido: comprar com o MESMO e-mail é o que faz o webhook
 // ativar o plano sozinho na conta.
+// Kiwify. Cada plano tem um link duplicado no painel (8 no total, 2 por plano, mesmo preço);
+// usamos um de cada, e o webhook resolve pelo VALOR cobrado — então cair no duplicado dá no mesmo.
 const CHECKOUT={
-  gestao:{mensal:'https://pay.hotmart.com/Y106811622J?off=8yvvehri',anual:'https://pay.hotmart.com/Y106811622J?off=zzmz1hue'},
-  pro:{mensal:'https://pay.hotmart.com/K106838001X?off=rpo4cutz',anual:'https://pay.hotmart.com/K106838001X?off=qkhobsay'},
+  gestao:{mensal:'https://pay.kiwify.com.br/BCrSogz',anual:'https://pay.kiwify.com.br/VS7YGUR'},
+  pro:{mensal:'https://pay.kiwify.com.br/rRaBx79',anual:'https://pay.kiwify.com.br/QcBjiXF'},
 };
 // Pré-preenche o e-mail no checkout — é ele que liga o pagamento à conta no app.
 // O separador tem que ser "?" quando a URL ainda não tem query: os links da Hotmart vinham com
