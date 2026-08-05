@@ -42,9 +42,15 @@ const CHECKOUT = {
     anual: 'https://pay.hotmart.com/K106838001X?off=qkhobsay'
   }
 };
+// Pré-preenche o e-mail no checkout — é ele que liga o pagamento à conta no app.
+// O separador tem que ser "?" quando a URL ainda não tem query: os links da Hotmart vinham com
+// ?off=..., mas os da Kiwify são limpos (pay.kiwify.com.br/BCrSogz). Com "&" fixo, o e-mail
+// virava parte do caminho e não chegava — a pessoa pagaria com outro e-mail e não receberia acesso.
 const abrirCheckout = (plano, ciclo, email) => {
   const c = CHECKOUT[plano === 'gestao' ? 'gestao' : 'pro'];
-  window.open((c[ciclo] || c.mensal) + (email ? `&email=${encodeURIComponent(email)}` : ''), '_blank');
+  const url = c[ciclo] || c.mensal;
+  const sep = url.includes('?') ? '&' : '?';
+  window.open(url + (email ? `${sep}email=${encodeURIComponent(email)}` : ''), '_blank');
 };
 const PLAN_LABEL = {
   free: 'Grátis',
