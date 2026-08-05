@@ -20,9 +20,15 @@ const CHECKOUT={
   gestao:{mensal:'https://pay.hotmart.com/Y106811622J?off=8yvvehri',anual:'https://pay.hotmart.com/Y106811622J?off=zzmz1hue'},
   pro:{mensal:'https://pay.hotmart.com/K106838001X?off=rpo4cutz',anual:'https://pay.hotmart.com/K106838001X?off=qkhobsay'},
 };
+// Pré-preenche o e-mail no checkout — é ele que liga o pagamento à conta no app.
+// O separador tem que ser "?" quando a URL ainda não tem query: os links da Hotmart vinham com
+// ?off=..., mas os da Kiwify são limpos (pay.kiwify.com.br/BCrSogz). Com "&" fixo, o e-mail
+// virava parte do caminho e não chegava — a pessoa pagaria com outro e-mail e não receberia acesso.
 const abrirCheckout=(plano,ciclo,email)=>{
   const c=CHECKOUT[plano==='gestao'?'gestao':'pro'];
-  window.open((c[ciclo]||c.mensal)+(email?`&email=${encodeURIComponent(email)}`:''),'_blank');
+  const url=c[ciclo]||c.mensal;
+  const sep=url.includes('?')?'&':'?';
+  window.open(url+(email?`${sep}email=${encodeURIComponent(email)}`:''),'_blank');
 };
 const PLAN_LABEL={free:'Grátis',gestao:'Gestão (R$ 19,90/mês)',pro:'Pro (R$ 49,90/mês)',founder:'Fundador (tudo liberado)',team:'Time'};
 // tour guiado do 1º acesso: navega tela a tela com um cartão explicando cada parte
