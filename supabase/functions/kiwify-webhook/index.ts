@@ -1,12 +1,13 @@
-// #2: webhook de cobrança da Kiwify. ESQUELETO PRONTO — falta só você:
-//   1) criar os produtos na Kiwify e configurar o webhook apontando pra esta URL
-//      https://pegrfpsyddzdvvuliugr.functions.supabase.co/kiwify-webhook?token=SEU_TOKEN
-//   2) definir os secrets no Supabase (Edge Functions -> Secrets):
-//      KIWIFY_WEBHOOK_TOKEN = o mesmo token que você põe na URL do webhook
-//      KIWIFY_PLAN_MAP      = JSON {"<product_id_ou_offer>":"gestao","<outro>":"pro"}
-//   Enquanto os secrets não existirem, o webhook responde 503 e não faz nada (fail-closed).
+// Webhook de cobrança da Kiwify -> libera/revoga o plano no GrinderBank.
+// URL configurada no painel da Kiwify:
+//   https://pegrfpsyddzdvvuliugr.supabase.co/functions/v1/kiwify-webhook
 //
-// Verificação: preferimos a ASSINATURA HMAC-SHA1 do corpo (?signature=, chave = KIWIFY_WEBHOOK_TOKEN)
+// Configuração fica em app_secrets (SQL), não em variável de ambiente:
+//   kiwify_webhook_token = o mesmo token digitado no painel da Kiwify
+//   kiwify_plan_map      = JSON {"<id do plano>":"gestao","<outro>":"pro"}
+// Sem token configurado -> 503 e nada acontece (fail-closed).
+//
+// Verificação: preferimos a ASSINATURA HMAC-SHA1 do corpo (?signature=, chave = o token)
 // — mais segura que token na URL, que vaza em log/referer. Se a Kiwify mandar só ?token=, cai nele.
 // Idempotência: cada order_id+status entra uma vez em webhook_events.
 // Deploy: supabase functions deploy kiwify-webhook --no-verify-jwt
@@ -14,8 +15,21 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const TOKEN = Deno.env.get('KIWIFY_WEBHOOK_TOKEN') || '';
-const PLAN_MAP = (() => { try { return JSON.parse(Deno.env.get('KIWIFY_PLAN_MAP') || '{}'); } catch { return {}; } })();
+// Token e mapa de planos vivem na tabela app_secrets (mesmo lugar do hottok da Hotmart), não em
+// variável de ambiente. Motivo prático: o mapa muda quando um plano novo entra, e por SQL isso é
+// um UPDATE — por env exigiria mexer no painel e refazer o deploy da função a cada ajuste.
+// O env continua valendo como fallback pra quem preferir configurar por lá.
+const ENV_TOKEN = Deno.env.get('KIWIFY_WEBHOOK_TOKEN') || '';
+const ENV_MAP = Deno.env.get('kiwify_plan_map') || '';
+async function segredos(admin: any): Promise<{ token: string; map: Record<string, string> }> {
+  const { data } = await admin.from('app_secrets').select('name,value')
+    .in('name', ['kiwify_webhook_token', 'kiwify_plan_map']);
+  const get = (n: string) => (data || []).find((r: any) => r.name === n)?.value || '';
+  const token = (get('kiwify_webhook_token') || ENV_TOKEN).trim();
+  let map: Record<string, string> = {};
+  try { map = JSON.parse(get('kiwify_plan_map') || ENV_MAP || '{}'); } catch { map = {}; }
+  return { token, map };
+}
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -60,8 +74,10 @@ function idsCandidatos(obj: unknown, caminho = '', out: Record<string, string> =
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
-  // fail-closed: sem os secrets configurados, não processa nada
-  if (!TOKEN) return json({ error: 'webhook não configurado (defina KIWIFY_WEBHOOK_TOKEN)' }, 503);
+  const admin = createClient(URL, SERVICE);
+  const { token: TOKEN, map: PLAN_MAP } = await segredos(admin);
+  // fail-closed: sem token configurado, não processa nada
+  if (!TOKEN) return json({ error: 'webhook não configurado (falta kiwify_webhook_token)' }, 503);
   const url = new URL(req.url);
   const raw = await req.text();
 
@@ -99,8 +115,6 @@ Deno.serve(async (req) => {
 
   if (!email || !orderId) return json({ error: 'payload sem email/order_id' }, 400);
 
-  const admin = createClient(URL, SERVICE);
-
   // idempotência: order+status só processa uma vez
   const eid = orderId + '|' + status;
   const { error: dup } = await admin.from('webhook_events').insert({ provider: 'kiwify', event_id: eid });
@@ -117,11 +131,11 @@ Deno.serve(async (req) => {
     // Junto vai um mapa de TODOS os campos com cara de id, com o caminho de cada um: sem isso,
     // um painel que esconde o plan_id deixaria a integração emperrada sem pista nenhuma.
     if (!plan) return json({
-      error: 'plano não está no KIWIFY_PLAN_MAP',
+      error: 'plano não está no kiwify_plan_map',
       candidatos: { planoId, ofertaId, productId },
       // varre o payload e devolve tudo que PARECE identificador, sem dado pessoal
       todosOsIds: idsCandidatos(ev),
-      comoUsar: 'escolha o campo que MUDA entre Gestão e Pro e use como chave do KIWIFY_PLAN_MAP',
+      comoUsar: 'escolha o campo que MUDA entre Gestão e Pro e use como chave do kiwify_plan_map',
     }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
     if (error) return json({ error: error.message }, 500);
