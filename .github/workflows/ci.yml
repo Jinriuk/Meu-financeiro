@@ -33,6 +33,11 @@ jobs:
             exit 1;
           }
 
+      # Roda antes do Playwright porque é instantâneo e pega uma classe de bug que só
+      # apareceria em produção: o deploy de Edge Function publica sem executar o código.
+      - name: Edge Functions — nenhum global sombreado
+        run: node test/edge-functions.mjs
+
       - name: Instala o Chromium do Playwright
         run: npx playwright install --with-deps chromium
 

@@ -4,7 +4,9 @@
 // Deploy: supabase functions deploy auth-alias --no-verify-jwt
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const URL = Deno.env.get('SUPABASE_URL')!;
+// URL_SB, não URL: um `const URL` de módulo apaga o construtor URL global. Aqui ninguém usa
+// `new URL()` hoje, mas o kiwify-webhook usava — e ficou cinco commits devolvendo 500. Ver test/edge-functions.mjs.
+const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
 
@@ -28,7 +30,7 @@ async function resolveEmail(identifier: string): Promise<string | null> {
   const id = (identifier || '').trim();
   if (!id) return null;
   if (id.includes('@')) return id.toLowerCase();
-  const admin = createClient(URL, SERVICE);
+  const admin = createClient(URL_SB, SERVICE);
   const digits = id.replace(/\D/g, '');
   // CPF: 11 dígitos e o texto é só número/pontuação (apelido nunca é só número)
   if (digits.length === 11 && /^[\d.\-\s]+$/.test(id)) {
@@ -49,7 +51,7 @@ Deno.serve(async (req) => {
   if (action === 'login') {
     const email = await resolveEmail(String(body?.identifier || ''));
     if (!email) return json(req, { error: 'invalid' }, 401);   // genérico: não confirma existência
-    const pub = createClient(URL, ANON);
+    const pub = createClient(URL_SB, ANON);
     const { data, error } = await pub.auth.signInWithPassword({ email, password: String(body?.password || '') });
     if (error || !data?.session) return json(req, { error: 'invalid' }, 401);
     return json(req, { access_token: data.session.access_token, refresh_token: data.session.refresh_token });
@@ -58,7 +60,7 @@ Deno.serve(async (req) => {
   if (action === 'reset') {
     const email = await resolveEmail(String(body?.identifier || ''));
     if (email) {
-      const pub = createClient(URL, ANON);
+      const pub = createClient(URL_SB, ANON);
       try { await pub.auth.resetPasswordForEmail(email, { redirectTo: String(body?.redirectTo || '') }); } catch (_) {}
     }
     return json(req, { ok: true });   // sempre genérico: não revela se existe

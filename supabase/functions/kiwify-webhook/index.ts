@@ -7,13 +7,18 @@
 //   kiwify_plan_map      = JSON {"<id do plano>":"gestao","<outro>":"pro"}
 // Sem token configurado -> 503 e nada acontece (fail-closed).
 //
-// Verificação: preferimos a ASSINATURA HMAC-SHA1 do corpo (?signature=, chave = o token)
-// — mais segura que token na URL, que vaza em log/referer. Se a Kiwify mandar só ?token=, cai nele.
+// Verificação: aceita o segredo em três lugares — ?signature= (HMAC-SHA1 do corpo, o mais seguro),
+// ?token= na URL, ou o campo "secret" DENTRO DO CORPO, que é onde a Kiwify de fato manda.
+// ATENÇÃO: o token é gerado pela Kiwify e não pode ser escolhido — o campo do painel é readonly.
+// Quem manda é o painel; aqui a gente só copia o valor pra kiwify_webhook_token.
 // Idempotência: cada order_id+status entra uma vez em webhook_events.
 // Deploy: supabase functions deploy kiwify-webhook --no-verify-jwt
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const URL = Deno.env.get('SUPABASE_URL')!;
+// URL_SB, não URL: `const URL = ...` no escopo do módulo SOMBREIA o construtor global `URL`,
+// e o `new URL(req.url)` lá embaixo virava `TypeError: URL is not a constructor` — 500 em todo
+// POST, antes até de conferir o token. Foi assim desde a primeira versão. Não renomeie de volta.
+const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Token e mapa de planos vivem na tabela app_secrets (mesmo lugar do hottok da Hotmart), não em
 // variável de ambiente. Motivo prático: o mapa muda quando um plano novo entra, e por SQL isso é
@@ -74,26 +79,35 @@ function idsCandidatos(obj: unknown, caminho = '', out: Record<string, string> =
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
-  const admin = createClient(URL, SERVICE);
+  const admin = createClient(URL_SB, SERVICE);
   const { token: TOKEN, map: PLAN_MAP } = await segredos(admin);
   // fail-closed: sem token configurado, não processa nada
   if (!TOKEN) return json({ error: 'webhook não configurado (falta kiwify_webhook_token)' }, 503);
   const url = new URL(req.url);
   const raw = await req.text();
 
-  // Preferência: HMAC do CORPO (assinatura da Kiwify em ?signature=) — não vaza em log/referer
-  // como o token na URL. Se não vier assinatura, cai no token (?token=) como MVP.
-  const signature = url.searchParams.get('signature') || req.headers.get('x-kiwify-signature') || '';
-  if (signature) {
-    const expected = await hmacSha1Hex(TOKEN, raw);
-    if (!safeEqual(signature.toLowerCase(), expected)) return json({ error: 'assinatura inválida' }, 401);
-  } else {
-    const token = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
-    if (!safeEqual(token, TOKEN)) return json({ error: 'unauthorized' }, 401);
-  }
-
   let ev: any;
   try { ev = JSON.parse(raw); } catch { return json({ error: 'json' }, 400); }
+
+  // Onde a Kiwify põe o segredo, em ordem de preferência:
+  //   1. ?signature= — HMAC-SHA1 do corpo com o token como chave. Melhor: não vaza em log/referer.
+  //   2. ?token= / header — token cru na URL.
+  //   3. corpo, campo "secret" — é ONDE A KIWIFY REALMENTE MANDA no evento de teste (confirmado
+  //      capturando a requisição). Sem este terceiro caso a verificação nunca encontra o token
+  //      e todo evento legítimo cai em 401.
+  // Qualquer um que bata autoriza; nenhum bate, 401.
+  const signature = url.searchParams.get('signature') || req.headers.get('x-kiwify-signature') || '';
+  const tokenUrl = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
+  const tokenCorpo = String(ev?.secret || ev?.token || '');
+  let autorizado = false;
+  if (signature) autorizado = safeEqual(signature.toLowerCase(), await hmacSha1Hex(TOKEN, raw));
+  if (!autorizado && tokenUrl) autorizado = safeEqual(tokenUrl, TOKEN);
+  if (!autorizado && tokenCorpo) autorizado = safeEqual(tokenCorpo, TOKEN);
+  if (!autorizado) return json({
+    error: 'unauthorized',
+    // onde o segredo veio (sem revelar o valor) — diferencia "token diferente" de "não mandou token"
+    recebeu: { assinatura: !!signature, tokenNaUrl: !!tokenUrl, secretNoCorpo: !!tokenCorpo },
+  }, 401);
 
   // extração defensiva (a Kiwify varia o shape entre produtos; ajuste os caminhos se preciso)
   const status = String(ev?.order_status || ev?.webhook_event_type || ev?.event || ev?.status || '').toLowerCase();

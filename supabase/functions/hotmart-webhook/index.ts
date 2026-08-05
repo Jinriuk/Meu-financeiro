@@ -8,7 +8,9 @@
 // Entitlement: produto -> plano por ID (estável); ativação/revogação pelas RPCs já auditadas.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const URL = Deno.env.get('SUPABASE_URL')!;
+// URL_SB, não URL: um `const URL` de módulo apaga o construtor URL global. Aqui ninguém usa
+// `new URL()` hoje, mas o kiwify-webhook usava — e ficou cinco commits devolvendo 500. Ver test/edge-functions.mjs.
+const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 // produto Hotmart -> plano do GrinderBank (IDs dos produtos criados no painel)
@@ -33,7 +35,7 @@ function safeEqual(a: string, b: string): boolean {
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
-  const admin = createClient(URL, SERVICE);
+  const admin = createClient(URL_SB, SERVICE);
 
   // hottok configurado? (fail-closed enquanto o painel da Hotmart não entregar o valor)
   const { data: sec } = await admin.from('app_secrets').select('value').eq('name', 'hotmart_hottok').maybeSingle();
