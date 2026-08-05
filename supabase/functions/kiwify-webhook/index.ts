@@ -124,8 +124,17 @@ Deno.serve(async (req) => {
     ev?.Commissions?.product_base_price_offer?.id ?? ev?.offer_id ??
     ev?.Product?.offer_id ?? ev?.checkout_link ?? '');
   const productId = String(ev?.Product?.product_id || ev?.product_id || '');
+  // VALOR COBRADO, em centavos. Último recurso, e o único que a gente consegue mapear ANTES da
+  // primeira venda: o painel da Kiwify não mostra o plan_id, e o evento de teste manda um plano
+  // fictício. Como os quatro preços são distintos (1990 / 14900 / 4990 / 39900), o valor separa
+  // Gestão de Pro sem ambiguidade. Fica por último de propósito: se um dia rolar cupom ou
+  // mudança de preço, o valor não bate — e aí é melhor cair no 202 registrado do que liberar
+  // o plano errado. Prefixo "valor:" pra nunca colidir com um id.
+  const valor = String(ev?.Commissions?.charge_amount ?? ev?.charge_amount ?? '');
+  const valorBase = String(ev?.Commissions?.product_base_price ?? '');
   // tenta cada chave na ordem; a primeira que estiver no mapa vence
-  const chaves = [planoId, ofertaId, productId].filter(Boolean);
+  const chaves = [planoId, ofertaId, productId,
+    valor && 'valor:' + valor, valorBase && 'valor:' + valorBase].filter(Boolean) as string[];
 
   // O evento de TESTE da Kiwify costuma vir sem comprador. Antes isso devolvia 400 seco e a
   // gente perdia a única chance de ver os ids — que é exatamente o que o teste serve pra revelar.
@@ -148,16 +157,27 @@ Deno.serve(async (req) => {
   if (ativa) {
     const chave = chaves.find((k) => PLAN_MAP[k]);
     const plan = chave ? PLAN_MAP[chave] : PLAN_MAP['default'];
+    // Registra TODA cobrança aprovada, liberando ou não. Sem isso, um cliente que paga e cai no
+    // 202 some em silêncio — a Kiwify recebe "ok" e ninguém fica sabendo. E é daqui que saem os
+    // plan_id reais: o primeiro Gestão e o primeiro Pro de verdade escrevem os ids nesta tabela.
+    // Falha de registro nunca pode impedir a liberação, então o erro é ignorado de propósito.
+    await admin.from('webhook_cobrancas').insert({
+      provider: 'kiwify', order_id: orderId, status, email,
+      plano_id: planoId || null, produto_id: productId || null,
+      valor_centavos: valor || valorBase || null,
+      plano_liberado: plan || null, chave_usada: chave || null,
+    });
     // 202 (não 500) de propósito: a Kiwify não fica reenviando, e a resposta mostra QUAIS ids
     // chegaram — é assim que se descobre o identificador do plano quando o painel não exibe.
     // Junto vai um mapa de TODOS os campos com cara de id, com o caminho de cada um: sem isso,
     // um painel que esconde o plan_id deixaria a integração emperrada sem pista nenhuma.
     if (!plan) return json({
       error: 'plano não está no kiwify_plan_map',
-      candidatos: { planoId, ofertaId, productId },
+      candidatos: { planoId, ofertaId, productId, valor: valor || valorBase },
       // varre o payload e devolve tudo que PARECE identificador, sem dado pessoal
       todosOsIds: idsCandidatos(ev),
-      comoUsar: 'escolha o campo que MUDA entre Gestão e Pro e use como chave do kiwify_plan_map',
+      comoUsar: 'cadastre planoId no kiwify_plan_map, ou "valor:<centavos>" enquanto o id real não aparece',
+      registrado: 'a cobrança ficou em webhook_cobrancas com plano_liberado null — liberação manual pendente',
     }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
     if (error) return json({ error: error.message }, 500);
