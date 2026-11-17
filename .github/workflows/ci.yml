@@ -47,3 +47,7 @@ jobs:
           node test/ui/stats.mjs
           node test/ui/resumos.mjs
           node test/ui/bounty.mjs
+          node test/ui/status.mjs
+
+      - name: Segurança no banco (F0.5/F0.6) num Postgres local com o recorte de produção
+        run: bash test/sql/run.sh

@@ -35,7 +35,7 @@ export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
     const req = route.request(); const url = new URL(req.url());
     if (url.pathname.startsWith('/auth/v1/user')) return route.fulfill({ json: user });
     if (url.pathname.startsWith('/auth/v1/')) return route.fulfill({ json: {} });
-    if (url.pathname.startsWith('/rest/v1/rpc/')) return route.fulfill({ json: null });
+    if (url.pathname.startsWith('/rest/v1/rpc/')) { const nome = url.pathname.split('/').pop(); return route.fulfill({ json: (db.__rpc || {})[nome] ?? null }); }
     if (url.pathname.startsWith('/functions/v1/')) return route.fulfill({ json: {} });
     const tabela = url.pathname.replace('/rest/v1/', '');
     if (req.method() !== 'GET') {

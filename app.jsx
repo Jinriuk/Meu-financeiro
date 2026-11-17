@@ -1789,6 +1789,7 @@ function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
+  const [srvStatus,setSrvStatus]=useState(null);   // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
   const [askTour,setAskTour]=useState(false);      // convite pro tour guiado (1º acesso)
   const [tour,setTour]=useState(0);                // 0 = desligado · n = passo atual do tour
@@ -1880,6 +1881,8 @@ function Dashboard({session,profile}){
     try{
       // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
       try{ await sb.rpc('aplicar_ativacao'); }catch(e){}
+      // status calculado com o relógio do servidor; sem a função (banco antigo) cai na conta local
+      try{ const {data:st,error:se}=await sb.rpc('meu_status'); if(!se&&st&&typeof st==='object') setSrvStatus(st); }catch(e){}
       // carga UNIFORME: o RLS por workspace entrega a cada conta só o que é dela
       const [wsr,cfg,t,l,pw,w,hhr,cc]=await Promise.all([
         sb.from('workspaces').select('*'),
@@ -2309,12 +2312,14 @@ function Dashboard({session,profile}){
   // plano do workspace: quem pode usar as Stats (Pro/fundador/time). Gestão de banca é de todos.
   // Sem workspace carregado, conta solo assume 'free' — falha de leitura nunca destrava paywall.
   const plan=ws?ws.plan:(solo?'free':'team');
-  const canStats=!solo||['pro','founder','team'].includes(plan);
+  const canStats=srvStatus&&srvStatus.pode_stats!=null?!!srvStatus.pode_stats:(!solo||['pro','founder','team'].includes(plan));
   // teste grátis de 15 dias: trial_ends_at no futuro = em teste; no passado = bloqueado.
   // null = pool/fundador/assinatura ativa (nunca bloqueia).
   const trialEnds=(ws&&ws.trial_ends_at)?Date.parse(ws.trial_ends_at):null;
-  const trialDaysLeft=trialEnds!=null?Math.max(0,Math.ceil((trialEnds-Date.now())/86400000)):null;
-  const trialExpired=trialEnds!=null&&Date.now()>trialEnds;
+  // "agora" é o do servidor quando disponível: mudar a data do aparelho não destrava nem bloqueia nada
+  const agoraSrv=srvStatus&&srvStatus.agora?Date.parse(srvStatus.agora):Date.now();
+  const trialDaysLeft=trialEnds!=null?Math.max(0,Math.ceil((trialEnds-agoraSrv)/86400000)):null;
+  const trialExpired=srvStatus&&srvStatus.ativo!=null?!srvStatus.ativo:(trialEnds!=null&&agoraSrv>trialEnds);
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
   const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
@@ -3794,8 +3799,7 @@ function App(){
     (async()=>{
       const {data}=await sb.from('player_profiles').select('*').eq('user_id',session.user.id).maybeSingle();
       if(!on) return;
-      // se o e-mail foi trocado no painel do Supabase, atualiza o espelho usado pelo login
-      if(data && data.email!==session.user.email) sb.from('player_profiles').update({email:session.user.email}).eq('user_id',session.user.id).then(()=>{});
+      // o espelho do e-mail no perfil é mantido pelo SERVIDOR (trigger a partir do auth) — o app não grava mais (F0.5)
       // cadastro pendente (conta confirmada por e-mail, ou passo do cadastro que falhou):
       // completa perfil + workspace sozinho com o apelido/WhatsApp guardados no aparelho
       if(!data){
