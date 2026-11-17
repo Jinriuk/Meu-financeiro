@@ -123,7 +123,10 @@ function gradeStatus(e, abiMax){
    custo já foi pago quando o satélite foi jogado; contar de novo seria cobrar duas vezes. */
 const nominalTorneio = t => num(t.buyin)*(1+num(t.reentries));
 const totalInvestido = t => t.ticket ? 0 : nominalTorneio(t);
-const lucroTorneio   = t => num(t.prize)-totalInvestido(t);
+// Bounty de PKO é dinheiro ganho À PARTE do prêmio por colocação (F0.8): entra no lucro, mas fica em
+// campo próprio — relatório mostra prêmio e bounty separados, e ITM continua sendo só prêmio > 0.
+const bountyTorneio  = t => num(t.bounty);
+const lucroTorneio   = t => num(t.prize)+bountyTorneio(t)-totalInvestido(t);
 // ABI máximo por jogador (cada um tem seu limite de grade); cai no padrão se não definido.
 // Com `date`, devolve o ABI vigente NAQUELE dia: desfaz as mudanças registradas depois dele —
 // torneio antigo é julgado pela grade da época, não pela atual.
@@ -143,7 +146,7 @@ function deriveDaily(tours){
   const map={};
   tours.forEach(t=>{
     const k=t.player+'|'+t.entry_date;
-    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:t.player, qtd_torneios:0, qtd_entradas:0, total_buyins:0, buyins_nominal:0, tickets:0, maior_buyin:0, maior_premiacao:0, resultado:0};
+    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:t.player, qtd_torneios:0, qtd_entradas:0, total_buyins:0, buyins_nominal:0, tickets:0, maior_buyin:0, maior_premiacao:0, bounties:0, resultado:0};
     const m=map[k], inv=totalInvestido(t);
     m.qtd_torneios+=1;
     m.qtd_entradas+=1+num(t.reentries);
@@ -152,7 +155,8 @@ function deriveDaily(tours){
     if(t.ticket) m.tickets+=1;
     m.maior_buyin=Math.max(m.maior_buyin, num(t.buyin));   // grade julga pelo nível, não pelo custo
     m.maior_premiacao=Math.max(m.maior_premiacao, num(t.prize));
-    m.resultado+=num(t.prize)-inv;
+    m.bounties+=bountyTorneio(t);
+    m.resultado+=lucroTorneio(t);
   });
   return Object.values(map).sort((a,b)=>a.entry_date<b.entry_date?1:-1);
 }
@@ -277,8 +281,13 @@ function hhParseHand(block,why){
   const mD=head.match(/(\d{4})[\/-](\d{2})[\/-](\d{2})/); const date=mD?`${mD[1]}-${mD[2]}-${mD[3]}`:null;
   const mH=head.match(/#([^:\s]+):/); const hid=mH?mH[1]:null;   // nº da mão (dedup)
   const seg=head.slice(0,Math.max(0,head.search(/Hold'em/)));
-  let buyin=0; (seg.match(/\$\s?[\d.,]+/g)||[]).forEach(x=>buyin+=hhNum(x));
-  const tname=((seg.split(/(?:Tournament|Torneio) #[^,]+,\s*/)[1]||'').replace(/\$\s?[\d.,]+/g,'').replace(/USD|EUR|CNY|\+/g,'').trim().replace(/[,\s]+$/,''))||null;
+  // buy-in: o PS traz no cabeçalho ("$1.40+$0.10 USD"). A GG NÃO: o que tem lá é o NOME do torneio, e nome
+  // tem garantido ("Daily $100,000 #ThanksGG Flipout" é freeroll). Na GG o buy-in vem do resumo (F0.11).
+  const depois=(seg.split(/(?:Tournament|Torneio) #[^,]+,\s*/)[1]||'');
+  let buyin=0, tname=null;
+  if(site==='PokerStars'){ (seg.match(/\$\s?[\d.,]+/g)||[]).forEach(x=>buyin+=hhNum(x));
+    tname=(depois.replace(/[$€£¥]\s?[\d.,]+/g,'').replace(/USD|EUR|CNY|\+/g,'').trim().replace(/[,\s]+$/,''))||null; }
+  else tname=depois.trim().replace(/,$/,'')||null;
 
   let button=0; const seats=[]; let hero=null, heroCards=null;
   let street=0; const board=[]; const acts=[]; const invested={}, collected={}, shows={}, antes={}, blinds={};
@@ -538,20 +547,22 @@ function parseSummaries(text){
   for(const b of blocks){
     const head=b.match(/^(?:PokerStars |GGPoker )?Tournament #(\d+)(?:,\s*(.*))?$/m);
     if(!head) continue;
-    // cabeçalho GG: "Bounty Hunters Special $5.40, Hold'em No Limit" · PS às vezes só traz o jogo
-    const parts=String(head[2]||'').split(',').map(x=>x.trim()).filter(Boolean);
-    const GAME=/(hold\s*'?em|omaha|stud|razz|badugi|draw|\baof\b)/i;
-    let game=null;
-    // só tira o último pedaço se sobrar nome: "Omaha Special" sozinho é NOME, não modalidade
-    if(parts.length>1&&GAME.test(parts[parts.length-1])) game=parts.pop();
-    const name=parts.join(', ')||null;
+    // cabeçalho GG: "Bounty Hunters Special $5.40, Hold'em No Limit" · PS às vezes só traz o jogo.
+    // Só a ÚLTIMA vírgula separa o jogo: "Daily $100,000 #ThanksGG Flipout" tem vírgula de milhar no nome (F0.11)
+    const resto=String(head[2]||'').trim();
+    const mg=resto.match(/^(.*\S)\s*,\s*([^,]*(?:hold\s*'?em|omaha|stud|razz|badugi|draw|\baof\b)[^,]*)$/i);
+    const game=mg?mg[2].trim():null;
+    const name=(mg?mg[1]:resto).trim()||null;
     const bi=b.match(/^Buy-?[Ii]n:\s*(.+)$/m);
-    // GG separa por "+", PokerStars por "/" — somamos todas as parcelas ($base, taxa e bounty)
-    const pedacos=bi?((bi[1].match(/\$\s?[\d.,]+/g)||[]).map(tsMoney)):[];
+    // GG separa por "+", PokerStars por "/" — somamos todas as parcelas (base, taxa e bounty), em qualquer moeda
+    const MOEDA={'$':'USD','€':'EUR','£':'GBP','¥':'CNY'};
+    const parcelas=bi?[...bi[1].matchAll(/([$€£¥])\s?([\d.,]+)/g)]:[];
+    const pedacos=parcelas.map(m=>tsMoney(m[2]));
+    const moeda=parcelas.length?MOEDA[parcelas[0][1]]:((b.match(/received a total of ([$€£¥])/i)||[])[1]?MOEDA[b.match(/received a total of ([$€£¥])/i)[1]]:'USD');
     const fld=b.match(/^([\d,]+)\s+[Pp]layers/m);
     const dt =b.match(/Tournament started\s+(\d{4})\/(\d{2})\/(\d{2})/);
     const pos=b.match(/You finished (?:the tournament )?in (\d+)(?:st|nd|rd|th)? place/i);
-    const rec=b.match(/You (?:made (\d+) re-?(?:entries|entry|buys|buy) and )?received a total of \$\s?([\d.,]+)/i);
+    const rec=b.match(/You (?:made (\d+) re-?(?:entries|entry|buys|buy) and )?received a total of [$€£¥]\s?([\d.,]+)/i);
     const re2=b.match(/You made (\d+) re-?(?:entries|entry|buys|buy)/i);
     // prêmio pago em BILHETE (satélite): não é dinheiro na banca — vira 0 e fica na observação.
     // Olha SÓ a linha do "You received": torneio chamado "... Ticket ..." não pode zerar prêmio.
@@ -560,7 +571,7 @@ function parseSummaries(text){
     // PKO: o buy-in vem em 3 parcelas ($prêmio + taxa + bounty) ou o nome anuncia a bounty
     const bounty=pedacos.length>=3||/bounty|knockout|\bko\b|progressive|mystery/i.test((name||'')+' '+(game||''));
     rows.push({
-      tid:head[1], name, game, bounty,
+      tid:head[1], name, game, bounty, moeda,
       psite:/^PokerStars/.test(b.trim())?'PokerStars':null,
       buyin:Math.round(pedacos.reduce((s,x)=>s+x,0)*100)/100,
       reentries:rec&&rec[1]?parseInt(rec[1],10):(re2?parseInt(re2[1],10):0),
@@ -573,6 +584,27 @@ function parseSummaries(text){
   }
   return rows;
 }
+/* F0.9: o que um resumo do site pode mudar num torneio que o jogador JÁ lançou à mão.
+   Dados descritivos (id do site, nome, field, posição) completam sem perguntar. Campos que mudam
+   o dinheiro (prêmio, bounty, re-entries) NUNCA são trocados sem confirmação: se o arquivo diverge
+   do digitado, vira um conflito que a prévia mostra; o padrão é manter o digitado.
+   Bounty só é comparado quando o arquivo traz o valor (o resumo da GG não traz). */
+const TS_DINHEIRO=['prize','bounty','reentries'];
+function tsMesclar(manual,linha,escolhas){
+  const upd={site_tournament_id:linha.site_tournament_id, tournament_name:linha.tournament_name, modality:linha.modality,
+    site:linha.site, field_size:linha.field_size, final_position:linha.final_position, ticket:!!linha.ticket};
+  const conflitos=[];
+  for(const k of TS_DINHEIRO){
+    if(linha[k]==null) continue;                       // o arquivo não informa
+    const a=num(manual[k]), b=num(linha[k]);
+    if(Math.abs(a-b)<=0.005) continue;
+    conflitos.push({campo:k,digitado:a,arquivo:b});
+    if(escolhas&&escolhas[k]==='arquivo') upd[k]=b;     // só com confirmação explícita
+  }
+  return {upd,conflitos};
+}
+// valores que valem pra um item da prévia (novo = do arquivo; completa = digitado salvo escolha contrária)
+const tsEfetivo=x=>x.atual?{...x.linha,...Object.fromEntries(TS_DINHEIRO.map(k=>[k,num(x.atual[k])])),...tsMesclar(x.atual,x.linha,x.escolhas).upd}:x.linha;
 // escolhe a modalidade do jogador (Ajustes) que combina com o torneio lido
 const tsModalidade=(mods,bounty)=>{
   const m=(mods&&mods.length)?mods:['MTT'];
@@ -1532,7 +1564,7 @@ function TourRow({t,config,players,onEdit,onDelete}){
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
-      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''}
+      <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''}{bountyTorneio(t)>0?` · bounty ${fmt(bountyTorneio(t))}`:''}
         {t.ticket&&<span style={{padding:'1px 7px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>BILHETE</span>}
         {st==='FORA DA GRADE'&&<><Badge text={st}/><span style={{color:C.red,fontWeight:700}}>buy-in {fmt(t.buyin)} · teto {fmt(abiMax)}</span></>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
@@ -1609,6 +1641,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   const st=gradeStatus(entry,abiMax), r=resultadoDia(entry), i=players.indexOf(entry.player);
   const ent=num(entry.qtd_entradas)||num(entry.qtd_torneios);
   const premios=dayTours.reduce((s,t)=>s+num(t.prize),0);
+  const bounties=dayTours.reduce((s,t)=>s+bountyTorneio(t),0);
   const cashes=dayTours.filter(t=>num(t.prize)>0).length;
   const roi=num(entry.total_buyins)>0?(r/num(entry.total_buyins))*100:0;
   const fora=st==='FORA DA GRADE';
@@ -1629,6 +1662,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
         <MiniStat label={`ABI máx (${entry.player.split(' ')[0]})`} value={fmt(abiMax)}/>
         <MiniStat label="Investido" value={fmt(entry.total_buyins)}/>
         <MiniStat label="Premiação" value={fmt(premios)} tone={C.greenMid}/>
+        {bounties>0&&<MiniStat label="Bounties" value={fmt(bounties)} tone={C.greenMid}/>}
         <MiniStat label="Cashes (ITM)" value={`${cashes}/${num(entry.qtd_torneios)}`}/>
         <MiniStat label="ROI do dia" value={pctFmt(roi)} tone={r>=0?C.greenMid:C.red}/>
       </div>
@@ -2088,17 +2122,21 @@ function Dashboard({session,profile}){
         buyin:r.buyin, reentries:r.reentries, field_size:r.field,
         final_position:r.position, prize:r.premioTicket?0:r.prize,
         ticket:false,   // o arquivo do site não diz — quem marca é o jogador, na prévia
-        observacoes:r.premioTicket?'Premiação paga em bilhete (não entrou dinheiro).':null,
+        currency:r.moeda||'USD',   // F0.11: torneio em ¥/€ fica marcado; a banca é em US$ e NÃO convertemos
+        observacoes:[r.premioTicket?'Premiação paga em bilhete (não entrou dinheiro).':null,
+          r.moeda&&r.moeda!=='USD'?`Valores em ${r.moeda} no arquivo, sem conversão para US$.`:null].filter(Boolean).join(' ')||null,
       };
       const jaTid=meus.find(t=>String(t.site_tournament_id||'')===r.tid);
       if(jaTid){ repetidos.push({r,linha,atual:jaTid}); continue; }
       const manual=meus.find(t=>!t.site_tournament_id&&!usados.has(t.id)&&t.entry_date===r.date
         &&Math.abs(num(t.buyin)-r.buyin)<0.005
         &&(!r.name||!t.tournament_name||tsNorm(t.tournament_name)===tsNorm(r.name)));
-      if(manual){ usados.add(manual.id); completa.push({r,linha,atual:manual}); continue; }
+      if(manual){ usados.add(manual.id); completa.push({r,linha:{...linha,ticket:!!manual.ticket},atual:manual,escolhas:{}}); continue; }
       novos.push({r,linha});
     }
-    const fora=[...novos,...completa].filter(x=>x.linha.buyin>abiMaxFor(config,player,x.linha.entry_date));
+    const outraMoeda=[...novos,...completa].filter(x=>x.linha.currency!=='USD');
+    if(outraMoeda.length) issues.unshift(`${outraMoeda.length} torneio${outraMoeda.length!==1?'s':''} em ${[...new Set(outraMoeda.map(x=>x.linha.currency))].join('/')} (${outraMoeda.slice(0,3).map(x=>x.linha.tournament_name).join(', ')}${outraMoeda.length>3?'…':''}). Os valores entram como estão no arquivo, SEM converter pra US$ — confira ou exclua depois de salvar.`);
+    const fora=[...novos,...completa].filter(x=>x.linha.currency==='USD'&&x.linha.buyin>abiMaxFor(config,player,x.linha.entry_date));
     setTsImp({busy:false,prog:'',res:null,preview:{player,novos,completa,repetidos,issues,fora,arquivos:textos.length}});
   };
   // liga/desliga "entrei com bilhete" numa linha da prévia (o resumo do site não traz esse dado)
@@ -2106,6 +2144,14 @@ function Dashboard({session,profile}){
     if(!s.preview) return s;
     const vira=l=>l.map(x=>x.linha.site_tournament_id===tid?{...x,linha:{...x.linha,ticket:!x.linha.ticket}}:x);
     return {...s,preview:{...s.preview,novos:vira(s.preview.novos),completa:vira(s.preview.completa)}};
+  });
+  // conflito de dinheiro na prévia: "usar o do arquivo" / "manter o digitado" (campo, ou todos com k=null)
+  const escolherResumo = (tid,k,valor) => setTsImp(s=>{
+    if(!s.preview) return s;
+    const muda=x=>{ if(!x.atual||(tid&&x.linha.site_tournament_id!==tid)) return x;
+      const cs=tsMesclar(x.atual,x.linha).conflitos.map(c=>c.campo).filter(c=>!k||c===k);
+      const e={...x.escolhas}; cs.forEach(c=>{ e[c]=valor; }); return {...x,escolhas:e}; };
+    return {...s,preview:{...s.preview,completa:s.preview.completa.map(muda)}};
   });
   const salvarResumos = async ()=>{
     const pv=tsImp.preview; if(!pv) return;
@@ -2129,12 +2175,8 @@ function Dashboard({session,profile}){
       }
     }
     for(const x of pv.completa){
-      const {data,error}=await sb.from('tournaments').update({
-        site_tournament_id:x.linha.site_tournament_id, tournament_name:x.linha.tournament_name,
-        modality:x.linha.modality, site:x.linha.site, reentries:x.linha.reentries,
-        field_size:x.linha.field_size, final_position:x.linha.final_position, prize:x.linha.prize,
-        ticket:x.linha.ticket,
-      }).eq('id',x.atual.id).select().single();
+      const {upd}=tsMesclar(x.atual,x.linha,x.escolhas);
+      const {data,error}=await sb.from('tournaments').update(upd).eq('id',x.atual.id).select().single();
       if(error){ erros.push(error.message); } else { completados++; setTours(t=>t.map(y=>y.id===x.atual.id?data:y)); }
     }
     setTsImp({busy:false,prog:'',preview:null,res:{inseridos,completados,repetidos:pv.repetidos.length,erros}});
@@ -2386,6 +2428,7 @@ function Dashboard({session,profile}){
       {k:'field_size',label:'Field (jogadores)',type:'int',def:'0'},
       {k:'final_position',label:'Posição final',type:'int'},
       {k:'prize',label:'Premiação (US$)',type:'money',def:'0'},
+      {k:'bounty',label:'Bounties PKO (US$)',type:'money',def:'0',hint:'PKO: o que você ganhou eliminando jogadores. Fica separado do prêmio por colocação e entra no lucro.'},
       {k:'ticket',label:'Entrei com bilhete',type:'toggle',full:true,hint:'Ticket/T$ ganho antes. O buy-in conta como nível jogado, mas nenhum dinheiro sai da banca (já saiu no satélite).'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
     ],
@@ -2464,12 +2507,13 @@ function Dashboard({session,profile}){
     const torneios=ed.reduce((s,e)=>s+num(e.qtd_torneios),0);
     const entradas=ed.reduce((s,e)=>s+(num(e.qtd_entradas)||num(e.qtd_torneios)),0);
     const premios=monthToursOf(p).reduce((s,t)=>s+num(t.prize),0);
+    const bounties=monthToursOf(p).reduce((s,t)=>s+bountyTorneio(t),0);
     const cashes=monthToursOf(p).filter(t=>num(t.prize)>0).length;
     const abi=entradas>0?volNom/entradas:0;
     const roi=vol>0?(res/vol)*100:0;
     const itm=torneios>0?(cashes/torneios)*100:0;
     const makeAberto=makeUpAt(p,month+'-31');   // make-up depois da última semana fechada até o fim do mês
-    return {p, res, vol, torneios, entradas, premios, cashes, abi, roi, itm, makeAberto};
+    return {p, res, vol, torneios, entradas, premios, bounties, cashes, abi, roi, itm, makeAberto};
   });
   const maisLucrativo=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.res>a.res?b:a):null;
   const maiorVolume=perPlayerMonth.length?perPlayerMonth.reduce((a,b)=>b.vol>a.vol?b:a):null;
@@ -2479,7 +2523,7 @@ function Dashboard({session,profile}){
   const monthToursWho=mensalWho==='Geral'?monthTours:monthTours.filter(t=>t.player===mensalWho);
   const breakdownBy=(key,list)=>{
     const m={};
-    list.forEach(t=>{ const k=t[key]||'—'; if(!m[k]) m[k]={k,n:0,inv:0,res:0,premios:0}; const g=m[k]; g.n+=1; g.inv+=totalInvestido(t); g.res+=lucroTorneio(t); g.premios+=num(t.prize); });
+    list.forEach(t=>{ const k=t[key]||'—'; if(!m[k]) m[k]={k,n:0,inv:0,res:0,premios:0,bounties:0}; const g=m[k]; g.n+=1; g.inv+=totalInvestido(t); g.res+=lucroTorneio(t); g.premios+=num(t.prize); g.bounties+=bountyTorneio(t); });
     return Object.values(m).map(g=>({...g,roi:g.inv>0?(g.res/g.inv)*100:0})).sort((a,b)=>b.res-a.res);
   };
   const bySite=breakdownBy('site',monthToursWho), byModality=breakdownBy('modality',monthToursWho);
@@ -2510,8 +2554,9 @@ function Dashboard({session,profile}){
     const buyins=dd.reduce((s,e)=>s+num(e.total_buyins),0);                          // dinheiro
     const nominal=dd.reduce((s,e)=>s+(num(e.buyins_nominal)||num(e.total_buyins)),0);  // nível
     const premios=diaryTours.reduce((s,t)=>s+num(t.prize),0);
+    const bounties=diaryTours.reduce((s,t)=>s+bountyTorneio(t),0);
     const cashes=diaryTours.filter(t=>num(t.prize)>0).length;
-    return {res,torneios,entradas,buyins,premios,tickets:dd.reduce((s,e)=>s+num(e.tickets),0),
+    return {res,torneios,entradas,buyins,premios,bounties,tickets:dd.reduce((s,e)=>s+num(e.tickets),0),
       abi:entradas>0?nominal/entradas:0, roi:buyins>0?(res/buyins)*100:0, itm:torneios>0?(cashes/torneios)*100:0,
       dias:[...new Set(dd.map(e=>e.entry_date))].length};
   })();
@@ -2736,6 +2781,7 @@ function Dashboard({session,profile}){
             <MiniStat label="ABI médio" value={fmt(diAgg.abi)}/>
             <MiniStat label="Investido" value={fmt(diAgg.buyins)}/>
             <MiniStat label="Premiação" value={fmt(diAgg.premios)} tone={C.greenMid}/>
+            {diAgg.bounties>0&&<MiniStat label="Bounties" value={fmt(diAgg.bounties)} tone={C.greenMid}/>}
             <MiniStat label="ROI" value={pctFmt(diAgg.roi)} tone={diAgg.res>=0?C.greenMid:C.red}/>
             <MiniStat label="ITM" value={pctFmt(diAgg.itm)}/>
           </div>
@@ -2790,6 +2836,7 @@ function Dashboard({session,profile}){
               <MiniStat label="ROI" value={pctFmt(pm.roi)} tone={pm.res>=0?C.greenMid:C.red}/>
               <MiniStat label="Investido" value={fmt(pm.vol)}/>
               <MiniStat label="Premiação" value={fmt(pm.premios)} tone={C.greenMid}/>
+              {pm.bounties>0&&<MiniStat label="Bounties" value={fmt(pm.bounties)} tone={C.greenMid}/>}
               <MiniStat label="ITM" value={pctFmt(pm.itm)}/>
             </div>
           </div>)}
@@ -3109,6 +3156,10 @@ function Dashboard({session,profile}){
         const usados=new Set(); const linhas=[];
         for(const r of hhr){
           const b=num(r.buyin);
+          // 1º: mesmo id de torneio do site (resumo importado). Na GG o HH não traz buy-in: o id é a prova.
+          const porId=decl.find(t=>!usados.has(t.id)&&t.site_tournament_id&&String(t.site_tournament_id)===String(r.site_tournament_id));
+          if(porId){ usados.add(porId.id); linhas.push({tipo:(!b||near2(num(porId.buyin),b))?'ok':'buyin',hh:r,t:porId,date:r.entry_date}); continue; }
+          if(!b){ linhas.push({tipo:'semlanc',hh:r,date:r.entry_date}); continue; }
           const cand=decl.filter(t=>!usados.has(t.id)&&walletBucket(t.site)===walletBucket(r.site));
           const pick=list=>{ let best=null,bd=1e9; for(const t of list){ const df=Math.abs(num(t.buyin)-b); if(df<bd){bd=df;best=t;} } return best; };
           // 1º tenta o mesmo dia; se não, dia vizinho (sessão virando a madrugada)
@@ -3119,7 +3170,8 @@ function Dashboard({session,profile}){
         decl.filter(t=>!usados.has(t.id)).forEach(t=>linhas.push({tipo:'semhh',t,date:t.entry_date}));
         linhas.sort((a,b)=>a.date<b.date?1:-1);
         const n=k=>linhas.filter(x=>x.tipo===k).length;
-        const foraHH=hhr.filter(r=>num(r.buyin)>abiMaxFor(config,sp,r.entry_date)+0.011);
+        const buyinHH=r=>{ const l=linhas.find(x=>x.hh===r&&x.t); return num(r.buyin)||(l?num(l.t.buyin):0); };
+        const foraHH=hhr.filter(r=>buyinHH(r)>abiMaxFor(config,sp,r.entry_date)+0.011);
         const temDado=linhas.length>0;
         const veredito=!temDado?{tone:C.inkSoft,bg:C.bg,t:'Sem dados no período',x:'Lance torneios e importe hand histories pra auditoria comparar os dois.'}
           :(n('semlanc')||n('buyin'))?{tone:C.red,bg:C.redSoft,t:'Divergências encontradas',x:'Tem diferença entre o que as mãos provam e o que foi lançado — confira as linhas em vermelho/dourado abaixo.'}
@@ -3154,7 +3206,7 @@ function Dashboard({session,profile}){
 
           {foraHH.length>0&&<Card style={{padding:16,background:C.redSoft}}>
             <div style={{fontWeight:800,fontSize:13.5,color:C.red,marginBottom:6}}>⚠️ Fora da grade COMPROVADO pelas mãos ({foraHH.length})</div>
-            <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5}}>{foraHH.map(r=>`${r.tournament_name||('#'+r.site_tournament_id)} · ${dLabel(r.entry_date)} · buy-in ${fmt(r.buyin)} (máx da época ${fmt(abiMaxFor(config,sp,r.entry_date))})`).join(' — ')}</div>
+            <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5}}>{foraHH.map(r=>`${r.tournament_name||('#'+r.site_tournament_id)} · ${dLabel(r.entry_date)} · buy-in ${fmt(buyinHH(r))} (máx da época ${fmt(abiMaxFor(config,sp,r.entry_date))})`).join(' — ')}</div>
           </Card>}
 
           <Card style={{padding:18}}>
@@ -3410,7 +3462,8 @@ function Dashboard({session,profile}){
         const pInv=pT.reduce((s,t)=>s+totalInvestido(t),0);        // dinheiro
         const pNom=pT.reduce((s,t)=>s+nominalTorneio(t),0);         // nível (ABI)
         const pPrem=pT.reduce((s,t)=>s+num(t.prize),0);
-        const pRes=pPrem-pInv;
+        const pBounty=pT.reduce((s,t)=>s+bountyTorneio(t),0);
+        const pRes=pT.reduce((s,t)=>s+lucroTorneio(t),0);
         const pEntr=pT.reduce((s,t)=>s+1+num(t.reentries),0);
         const pCash=pT.filter(t=>num(t.prize)>0).length;
         const pParteJog=pWeeks.reduce((s,w)=>s+w.parteJog,0);
@@ -3453,6 +3506,7 @@ function Dashboard({session,profile}){
               <Big label="Torneios (entradas)" value={`${pT.length} (${pEntr})`}/>
               <Big label="Investido" value={fmt(pInv)}/>
               <Big label="Premiação" value={fmt(pPrem)}/>
+              {pBounty>0&&<Big label="Bounties" value={fmt(pBounty)}/>}
               <Big label="Resultado na pool" value={fmt(pRes)} tone={pRes>=0?C.greenMid:C.red}/>
               <Big label="ROI" value={pInv>0?pctFmt(pRes/pInv*100):'—'} tone={pRes>=0?C.greenMid:C.red}/>
               <Big label="ABI médio" value={pEntr>0?fmt(pNom/pEntr):'—'}/>
@@ -3546,10 +3600,11 @@ function Dashboard({session,profile}){
     {/* prévia do import de resumos: nada entra no banco antes de o jogador conferir aqui */}
     {tsImp.preview&&(()=>{
       const pv=tsImp.preview, entrando=[...pv.novos,...pv.completa];
-      const inv=entrando.reduce((s,x)=>s+(x.linha.ticket?0:x.linha.buyin*(1+x.linha.reentries)),0);
+      const inv=entrando.reduce((s,x)=>s+totalInvestido(tsEfetivo(x)),0);
+      const nConf=pv.completa.filter(x=>tsMesclar(x.atual,x.linha).conflitos.length).length;
       const nBilhete=entrando.filter(x=>x.linha.ticket).length;
       const nSat=entrando.filter(x=>!x.linha.ticket&&x.r.satelite).length;
-      const prem=entrando.reduce((s,x)=>s+x.linha.prize,0);
+      const prem=entrando.reduce((s,x)=>s+num(tsEfetivo(x).prize)+bountyTorneio(tsEfetivo(x)),0);
       const dias=[...new Set(entrando.map(x=>x.linha.entry_date))].sort();
       const nada=entrando.length===0;
       return <div onClick={()=>setTsImp(s=>({...s,preview:null}))} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:60}}>
@@ -3573,11 +3628,13 @@ function Dashboard({session,profile}){
                 {pv.repetidos.length>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.bg,color:C.inkSoft}}>{pv.repetidos.length} já no sistema</span>}
                 {nBilhete>0&&<span style={{padding:'4px 10px',borderRadius:99,background:C.plumSoft,color:P}}>🎟 {nBilhete} com bilhete</span>}
               </div>
+              {nConf>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.goldSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>
+                ✋ <b>{nConf} lançamento{nConf!==1?'s':''} seu{nConf!==1?'s':''} com valor diferente do arquivo.</b> Nada que você digitou muda sem você escolher. <button onClick={()=>escolherResumo(null,null,'arquivo')} style={{border:'none',background:'transparent',color:C.gold,fontWeight:800,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:12.5}}>usar o do arquivo em todos</button> · <button onClick={()=>escolherResumo(null,null,'digitado')} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:12.5}}>manter os digitados</button></div>}
               {nSat>0&&<div style={{padding:'9px 11px',borderRadius:12,background:C.goldSoft,fontSize:12,color:C.ink,marginBottom:12,lineHeight:1.5}}>🎟 <b>{nSat} com cara de satélite.</b> O arquivo do site não diz se você entrou com bilhete — se entrou, toque no 🎟 da linha pra não contar o buy-in duas vezes.</div>}
               {pv.fora.length>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.redSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>⚠️ <b>{pv.fora.length} torneio{pv.fora.length!==1?'s':''} fora da grade</b> ({pv.fora.map(x=>fmt(x.linha.buyin)).filter((v,i,a)=>a.indexOf(v)===i).join(', ')} · teto {fmt(abiMaxFor(config,pv.player,pv.fora[0].linha.entry_date))}). Vão entrar assim mesmo — o registro é do que aconteceu.</div>}
               {dias.map(d=>{
                 const doDia=entrando.filter(x=>x.linha.entry_date===d);
-                const rd=doDia.reduce((s,x)=>s+x.linha.prize-(x.linha.ticket?0:x.linha.buyin*(1+x.linha.reentries)),0);
+                const rd=doDia.reduce((s,x)=>s+lucroTorneio(tsEfetivo(x)),0);
                 return <div key={d} style={{marginBottom:12}}>
                   <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
                     <span style={{fontSize:12,fontWeight:800,color:C.gold,textTransform:'uppercase',letterSpacing:'.05em'}}>{dLabel(d)}</span>
@@ -3591,8 +3648,13 @@ function Dashboard({session,profile}){
                       <button onClick={()=>marcarBilhete(x.linha.site_tournament_id)} style={{marginTop:4,padding:'3px 9px',borderRadius:99,cursor:'pointer',fontSize:10.5,fontWeight:800,
                         border:`1.5px solid ${x.linha.ticket?P:(x.r.satelite?C.gold:C.border)}`,background:x.linha.ticket?C.plumSoft:'transparent',color:x.linha.ticket?P:(x.r.satelite?C.gold:C.inkSoft)}}>
                         {x.linha.ticket?'🎟 BILHETE · não saiu dinheiro':(x.r.satelite?'🎟 parece satélite — entrou com bilhete?':'🎟 entrei com bilhete')}</button>
+                      {x.atual&&tsMesclar(x.atual,x.linha).conflitos.map(c=>{ const usaArq=(x.escolhas||{})[c.campo]==='arquivo'; const nome={prize:'Prêmio',bounty:'Bounty',reentries:'Re-entries'}[c.campo]; const v=n=>c.campo==='reentries'?String(n):fmt(n);
+                        return <div key={c.campo} style={{marginTop:4,fontSize:11.5,color:C.ink,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                          <span>✋ {nome}: você digitou <b>{v(c.digitado)}</b> · arquivo <b>{v(c.arquivo)}</b></span>
+                          <button onClick={()=>escolherResumo(x.linha.site_tournament_id,c.campo,usaArq?'digitado':'arquivo')} style={{padding:'2px 8px',borderRadius:99,cursor:'pointer',fontSize:10.5,fontWeight:800,border:`1.5px solid ${usaArq?C.gold:C.border}`,background:usaArq?C.goldSoft:'transparent',color:usaArq?C.gold:C.inkSoft}}>{usaArq?'vai usar o do arquivo':'mantém o digitado'}</button>
+                        </div>; })}
                     </div>
-                    <span style={{fontWeight:800,fontSize:13.5,flexShrink:0,color:x.linha.prize>0?C.greenMid:C.inkSoft}}>{x.linha.prize>0?fmt(x.linha.prize):'—'}</span>
+                    {(()=>{ const ef=tsEfetivo(x), ganho=num(ef.prize)+bountyTorneio(ef); return <span style={{fontWeight:800,fontSize:13.5,flexShrink:0,color:ganho>0?C.greenMid:C.inkSoft}}>{ganho>0?fmt(ganho):'—'}</span>; })()}
                   </div>)}
                 </div>;
               })}

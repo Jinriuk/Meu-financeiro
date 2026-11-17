@@ -38,7 +38,14 @@ export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
     if (url.pathname.startsWith('/rest/v1/rpc/')) return route.fulfill({ json: null });
     if (url.pathname.startsWith('/functions/v1/')) return route.fulfill({ json: {} });
     const tabela = url.pathname.replace('/rest/v1/', '');
-    if (req.method() !== 'GET') { escritas.push({ tabela, metodo: req.method(), corpo: req.postData() }); return route.fulfill({ status: 201, json: [] }); }
+    if (req.method() !== 'GET') {
+      escritas.push({ tabela, metodo: req.method(), filtro: url.search, corpo: req.postData() });
+      // devolve o que foi gravado (como o PostgREST com return=representation)
+      let corpo = []; try { corpo = JSON.parse(req.postData() || '[]'); } catch (e) {}
+      const lista = (Array.isArray(corpo) ? corpo : [corpo]).map((r, i) => ({ id: 'novo' + escritas.length + '_' + i, ...r }));
+      const umSo = /vnd\.pgrst\.object/.test(req.headers()['accept'] || '');
+      return route.fulfill({ status: 200, json: umSo ? lista[0] : lista });
+    }
     const linhas = (db[tabela] || []).map(r => ({ ...r }));
     const umSo = /vnd\.pgrst\.object/.test(req.headers()['accept'] || '');
     return route.fulfill({ json: umSo ? (linhas[0] || null) : linhas, headers: { 'content-range': `0-${Math.max(0, linhas.length - 1)}/${linhas.length}` } });

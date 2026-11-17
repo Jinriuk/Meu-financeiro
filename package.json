@@ -5,7 +5,7 @@
   "description": "GrinderBank — gestão de banca e estatísticas de poker",
   "scripts": {
     "build": "node build.js",
-    "test": "node --test test/unit/*.test.cjs && node test/smoke.mjs",
+    "test": "node --test test/unit/*.test.cjs && node test/smoke.mjs && node test/ui/stats.mjs && node test/ui/resumos.mjs && node test/ui/bounty.mjs",
     "test:unit": "node --test test/unit/*.test.cjs"
   },
   "devDependencies": {
