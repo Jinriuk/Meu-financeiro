@@ -33,6 +33,9 @@ jobs:
             exit 1;
           }
 
+      - name: Testes do motor de stats e do dinheiro (fixtures sintéticas + referência independente)
+        run: node --test test/unit/*.test.cjs
+
       - name: Instala o Chromium do Playwright
         run: npx playwright install --with-deps chromium
 

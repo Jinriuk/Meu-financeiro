@@ -241,7 +241,27 @@ function hhEquity(hero,vils,board){
   return tot?win/tot:0;
 }
 // parseia UMA mão (dialetos PokerStars e GG/PokerCraft, que imita o formato PS)
-const HH_BUILD='2026-07-17.2';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
+const HH_BUILD='2026-11-17.1';   // aparece no card de import e no diagnóstico (pra saber que versão a pessoa está rodando)
+// Versão das DEFINIÇÕES do motor (gravada em cada agregado). Mudou a regra de alguma stat? Sobe o número:
+// reimportar um torneio de versão antiga recalcula a linha inteira em vez de somar por cima (F0.15).
+//  1 = motor até jul/2026 · 2 = definições do PT4 (anexo A do plano mestre, calibradas em 56.255 mãos)
+const HH_ENGINE=2;
+// posições no padrão do PT4: SB/BB por quem POSTOU; BTN pelo cabeçalho (no heads-up o botão é o SB);
+// dos que sobram, o último antes do BTN é CO; EP = UTG (+UTG+1 em mesa de 8 ou 9); o resto é MP.
+function hhPositions(order,button,sbP,bbP){
+  const pos={}; const N=order.length; if(!N) return pos;
+  const bi=order.findIndex(s=>s.seat===button);
+  if(N===2){ const btn=sbP||(bi>=0?order[bi].n:null); if(btn) pos[btn]='SB'; const o=order.find(s=>s.n!==btn); if(o) pos[bbP||o.n]='BB'; return pos; }
+  if(sbP) pos[sbP]='SB'; if(bbP) pos[bbP]='BB';
+  if(bi>=0&&!pos[order[bi].n]) pos[order[bi].n]='BTN';
+  // ordem de ação pré-flop dos que não são blind nem botão: do 1º depois do BB até o último antes do BTN
+  const ib=bbP?order.findIndex(s=>s.n===bbP):(bi>=0?(bi+2)%N:-1);
+  const resto=[];
+  if(ib>=0) for(let k=1;k<N;k++){ const s=order[(ib+k)%N]; if(bi>=0&&s.seat===order[bi].seat) break; if(!pos[s.n]) resto.push(s.n); }
+  const nEP=N>=8?2:1;
+  resto.forEach((n,i)=>{ pos[n]= i===resto.length-1?'CO': i<nEP?'EP':'MP'; });
+  return pos;
+}
 function hhParseHand(block,why){
   const skip=r=>{ if(why) why.r=r; return null; };   // devolve null anotando o MOTIVO (pro relatório de import)
   const lines=block.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -261,16 +281,20 @@ function hhParseHand(block,why){
   const tname=((seg.split(/(?:Tournament|Torneio) #[^,]+,\s*/)[1]||'').replace(/\$\s?[\d.,]+/g,'').replace(/USD|EUR|CNY|\+/g,'').trim().replace(/[,\s]+$/,''))||null;
 
   let button=0; const seats=[]; let hero=null, heroCards=null;
-  let street=0; const board=[]; const acts=[]; const invested={}, collected={}, shows={};
-  let commit={}; let showdown=false, inSummary=false;
+  let street=0; const board=[]; const acts=[]; const invested={}, collected={}, shows={}, antes={}, blinds={};
+  let commit={}; let showdown=false, inSummary=false; let sbP=null, bbP=null; const allinPost=new Set();
   const addInv=(n,x)=>{ invested[n]=(invested[n]||0)+x; };
   const ACT_PT={desiste:'folds',passa:'checks',iguala:'calls',aposta:'bets',aumenta:'raises'};
+  const ALLIN=/and is all[- ]in|e está all-in/;
   for(let i=hi;i<lines.length;i++){
     const L=lines[i]; let m;
     if(/\*\*\* (SUMMARY|SUMÁRIO)/.test(L)){ inSummary=true; continue; }   // às vezes vem colado no fim de outra linha
     if(inSummary) continue;
+    if(/^Hand #\d+:?$/.test(L)) break;   // transcript do PS: começo da próxima mão
     if(m=L.match(/(?:Seat|Lugar) #(\d+) (?:is the button|é o botão)/)){ button=+m[1]; continue; }
-    if(m=L.match(/^(?:Seat|Lugar) (\d+): (.+?) \(\$?\s?([\d,.]+) (?:in chips|em fichas)/)){ seats.push({seat:+m[1],n:m[2],chips:hhNum(m[3])}); continue; }
+    if(m=L.match(/^(?:Seat|Lugar) (\d+): (.+?) \(\$?\s?([\d,.]+) (?:in chips|em fichas)/)){
+      if(/out of hand|fora da mão/.test(L)) continue;   // sentou e não recebeu cartas nesta mão: não é jogador da mão
+      seats.push({seat:+m[1],n:m[2],chips:hhNum(m[3])}); continue; }
     if(m=L.match(/^Dealt to (.+?) \[([^\]]+)\]/)){ hero=m[1]; heroCards=m[2].split(/\s+/).map(hhCard); continue; }
     if(m=L.match(/^(.+?) recebe \[([^\]]+)\]/)){ hero=m[1]; heroCards=m[2].split(/\s+/).map(hhCard); continue; }   // cliente PT
     if(/^\*\*\* FLOP/.test(L)){ street=1; commit={}; const mm=L.match(/\[([^\]]+)\]/); if(mm) mm[1].split(/\s+/).forEach(c=>{const k=hhCard(c); if(k>=0&&board.length<3) board.push(k);}); continue; }
@@ -281,14 +305,16 @@ function hhParseHand(block,why){
     if(m=L.match(/^(.+?) collected \$?([\d,]+) from/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }
     if(m=L.match(/^(.+?) recebeu \$?\s?([\d,.]+) do(?: \S+)? pote/)){ collected[m[1]]=(collected[m[1]]||0)+hhNum(m[2]); continue; }  // PT: pote / principal pote / secundário pote
     if(m=L.match(/^(.+?): (?:shows|mostra) \[([^\]]+)\]/)){ shows[m[1]]=m[2].split(/\s+/).map(hhCard).filter(c=>c>=0); continue; }
-    if(m=L.match(/^(.+?): (?:posts (?:the )?ante|coloca ante) \$?\s?([\d,.]+)/)){ addInv(m[1],hhNum(m[2])); continue; }
-    if(m=L.match(/^(.+?): (?:posts|paga o) (?:small|big) blind \$?\s?([\d,.]+)/)){ addInv(m[1],hhNum(m[2])); commit[m[1]]=(commit[m[1]]||0)+hhNum(m[2]); continue; }
+    if(m=L.match(/^(.+?): (?:posts (?:the )?ante|coloca ante) \$?\s?([\d,.]+)/)){ const x=hhNum(m[2]); addInv(m[1],x); antes[m[1]]=(antes[m[1]]||0)+x; if(ALLIN.test(L)) allinPost.add(m[1]); continue; }
+    if(m=L.match(/^(.+?): (?:posts|paga o) (small|big) blind \$?\s?([\d,.]+)/)){ const x=hhNum(m[3]); addInv(m[1],x); commit[m[1]]=(commit[m[1]]||0)+x; blinds[m[1]]=(blinds[m[1]]||0)+x;
+      if(m[2]==='small') sbP=sbP||m[1]; else bbP=bbP||m[1]; if(ALLIN.test(L)) allinPost.add(m[1]); continue; }
     if(m=L.match(/^(.+?): (?:posts|paga)\b.*?([\d,.]+)$/)){ addInv(m[1],hhNum(m[2])); continue; }   // straddle/dead blind
     if(m=L.match(/^(.+?): (folds|checks|calls|bets|raises|desiste|passa|iguala|aposta|aumenta)\b\s*\$?\s?([\d,.]*)(?:\s+(?:to|para)\s+\$?\s?([\d,.]+))?/)){
-      const n=m[1],act=ACT_PT[m[2]]||m[2],allin=/and is all[- ]in|e está all-in/.test(L);
-      if(act==='calls'||act==='bets'){ const x=hhNum(m[3]); addInv(n,x); commit[n]=(commit[n]||0)+x; }
-      if(act==='raises'){ const to=hhNum(m[4]||m[3]); addInv(n,Math.max(0,to-(commit[n]||0))); commit[n]=to; }
-      acts.push({n,act,street,allin});
+      const n=m[1],act=ACT_PT[m[2]]||m[2],allin=ALLIN.test(L);
+      let to=0;
+      if(act==='calls'||act==='bets'){ const x=hhNum(m[3]); addInv(n,x); commit[n]=(commit[n]||0)+x; to=commit[n]; }
+      if(act==='raises'){ to=hhNum(m[4]||m[3]); addInv(n,Math.max(0,to-(commit[n]||0))); commit[n]=to; }
+      acts.push({n,act,street,allin,to});
       continue;
     }
   }
@@ -296,73 +322,111 @@ function hhParseHand(block,why){
   if(!seats.some(s=>s.n===hero)) return skip('incompleta');
 
   const heroInv=invested[hero]||0, heroCol=collected[hero]||0, net=heroCol-heroInv;
-  // posições (relativas ao botão)
   const order=seats.slice().sort((a,b)=>a.seat-b.seat);
-  let bi=order.findIndex(s=>s.seat===button); if(bi<0) bi=0;
-  const nP=order.length, after=i=>order[(bi+i)%nP].n;
-  const posMap={};
-  if(nP===2){ posMap[after(0)]='BTN'; posMap[after(1)]='BB'; }
-  else { posMap[after(0)]='BTN'; posMap[after(1)]='SB'; posMap[after(2)]='BB';
-    for(let i=3;i<nP;i++){ const d=nP-i; posMap[after(i)]=d===1?'CO':d===2?'MP':'EP'; } }
+  const nP=order.length;
+  const posMap=hhPositions(order,button,sbP,bbP);
   const heroPos=posMap[hero]||'EP';
-  // pré-flop: sequência
+  const heroChips=(seats.find(s=>s.n===hero)||{}).chips||0;
+  // ---------------- pré-flop ----------------
   const pre=acts.filter(a=>a.street===0);
-  let raises=0, firstRaiser=null, lastRaiser=null, heroRaised=false, pendingF3b=false;
-  let heroActedPre=false, foldedToHero=true, callersBefore=0, heroFoldedPre=false;
-  let vpip=false,pfr=false,tbOpp=false,tb=false,f3bOpp=false,f3b=false,stealOpp=false,steal=false,bbdefOpp=false,bbdef=false;
+  const heroPre=pre.filter(a=>a.n===hero);
+  const walk=heroPre.length===0;     // PT4: nenhuma ação do herói no pré-flop (walk, ou all-in no blind/ante)
+  let raises=0, firstRaiser=null, lastRaiser=null, lastRaiseTo=0, callersSinceRaise=0, limpers=0;
+  let heroActedPre=false, heroFoldedPre=false, heroWasOpener=false;
+  let vpip=false,pfr=false,pfrOpp=false,rfiOpp=false,rfi=false,tbOpp=false,tb=false,sqOpp=false,sq=false,f3bOpp=false,f3b=false;
+  let stealOpp=false,steal=false,bbdefOpp=false,bbdef=false,bbVs=null;
+  const stealPos=p=>p==='CO'||p==='BTN'||p==='SB';
+  // o opener abriu com todos antes dele desistindo (roubo)
+  const abriuLimpo=op=>{ for(const x of pre){ if(x.n===op) return x.act==='raises'; if(x.act!=='folds') return false; } return false; };
   for(const a of pre){
     if(a.n===hero){
-      if(pendingF3b&&!f3bOpp){ f3bOpp=true; f3b=(a.act==='folds'); pendingF3b=false; }
       if(!heroActedPre){
         heroActedPre=true;
-        if(nP>=3&&raises===0&&callersBefore===0&&foldedToHero&&['CO','BTN','SB'].includes(heroPos)){ stealOpp=true; if(a.act==='raises') steal=true; }
-        if(raises===1&&lastRaiser!==hero){ tbOpp=true; if(a.act==='raises') tb=true; }
-        if(nP>=3&&heroPos==='BB'&&raises===1&&['CO','BTN','SB'].includes(posMap[firstRaiser])&&callersBefore===0){ bbdefOpp=true; if(a.act==='calls'||a.act==='raises') bbdef=true; }
-      }
+        const openOpp=raises===0&&limpers===0;
+        if(openOpp){ rfiOpp=true; rfi=a.act==='raises'; if(stealPos(heroPos)){ stealOpp=true; steal=rfi; } }
+        if(raises===1&&callersSinceRaise===0){ tbOpp=true; tb=a.act==='raises'; }   // 3-bet sem squeeze
+        if(raises===1&&callersSinceRaise>0){ sqOpp=true; sq=a.act==='raises'; }     // squeeze: open + caller(s)
+        // PFR com a oportunidade do PT4 (cnt_pfr_opp do relatório): 2+ ações no pré-flop, ou 1 ação podendo
+        // aumentar (stack > BB + ante e o raise enfrentado menor que o que sobra) em open, limp, 3-bet ou 4-bet
+        const sobra=heroChips-((blinds[hero]||0)+(antes[hero]||0));
+        const podeAumentar=heroChips>bb+(antes[hero]||0)&&lastRaiseTo<sobra;
+        const spot=openOpp||(raises===0&&limpers>0)||raises===1||raises===2;
+        if(heroPre.length>=2||(podeAumentar&&spot)) pfrOpp=true;
+        // defesa do BB contra roubo de CO/BTN/SB; conta o spot mesmo com call do SB no meio (sem re-raise)
+        if(heroPos==='BB'&&raises===1&&stealPos(posMap[firstRaiser])&&abriuLimpo(firstRaiser)){
+          bbdefOpp=true; bbdef=a.act==='calls'||a.act==='raises'; bbVs=posMap[firstRaiser]; }
+      } else if(heroWasOpener&&raises===2&&!f3bOpp){ f3bOpp=true; f3b=a.act==='folds'; }   // fold to 3-bet: só quem abriu
       if(a.act==='calls'||a.act==='raises') vpip=true;
-      if(a.act==='raises') pfr=true;
+      if(a.act==='raises'){ pfr=true; if(raises===0) heroWasOpener=true; }
       if(a.act==='folds') heroFoldedPre=true;
     } else {
-      if(!heroActedPre&&a.act!=='folds') foldedToHero=false;
-      if(!heroActedPre&&a.act==='calls') callersBefore++;
+      if(a.act==='calls'){ if(raises===0) limpers++; else callersSinceRaise++; }
     }
-    if(a.act==='raises'){ raises++; lastRaiser=a.n; if(!firstRaiser) firstRaiser=a.n; if(a.n===hero) heroRaised=true; else if(heroRaised) pendingF3b=true; }
+    if(a.act==='raises'){ raises++; lastRaiser=a.n; lastRaiseTo=a.to; callersSinceRaise=0; if(!firstRaiser) firstRaiser=a.n; }
   }
-  // flop: c-bet / fold pra c-bet
+  // ---------------- flop: c-bet / fold pra c-bet ----------------
   const sawflop=board.length>=3&&!heroFoldedPre;
-  let cbetOpp=false,cbet=false,fcbOpp=false,fcb=false,betSeen=false,betBy=null;
+  let cbetOpp=false,cbet=false,fcbOpp=false,fcb=false;
   if(sawflop&&raises>0){
+    let betSeen=false, betBy=null, heroActed=false, raisedAfterBet=false;
     for(const a of acts.filter(x=>x.street===1)){
       if(a.n===hero){
-        if(lastRaiser===hero&&!betSeen&&!cbetOpp){ cbetOpp=true; cbet=(a.act==='bets'); }
-        if(lastRaiser&&lastRaiser!==hero&&betSeen&&betBy===lastRaiser&&!fcbOpp){ fcbOpp=true; fcb=(a.act==='folds'); }
+        if(!heroActed&&lastRaiser===hero&&!betSeen){ cbetOpp=true; cbet=(a.act==='bets'); }
+        // enfrenta a c-bet SEM raise entre a c-bet e o herói
+        if(!fcbOpp&&lastRaiser!==hero&&betBy===lastRaiser&&!raisedAfterBet&&betSeen){ fcbOpp=true; fcb=(a.act==='folds'); }
+        heroActed=true;
       }
       if(a.act==='bets'&&!betSeen){ betSeen=true; betBy=a.n; }
+      else if(a.act==='raises'){ if(betBy) raisedAfterBet=true; betSeen=true; }
     }
   }
   const heroFolded=acts.some(a=>a.n===hero&&a.act==='folds');
   // showdown DE VERDADE exige cartas mostradas — a GG imprime o marcador SHOWDOWN em toda mão, até fold-win
   const wtsd=showdown&&!heroFolded&&Object.keys(shows).length>0, wsd=wtsd&&heroCol>0, wwsf=sawflop&&heroCol>0;
+  // WTSD sem all-in pré-flop: só conta flop com alguma ação depois dele (F0.14)
+  const sawflopNp=sawflop&&acts.some(a=>a.street>0);
   let afB=0,afC=0; acts.forEach(a=>{ if(a.n===hero&&a.street>0){ if(a.act==='bets'||a.act==='raises') afB++; if(a.act==='calls') afC++; } });
-  // all-in EV (sorte): só quando o herói foi ao showdown de all-in e os vilões mostraram as cartas
+  // ---------------- all-in EV (Sorte), regra do PT4 ----------------
+  // Potes por nível de contribuição, só jogadores vivos, equity na ÚLTIMA decisão do herói. Não ajusta quando
+  // (a) alguém pagou/aumentou depois do 1º all-in e depois foldou, ou (b) houve ação depois da última decisão do herói.
   let allin=null;
-  const aiAct=acts.find(a=>a.allin);
-  if(aiAct&&wtsd){
-    const vils=Object.keys(shows).filter(n=>n!==hero).map(n=>shows[n]).filter(v=>v&&v.length===2);
-    if(vils.length){
-      const bAt=board.slice(0,[0,3,4,5][aiAct.street]).filter(c=>c!=null&&c>=0);
-      const eq=hhEquity(heroCards,vils,bAt);
-      // pote que o herói DISPUTA: de cada jogador, no máximo o que o próprio herói investiu (side pot fica de fora)
-      const heroPot=Object.keys(invested).reduce((s,k)=>s+Math.max(0,Math.min(invested[k],heroInv)),0);
-      allin={ev:(eq*heroPot-heroInv)/bb, net:net/bb};
+  const folded=new Set(acts.filter(a=>a.act==='folds').map(a=>a.n));
+  const live=order.map(s=>s.n).filter(n=>!folded.has(n));
+  const anyAllin=allinPost.size>0||acts.some(a=>a.allin);
+  if(anyAllin&&!heroFolded&&live.length>=2&&live.includes(hero)){
+    const cardsOf=n=>n===hero?heroCards:shows[n];
+    if(live.every(n=>{ const c=cardsOf(n); return c&&c.length===2; })){
+      const heroActs=acts.filter(a=>a.n===hero);
+      const heroLast=heroActs.length?Math.max(...heroActs.map(a=>a.street)):0;
+      const i0=acts.findIndex(a=>a.allin);
+      const depois=i0>=0?acts.slice(i0+1):[];
+      const r1=depois.some(x=>x.act==='folds'&&depois.some(y=>y.n===x.n&&(y.act==='calls'||y.act==='raises')));
+      const r2=acts.some(a=>a.street>heroLast);
+      if(r1||r2) allin={ev:net/bb,net:net/bb};
+      else {
+        const bAt=board.slice(0,[0,3,4,5][heroLast]).filter(c=>c!=null&&c>=0);
+        const contrib=n=>invested[n]||0;
+        const levels=[...new Set(live.map(contrib))].sort((a,b)=>a-b);
+        const todos=Object.keys(invested);
+        let prev=0, ev=0;
+        for(const lv of levels){
+          let pot=0; for(const k of todos) pot+=Math.max(0,Math.min(contrib(k),lv)-prev);
+          const elig=live.filter(n=>contrib(n)>=lv);
+          if(elig.includes(hero)){
+            if(elig.length===1) ev+=pot;
+            else ev+=hhEquity(heroCards,elig.filter(n=>n!==hero).map(cardsOf),bAt)*pot;
+          }
+          prev=lv;
+        }
+        allin={ev:(ev-heroInv)/bb,net:net/bb};
+      }
     }
   }
-  const heroChips=(seats.find(s=>s.n===hero)||{}).chips||0;
   const stackBB=heroChips/bb;
   const bucket=stackBB<10?'<10bb':stackBB<20?'10-20bb':stackBB<40?'20-40bb':'40bb+';
   return {site,tid,tname,buyin,date,bb,hid,net_bb:net/bb,pos:heroPos,bucket,
-    vpip,pfr,tbOpp,tb,f3bOpp,f3b,stealOpp,steal,bbdefOpp,bbdef,cbetOpp,cbet,fcbOpp,fcb,
-    sawflop,wwsf,wtsd,wsd,afB,afC,allin};
+    walk,vpip,pfr,pfrOpp,rfiOpp,rfi,tbOpp,tb,sqOpp,sq,f3bOpp,f3b,stealOpp,steal,bbdefOpp,bbdef,bbVs,cbetOpp,cbet,fcbOpp,fcb,
+    sawflop,sawflopNp,wwsf,wtsd,wsd,afB,afC,allin};
 }
 // texto -> mãos parseadas
 function parseHH(text){
@@ -387,46 +451,64 @@ function hhAggregate(hands,player){
     if(!agg[k]) agg[k]={player,site:h.site,site_tournament_id:h.tid,tournament_name:h.tname,entry_date:h.date,buyin:h.buyin,
       hands:0,net_bb:0,vpip_cnt:0,pfr_cnt:0,tb_cnt:0,tb_opp:0,f3b_cnt:0,f3b_opp:0,steal_cnt:0,steal_opp:0,
       bbdef_cnt:0,bbdef_opp:0,cbet_cnt:0,cbet_opp:0,fcbet_cnt:0,fcbet_opp:0,sawflop_cnt:0,wwsf_cnt:0,wtsd_cnt:0,wsd_cnt:0,
-      af_bets:0,af_calls:0,allin_cnt:0,allin_ev_bb:0,allin_net_bb:0,pos_json:{},stack_json:{},hand_ids:[]};
+      af_bets:0,af_calls:0,allin_cnt:0,allin_ev_bb:0,allin_net_bb:0,
+      walk_cnt:0,pfr_opp:0,rfi_cnt:0,rfi_opp:0,sq_cnt:0,sq_opp:0,sawflop_np_cnt:0,wtsd_np_cnt:0,engine_version:HH_ENGINE,
+      pos_json:{},stack_json:{},hand_ids:[]};
     const a=agg[k];
     if(h.hid) a.hand_ids.push(h.hid);
     if(h.date&&(!a.entry_date||h.date<a.entry_date)) a.entry_date=h.date;
     if(h.buyin>a.buyin) a.buyin=h.buyin;
     a.hands++; a.net_bb+=h.net_bb;
-    if(h.vpip)a.vpip_cnt++; if(h.pfr)a.pfr_cnt++;
+    if(h.walk)a.walk_cnt++;
+    if(h.vpip)a.vpip_cnt++; if(h.pfr)a.pfr_cnt++; if(h.pfrOpp)a.pfr_opp++;
+    if(h.rfiOpp)a.rfi_opp++; if(h.rfi)a.rfi_cnt++;
     if(h.tbOpp)a.tb_opp++; if(h.tb)a.tb_cnt++;
+    if(h.sqOpp)a.sq_opp++; if(h.sq)a.sq_cnt++;
     if(h.f3bOpp)a.f3b_opp++; if(h.f3b)a.f3b_cnt++;
     if(h.stealOpp)a.steal_opp++; if(h.steal)a.steal_cnt++;
     if(h.bbdefOpp)a.bbdef_opp++; if(h.bbdef)a.bbdef_cnt++;
     if(h.cbetOpp)a.cbet_opp++; if(h.cbet)a.cbet_cnt++;
     if(h.fcbOpp)a.fcbet_opp++; if(h.fcb)a.fcbet_cnt++;
     if(h.sawflop)a.sawflop_cnt++; if(h.wwsf)a.wwsf_cnt++; if(h.wtsd)a.wtsd_cnt++; if(h.wsd)a.wsd_cnt++;
+    if(h.sawflopNp){ a.sawflop_np_cnt++; if(h.wtsd) a.wtsd_np_cnt++; }
     a.af_bets+=h.afB; a.af_calls+=h.afC;
     if(h.allin){ a.allin_cnt++; a.allin_ev_bb+=h.allin.ev; a.allin_net_bb+=h.allin.net; }
-    // net/hn por posição: bb ganhos e nº de mãos COM net rastreado (linhas antigas não têm
-    // esses campos — hn separa o denominador certo do bb/100 por posição)
-    if(!a.pos_json[h.pos]) a.pos_json[h.pos]={h:0,v:0,p:0,net:0,hn:0};
-    a.pos_json[h.pos].h++; if(h.vpip)a.pos_json[h.pos].v++; if(h.pfr)a.pos_json[h.pos].p++;
-    a.pos_json[h.pos].net+=h.net_bb; a.pos_json[h.pos].hn++;
+    // por posição: h mãos · w walks · v/p vpip/pfr · po oportunidade de PFR · ro/r raise first in ·
+    // net bb ganhos · adj bb com all-in ajustado · hn mãos com net rastreado (linhas antigas não têm) ·
+    // no BB: vBTN_o/vBTN_f (e CO, SB) = enfrentou roubo daquela posição / foldou
+    if(!a.pos_json[h.pos]) a.pos_json[h.pos]={h:0,w:0,v:0,p:0,po:0,ro:0,r:0,net:0,adj:0,hn:0};
+    const pj=a.pos_json[h.pos];
+    pj.h++; if(h.walk)pj.w++; if(h.vpip)pj.v++; if(h.pfr)pj.p++; if(h.pfrOpp)pj.po++; if(h.rfiOpp)pj.ro++; if(h.rfi)pj.r++;
+    pj.net+=h.net_bb; pj.adj+=h.allin?h.allin.ev:h.net_bb; pj.hn++;
+    if(h.bbVs){ pj['v'+h.bbVs+'_o']=(pj['v'+h.bbVs+'_o']||0)+1; if(!h.bbdef) pj['v'+h.bbVs+'_f']=(pj['v'+h.bbVs+'_f']||0)+1; }
     if(!a.stack_json[h.bucket]) a.stack_json[h.bucket]={h:0,v:0,p:0,net:0};
     const sb2=a.stack_json[h.bucket]; sb2.h++; if(h.vpip)sb2.v++; if(h.pfr)sb2.p++; sb2.net+=h.net_bb;
   }
   // arredonda numéricos UMA vez no fim (arredondar a cada mão acumularia deriva)
+  const r2=x=>Math.round(x*100)/100;
   return Object.values(agg).map(a=>{
-    const pj={}; Object.keys(a.pos_json).forEach(k=>{ pj[k]={...a.pos_json[k],net:Math.round(a.pos_json[k].net*100)/100}; });
-    return {...a,pos_json:pj,net_bb:Math.round(a.net_bb*100)/100,allin_ev_bb:Math.round(a.allin_ev_bb*100)/100,allin_net_bb:Math.round(a.allin_net_bb*100)/100};
+    const pj={}; Object.keys(a.pos_json).forEach(k=>{ pj[k]={...a.pos_json[k],net:r2(a.pos_json[k].net),adj:r2(a.pos_json[k].adj)}; });
+    return {...a,pos_json:pj,net_bb:r2(a.net_bb),allin_ev_bb:r2(a.allin_ev_bb),allin_net_bb:r2(a.allin_net_bb)};
   });
 }
 // soma um agregado de mãos NOVAS numa linha já existente do banco (import incremental sem contar 2x)
 const HH_SUM_KEYS=['hands','net_bb','vpip_cnt','pfr_cnt','tb_cnt','tb_opp','f3b_cnt','f3b_opp','steal_cnt','steal_opp',
   'bbdef_cnt','bbdef_opp','cbet_cnt','cbet_opp','fcbet_cnt','fcbet_opp','sawflop_cnt','wwsf_cnt','wtsd_cnt','wsd_cnt',
-  'af_bets','af_calls','allin_cnt','allin_ev_bb','allin_net_bb'];
+  'af_bets','af_calls','allin_cnt','allin_ev_bb','allin_net_bb',
+  'walk_cnt','pfr_opp','rfi_cnt','rfi_opp','sq_cnt','sq_opp','sawflop_np_cnt','wtsd_np_cnt'];
+// colunas que o app carrega ao abrir: TUDO menos hand_ids (lista de nº de mãos, que cresce com o volume e
+// só serve pro dedup no import — com 200 mil mãos eram vários MB baixados a cada abertura). F0.18
+const HH_COLS=['id','workspace_id','player','site','site_tournament_id','tournament_name','entry_date','buyin',
+  ...HH_SUM_KEYS.filter(k=>k!=='hands'),'hands','engine_version','pos_json','stack_json','created_by','created_at'].join(',');
+const semIds=r=>{ if(!r||!('hand_ids' in r)) return r; const {hand_ids,...x}=r; return x; };
 function mergeHH(a,b){
   const out={...a};
   HH_SUM_KEYS.forEach(k=>out[k]=Math.round((num(a[k])+num(b[k]))*100)/100);
   out.entry_date=[a.entry_date,b.entry_date].filter(Boolean).sort()[0]||null;
   out.buyin=Math.max(num(a.buyin),num(b.buyin));
   out.tournament_name=a.tournament_name||b.tournament_name;
+  // linha com mãos de versões diferentes do motor fica marcada com a MAIS ANTIGA (a tela pede reimport completo)
+  out.engine_version=Math.min(num(a.engine_version)||1,num(b.engine_version)||1);
   const mj=(x,y)=>{ const o=JSON.parse(JSON.stringify(x||{})); Object.keys(y||{}).forEach(k=>{ if(!o[k]) o[k]={...y[k]}; else Object.keys(y[k]).forEach(kk=>o[k][kk]=num(o[k][kk])+num(y[k][kk])); }); return o; };
   out.pos_json=mj(a.pos_json,b.pos_json); out.stack_json=mj(a.stack_json,b.stack_json);
   out.hand_ids=[...new Set([...(a.hand_ids||[]),...(b.hand_ids||[])])];
@@ -504,7 +586,7 @@ const tsCheiroSatelite = nome => /(^|\W)(step\s*\d|sat\b|satellite|sat[ée]lite|
 // nome comparável: "Daily Classic $3" e "daily classic 3" são o mesmo torneio
 const tsNorm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
 // faixas saudáveis de referência (MTT micro/low) — verde dentro, amarelo perto, vermelho fora
-const HH_BANDS={vpip:[18,27],pfr:[14,22],tb:[5,10],f3b:[45,65],steal:[30,50],bbdef:[35,55],cbet:[50,75],fcbet:[40,60],wtsd:[24,32],wsd:[48,58],wwsf:[42,52]};
+const HH_BANDS={vpip:[18,27],pfr:[14,22],tb:[5,10],f3b:[45,65],steal:[30,50],bbdef:[35,55],cbet:[50,75],fcbet:[40,60],wtsd:[28,36],wsd:[48,58],wwsf:[42,52]};
 const fmtBB=n=>`${n>=0?'+':'−'}${Math.abs(n).toFixed(1).replace('.',',')} bb`;
 // glossário das siglas (mostrado na tela Stats)
 const HH_GLOSS=[
@@ -523,17 +605,51 @@ const HH_GLOSS=[
   ['bb/100','Resultado em big blinds a cada 100 mãos, em FICHAS de torneio — mede qualidade de jogo, não dinheiro direto.'],
   ['Sorte (all-in EV)','Explicada no card "Sorte nos all-ins" acima. Mede só os all-ins com cartas viradas — sorte pré-all-in (cooler, distribuição), bounty de PKO e ICM ficam fora da conta.'],
 ];
+/* Totais das stats a partir das linhas agregadas (hh_tournament_stats). Fonte ÚNICA das contas da tela
+   Stats e do relatório em PDF — e o que o teste de calibração confere contra o PT4.
+   Linhas de versão antiga do motor (engine_version < HH_ENGINE) não têm os contadores novos: entram
+   com a definição antiga (denominador = mãos) e a tela avisa pra reimportar. */
+function hhTotals(rows){
+  const S=k=>rows.reduce((s,r)=>s+num(r[k]),0);
+  const nova=r=>(num(r.engine_version)||1)>=2;
+  const Sn=(k,fb)=>rows.reduce((s,r)=>s+(nova(r)?num(r[k]):num(r[fb])),0);   // contador novo com fallback na linha antiga
+  const hands=S('hands'), walks=S('walk_cnt');
+  const pos={};
+  rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ const x=pj[k]||{};
+    if(!pos[k]) pos[k]={h:0,w:0,v:0,p:0,po:0,ro:0,r:0,net:0,adj:0,hn:0,an:0};
+    const o=pos[k]; o.h+=num(x.h); o.w+=num(x.w); o.v+=num(x.v); o.p+=num(x.p); o.ro+=num(x.ro); o.r+=num(x.r); o.net+=num(x.net); o.hn+=num(x.hn);
+    o.po+=nova(r)?num(x.po):num(x.h);
+    if(x.adj!=null){ o.adj+=num(x.adj); o.an+=num(x.hn); }   // all-in ajustado só existe nas linhas novas
+    Object.keys(x).forEach(kk=>{ if(/^v(BTN|CO|SB)_[of]$/.test(kk)) o[kk]=(o[kk]||0)+num(x[kk]); });
+  }); });
+  const allinEv=S('allin_ev_bb'), allinNet=S('allin_net_bb'), net=S('net_bb');
+  const T={hands,walks,vpip:S('vpip_cnt'),vpipDen:hands-walks,pfr:S('pfr_cnt'),pfrOpp:Sn('pfr_opp','hands'),
+    rfi:S('rfi_cnt'),rfiOpp:S('rfi_opp'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),sq:S('sq_cnt'),sqOpp:S('sq_opp'),
+    f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),
+    cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),
+    sawflop:S('sawflop_cnt'),wwsf:S('wwsf_cnt'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),
+    // WTSD sem all-in pré-flop (F0.14): só flops com ação depois deles
+    wtsdNp:Sn('wtsd_np_cnt','wtsd_cnt'),wtsdDen:Sn('sawflop_np_cnt','sawflop_cnt'),
+    afB:S('af_bets'),afC:S('af_calls'),allinCnt:S('allin_cnt'),allinEv,allinNet,sorte:allinNet-allinEv,net,
+    bb100:hands>0?net/hands*100:0, adjBb100:hands>0?(net-(allinNet-allinEv))/hands*100:0,
+    pos, antigas:rows.filter(r=>!nova(r)).length};
+  return T;
+}
+// entrada das leituras automáticas a partir dos totais
+const hhInsightInput=T=>({hands:T.hands,vpip:T.vpip,vpipDen:T.vpipDen,pfr:T.pfr,pfrOpp:T.pfrOpp,tb:T.tb,tbOpp:T.tbOpp,f3b:T.f3b,f3bOpp:T.f3bOpp,
+  steal:T.steal,stealOpp:T.stealOpp,bbdef:T.bbdef,bbdefOpp:T.bbdefOpp,cbet:T.cbet,cbetOpp:T.cbetOpp,fcb:T.fcb,fcbOpp:T.fcbOpp,
+  wtsd:T.wtsd,wtsdNp:T.wtsdNp,wtsdDen:T.wtsdDen,wsd:T.wsd,wwsf:T.wwsf,sawflop:T.sawflop,afB:T.afB,afC:T.afC,sorte:T.sorte,allinCnt:T.allinCnt,pos:T.pos,bb100:T.bb100});
 /* Leituras automáticas: compara as suas stats com as faixas de um reg de MTT micro/low e
    escreve o que precisa de atenção. Cada regra só dispara com amostra mínima. */
 function hhInsights(d){
   // k (opcional) liga a leitura à stat que a gerou — a tela usa pra abrir a frase ao tocar no número
   const out=[]; const add=(tone,t,x,k)=>out.push({tone,t,x,k});
   const pct=(c,o)=>o>0?c/o*100:null;
-  const p={vpip:pct(d.vpip,d.hands),pfr:pct(d.pfr,d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
+  const p={vpip:pct(d.vpip,d.vpipDen!=null?d.vpipDen:d.hands),pfr:pct(d.pfr,d.pfrOpp!=null?d.pfrOpp:d.hands),tb:pct(d.tb,d.tbOpp),f3b:pct(d.f3b,d.f3bOpp),steal:pct(d.steal,d.stealOpp),bbdef:pct(d.bbdef,d.bbdefOpp),cbet:pct(d.cbet,d.cbetOpp),fcb:pct(d.fcb,d.fcbOpp),wtsd:d.wtsdDen!=null?pct(d.wtsdNp,d.wtsdDen):pct(d.wtsd,d.sawflop),wsd:pct(d.wsd,d.wtsd),wwsf:pct(d.wwsf,d.sawflop)};
   const f=n=>n==null?'—':n.toFixed(1).replace('.',',')+'%';
   const f1=n=>n.toFixed(1).replace('.',',');
   // VPIP/PFR/gap por posição — deixa as leituras cirúrgicas em vez de acusar a posição errada
-  const pp=k=>{ const x=d.pos&&d.pos[k]; if(!x||!(num(x.h)>0)) return null; const h=num(x.h); return {h,v:num(x.v)/h*100,pr:num(x.p)/h*100,gap:(num(x.v)-num(x.p))/h*100}; };
+  const pp=k=>{ const x=d.pos&&d.pos[k]; if(!x||!(num(x.h)>0)) return null; const h=num(x.h), hv=(h-num(x.w))||h, po=num(x.po)||h; return {h,v:num(x.v)/hv*100,pr:num(x.p)/po*100,gap:num(x.v)/hv*100-num(x.p)/po*100}; };
   // gap VPIP−PFR SEM os blinds: defesa de BB é call por natureza (e completar SB pode ser plano),
   // então contar blinds no gap acusaria "passividade" injustamente
   const nb=['EP','MP','CO','BTN'].reduce((a,k)=>{const x=d.pos&&d.pos[k]; if(x){a.h+=num(x.h);a.v+=num(x.v);a.p+=num(x.p);} return a;},{h:0,v:0,p:0});
@@ -565,8 +681,8 @@ function hhInsights(d){
   }
   if(d.fcbOpp>=30&&p.fcb>62) add('gold','Fold demais pra c-bet',`Fold pra c-bet ${f(p.fcb)} (reg: 40–60%). "Errou o flop, desistiu" é o vazamento mais explorado do micro.`,'fcb');
   if(d.sawflop>=100){
-    if(p.wtsd>33&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg: 24–32% / 48–58%). Você paga até o fim e chega sem a melhor mão. A correção não é virar nit: é chegar ao river com range mais forte e escolher bluff catcher por blocker e sizing — não por "a linha do vilão não faz sentido".`,'wsd');
-    else if(p.wtsd>34) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg: 24–32%). Confira se os calls de turn/river têm equity de verdade.`,'wtsd');
+    if(p.wtsd>37&&p.wsd!=null&&p.wsd<47) add('red','Chegando ao showdown atrás',`WTSD ${f(p.wtsd)} com W$SD ${f(p.wsd)} (reg de MTT: 28–36% / 48–58%). Você paga até o fim e chega sem a melhor mão. A correção não é virar nit: é chegar ao river com range mais forte e escolher bluff catcher por blocker e sizing — não por "a linha do vilão não faz sentido".`,'wsd');
+    else if(p.wtsd>38) add('gold','Showdown demais',`WTSD ${f(p.wtsd)} (reg de MTT: 28–36%, sem all-in pré-flop). Confira se os calls de turn/river têm equity de verdade.`,'wtsd');
     if(p.wwsf!=null&&p.wwsf<40) add('gold','Pouca briga pós-flop',`WWSF ${f(p.wwsf)} (reg: 42–52%). Ganhar pote sem showdown é obrigação no MTT — mais agressão em board seco.`,'wwsf');
   }
   const af=d.afC>0?d.afB/d.afC:null;
@@ -585,7 +701,7 @@ function hhInsights(d){
   // ---- leituras COMBINADAS: dois números que, juntos, contam uma história ----
   // o perfil "entra bem mas não sai": paga 3-bet, gruda contra c-bet e vai demais ao showdown.
   // O leak não é abrir demais — é não ter ponto de saída quando o vilão mostra força.
-  if(d.f3bOpp>=15&&d.fcbOpp>=30&&d.sawflop>=100&&p.f3b<40&&p.fcb<35&&p.wtsd>34)
+  if(d.f3bOpp>=15&&d.fcbOpp>=30&&d.sawflop>=100&&p.f3b<40&&p.fcb<35&&p.wtsd>38)
     add('red','Resiste demais depois de entrar no pote',`Fold pra 3-bet ${f(p.f3b)} + fold pra c-bet ${f(p.fcb)} + WTSD ${f(p.wtsd)}: você entra no pote razoavelmente bem, mas não solta a mão quando o adversário mostra força — antes e depois do flop. A evolução não é abrir menos: é melhorar os pontos de saída (largar contra 3-bet fora de posição, abandonar o float que não melhorou, soltar o bluff catcher sem blocker).`);
   if(d.stealOpp>=30&&d.f3bOpp>=15&&p.steal>45&&p.f3b>70)
     add('gold','Rouba, mas não defende o roubo',`Roubo de blinds ${f(p.steal)} + fold pra 3-bet ${f(p.f3b)}: você abre muito de CO/BTN/SB e desiste quando reagem. Reg atento passa a 3-betar você sem mão — abra um pouco menos ou defenda mais as melhores.`);
@@ -1737,7 +1853,7 @@ function Dashboard({session,profile}){
         sb.from('bankroll_ledger').select('*').order('entry_date'),
         sb.from('player_wallets').select('*'),
         sb.from('withdrawals').select('*').order('week_ending_date',{ascending:false}),
-        sb.from('hh_tournament_stats').select('*').order('entry_date',{ascending:false}),
+        sb.from('hh_tournament_stats').select(HH_COLS).order('entry_date',{ascending:false}),
         sb.from('config_changes').select('*').order('created_at',{ascending:false}),
       ]);
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
@@ -1775,8 +1891,9 @@ function Dashboard({session,profile}){
   useEffect(()=>{
     if(!sb.channel) return;
     const apply=setter=>p=>setter(list=>{
-      if(p.eventType==='INSERT') return list.some(x=>x.id===p.new.id)?list:[p.new,...list];
-      if(p.eventType==='UPDATE') return list.map(x=>x.id===p.new.id?p.new:x);
+      const nv=semIds(p.new);   // o tempo real manda a linha inteira; hand_ids não fica na memória
+      if(p.eventType==='INSERT') return list.some(x=>x.id===nv.id)?list:[nv,...list];
+      if(p.eventType==='UPDATE') return list.map(x=>x.id===nv.id?nv:x);
       if(p.eventType==='DELETE') return list.filter(x=>x.id!==p.old.id);
       return list;
     });
@@ -2085,15 +2202,25 @@ function Dashboard({session,profile}){
     const grupos={};
     for(const h of allHands){ const k=h.site+'|'+h.tid; (grupos[k]=grupos[k]||[]).push(h); }
     let saved=0, novas=0, repetidas=0, reproc=0; const paraSalvar=[];
+    // hand_ids não vem na carga inicial (F0.18): busca SÓ os dos torneios deste lote, em fatias
+    const idsDe={};
+    const tidsLote=[...new Set(Object.values(grupos).map(g=>g[0].tid))].filter(t=>hh.some(x=>x.player===player&&x.site_tournament_id===t));
+    for(let i=0;i<tidsLote.length;i+=100){
+      const {data:idr,error:ide}=await sb.from('hh_tournament_stats').select('site,site_tournament_id,hand_ids').eq('player',player).in('site_tournament_id',tidsLote.slice(i,i+100));
+      if(ide){ issues.push('não consegui conferir as mãos já importadas ('+ide.message+'); import parado pra não duplicar'); setImp({busy:false,prog:'',res:{files:texts.length,novas:0,repetidas:0,reproc:0,tours:0,saved:0,ignored,reasons,issues,issuesTotal:issues.length}}); return; }
+      (idr||[]).forEach(r=>{ idsDe[r.site+'|'+r.site_tournament_id]=r.hand_ids||[]; });
+    }
     for(const k of Object.keys(grupos)){
       const g=grupos[k], site=g[0].site, tid=g[0].tid;
-      const existente=hh.find(x=>x.player===player&&x.site===site&&x.site_tournament_id===tid);
-      // linha antiga SEM os campos novos por posição (net/hn): se o arquivo cobre TODAS as
-      // mãos já importadas, reprocessa o torneio inteiro — reimportar preenche o bb/100
-      // por posição retroativo sem duplicar nada
+      const ex0=hh.find(x=>x.player===player&&x.site===site&&x.site_tournament_id===tid);
+      const existente=ex0?{...ex0,hand_ids:idsDe[site+'|'+tid]||[]}:null;
+      // linha calculada por uma versão ANTIGA do motor (ou sem os campos por posição): se o arquivo
+      // cobre TODAS as mãos já importadas, recalcula o torneio inteiro com as definições atuais —
+      // reimportar corrige as stats retroativamente sem duplicar nada (F0.15)
       const batchIds=new Set(g.map(h=>h.hid).filter(Boolean));
-      const upgrade=existente&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length
-        &&existente.pos_json&&Object.values(existente.pos_json).some(x=>x&&x.hn==null)
+      const antiga=existente&&((num(existente.engine_version)||1)<HH_ENGINE
+        ||(existente.pos_json&&Object.values(existente.pos_json).some(x=>x&&x.hn==null)));
+      const upgrade=antiga&&Array.isArray(existente.hand_ids)&&existente.hand_ids.length
         &&existente.hand_ids.every(id=>batchIds.has(id));
       const jaVistas=new Set(existente&&!upgrade&&Array.isArray(existente.hand_ids)?existente.hand_ids:[]);
       const noLote=new Set(); const frescas=[];
@@ -2116,7 +2243,7 @@ function Dashboard({session,profile}){
       setImp(s=>({...s,prog:`Salvando torneios ${i+1}–${Math.min(i+100,paraSalvar.length)} de ${paraSalvar.length}…`}));
       const {data,error}=await sb.from('hh_tournament_stats').upsert(chunk,{onConflict:'workspace_id,player,site,site_tournament_id'}).select();
       if(error){ issues.push(`lote de torneios ${i+1}+: não salvou (${error.message})`); continue; }
-      const recs=(data&&data.length===chunk.length)?data:chunk; saved+=chunk.length;
+      const recs=((data&&data.length===chunk.length)?data:chunk).map(semIds); saved+=chunk.length;
       setHh(list=>{ const novasKeys=new Set(recs.map(keyOf)); return [...recs,...list.filter(x=>!novasKeys.has(keyOf(x)))]; });
       await new Promise(r=>setTimeout(r,0));
     }
@@ -2720,14 +2847,14 @@ function Dashboard({session,profile}){
         const periodoLabel=n>0?`últimos ${n} dias`:rangeAtivo?`${stF.from?dLabel(stF.from):'início'} a ${stF.to?dLabel(stF.to):'hoje'}`:'todo o histórico';
         const rows=hh.filter(r=>r.player===sp&&(!fFrom||(r.entry_date&&r.entry_date>=fFrom))&&(!fTo||(r.entry_date&&r.entry_date<=fTo)));
         const S=k=>rows.reduce((s,r)=>s+num(r[k]),0);
-        const hands=S('hands');
-        const bb100=hands>0?S('net_bb')/hands*100:0;
-        const evbb=S('allin_ev_bb'), netbb=S('allin_net_bb'), sorte=netbb-evbb;
-        const afc=S('af_calls'), afb=S('af_bets');
-        const pos={}; rows.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos[k])pos[k]={h:0,v:0,p:0,net:0,hn:0}; pos[k].h+=num(pj[k].h); pos[k].v+=num(pj[k].v); pos[k].p+=num(pj[k].p); pos[k].net+=num(pj[k].net); pos[k].hn+=num(pj[k].hn); }); });
+        const TT=hhTotals(rows);
+        const hands=TT.hands, bb100=TT.bb100;
+        const evbb=TT.allinEv, netbb=TT.allinNet, sorte=TT.sorte;
+        const afc=TT.afC, afb=TT.afB;
+        const pos=TT.pos;
         const POS_ORDER=['EP','MP','CO','BTN','SB','BB'];
         // leituras calculadas UMA vez: alimentam o card "Leituras do jogo" E os toques nas stats
-        const insights=hhInsights({hands,vpip:S('vpip_cnt'),pfr:S('pfr_cnt'),tb:S('tb_cnt'),tbOpp:S('tb_opp'),f3b:S('f3b_cnt'),f3bOpp:S('f3b_opp'),steal:S('steal_cnt'),stealOpp:S('steal_opp'),bbdef:S('bbdef_cnt'),bbdefOpp:S('bbdef_opp'),cbet:S('cbet_cnt'),cbetOpp:S('cbet_opp'),fcb:S('fcbet_cnt'),fcbOpp:S('fcbet_opp'),wtsd:S('wtsd_cnt'),wsd:S('wsd_cnt'),wwsf:S('wwsf_cnt'),sawflop:S('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S('allin_cnt'),pos,bb100});
+        const insights=hhInsights(hhInsightInput(TT));
         const hintFor=k=>insights.find(i=>i.k===k)||null;
         const toggleHint=k=>setStatHint(s=>s===k?null:k);
         // tile com leitura acoplada (só marca ⚠ se existir leitura pra essa stat)
@@ -2792,12 +2919,12 @@ function Dashboard({session,profile}){
               `Período: ${periodoLabel} · ${hands} mãos · ${rows.length} torneios`,
               `bb/100 (fichas): ${fmtBB(bb100)}`,
               `Sorte all-in: ${fmtBB(sorte)} (real ${fmtBB(netbb)} vs EV ${fmtBB(evbb)}) em ${S('allin_cnt')} all-ins`,
-              `VPIP ${pctS(S('vpip_cnt'),hands)} · PFR ${pctS(S('pfr_cnt'),hands)}`,
-              `3-bet ${pctS(S('tb_cnt'),S('tb_opp'))} · Fold pra 3-bet ${pctS(S('f3b_cnt'),S('f3b_opp'))}`,
+              `VPIP ${pctS(TT.vpip,TT.vpipDen)} · PFR ${pctS(TT.pfr,TT.pfrOpp)}`,
+              `3-bet ${pctS(TT.tb,TT.tbOpp)} · Squeeze ${pctS(TT.sq,TT.sqOpp)} · Fold pra 3-bet ${pctS(TT.f3b,TT.f3bOpp)}`,
               `Roubo de blinds ${pctS(S('steal_cnt'),S('steal_opp'))} · BB defende ${pctS(S('bbdef_cnt'),S('bbdef_opp'))}`,
               `C-bet flop ${pctS(S('cbet_cnt'),S('cbet_opp'))} · Fold pra c-bet ${pctS(S('fcbet_cnt'),S('fcbet_opp'))}`,
-              `WWSF ${pctS(S('wwsf_cnt'),S('sawflop_cnt'))} · WTSD ${pctS(S('wtsd_cnt'),S('sawflop_cnt'))} · W$SD ${pctS(S('wsd_cnt'),S('wtsd_cnt'))}`,
-              'Definições: WWSF e WTSD = % sobre flops vistos; W$SD = % sobre showdowns; bb/100 em fichas; sorte = all-in EV (só cartas viradas, PKO/ICM fora).',
+              `WWSF ${pctS(TT.wwsf,TT.sawflop)} · WTSD ${pctS(TT.wtsdNp,TT.wtsdDen)} · W$SD ${pctS(TT.wsd,TT.wtsd)}`,
+              'Definições (padrão PT4): VPIP sem walks; PFR sobre as mãos em que dava pra aumentar; 3-bet sem squeeze; WWSF = % dos flops vistos; WTSD = % dos flops vistos sem all-in pré-flop; W$SD = % dos showdowns; bb/100 em fichas; sorte = all-in EV (só cartas viradas, PKO/ICM fora).',
               `AF: ${afc>0?(afb/afc).toFixed(2).replace('.',','):'—'}`,
               'Por posição (mãos · VPIP · PFR · bb/100): '+POS_ORDER.filter(k=>pos[k]&&pos[k].h).map(k=>`${k} ${pos[k].h}·${(pos[k].v/pos[k].h*100).toFixed(0)}%·${(pos[k].p/pos[k].h*100).toFixed(0)}%·${pos[k].hn>0?(pos[k].net/pos[k].hn*100).toFixed(1):'—'}`).join(' | '),
               'Leituras automáticas: '+(insights.map(i=>i.t).join('; ')||'—'),
@@ -2832,9 +2959,10 @@ function Dashboard({session,profile}){
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Pré-flop</h3>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8}}>
-              {tile('VPIP',S('vpip_cnt'),hands,'vpip')}
-              {tile('PFR',S('pfr_cnt'),hands,'pfr')}
-              {tile('3-bet',S('tb_cnt'),S('tb_opp'),'tb')}
+              {tile('VPIP',TT.vpip,TT.vpipDen,'vpip')}
+              {tile('PFR',TT.pfr,TT.pfrOpp,'pfr')}
+              {tile('3-bet',TT.tb,TT.tbOpp,'tb')}
+              {tile('Squeeze',TT.sq,TT.sqOpp,'sq')}
               {tile('Fold pra 3-bet',S('f3b_cnt'),S('f3b_opp'),'f3b')}
               {tile('Roubo de blinds',S('steal_cnt'),S('steal_opp'),'steal')}
               {tile('BB defende',S('bbdef_cnt'),S('bbdef_opp'),'bbdef')}
@@ -2847,23 +2975,27 @@ function Dashboard({session,profile}){
               {tile('C-bet flop',S('cbet_cnt'),S('cbet_opp'),'cbet')}
               {tile('Fold pra c-bet',S('fcbet_cnt'),S('fcbet_opp'),'fcbet','fcb')}
               {tile('WWSF',S('wwsf_cnt'),S('sawflop_cnt'),'wwsf')}
-              {tile('WTSD',S('wtsd_cnt'),S('sawflop_cnt'),'wtsd')}
-              {tile('W$SD',S('wsd_cnt'),S('wtsd_cnt'),'wsd')}
+              {tile('WTSD',TT.wtsdNp,TT.wtsdDen,'wtsd')}
+              {tile('W$SD',TT.wsd,TT.wtsd,'wsd')}
             </div>
             {hintBox(['cbet','fcb','wwsf','wtsd','wsd'])}
-            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF e WTSD = % sobre os <b>flops vistos</b> · W$SD = % sobre os <b>showdowns</b> (o HUD da GG usa outra base — detalhe no glossário). Stat com <b>⚠</b> tem uma leitura — toque no número pra ver.</div>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>WWSF = % dos <b>flops vistos</b> · WTSD = % dos flops vistos <b>sem all-in pré-flop</b> · W$SD = % dos <b>showdowns</b> (o HUD da GG usa outra base — detalhe no glossário). Stat com <b>⚠</b> tem uma leitura — toque no número pra ver.</div>
           </Card>
           <Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 10px'}}>Por posição</h3>
             {POS_ORDER.filter(k=>pos[k]&&pos[k].h>0).map(k=>{const b100=pos[k].hn>0?pos[k].net/pos[k].hn*100:null; const ph=hintFor('pos:'+k); return <div key={k} onClick={ph?()=>toggleHint('pos:'+k):undefined} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13,flexWrap:'wrap',cursor:ph?'pointer':'default',background:statHint==='pos:'+k?C.bg:'transparent',borderRadius:statHint==='pos:'+k?8:0}}>
               <b style={{width:42}}>{k}</b>
               <span style={{color:C.inkSoft,flex:1}}>{pos[k].h} mão{pos[k].h!==1?'s':''}</span>
-              <span>VPIP <b>{pctFmt(pos[k].v/pos[k].h*100)}</b></span>
-              <span>PFR <b>{pctFmt(pos[k].p/pos[k].h*100)}</b></span>
+              <span>VPIP <b>{pos[k].h-pos[k].w>0?pctFmt(pos[k].v/(pos[k].h-pos[k].w)*100):'—'}</b></span>
+              <span>PFR <b>{pos[k].po>0?pctFmt(pos[k].p/pos[k].po*100):'—'}</b></span>
+              {pos[k].ro>0&&<span>RFI <b>{pctFmt(pos[k].r/pos[k].ro*100)}</b></span>}
               <span>BB/100 <b style={{color:b100==null?C.inkSoft:b100>=0?C.greenMid:C.red}}>{b100==null?'—':fmtBB(b100).replace(' bb','')}</b></span>
+              {pos[k].an>0&&<span title="bb/100 com os all-ins trocados pelo valor esperado (sem a sorte)">Ajust. <b>{fmtBB(pos[k].adj/pos[k].an*100).replace(' bb','')}</b></span>}
+              {k==='BB'&&['BTN','CO','SB'].filter(o=>pos.BB['v'+o+'_o']>0).length>0&&<span style={{width:'100%',fontSize:12,color:C.inkSoft}}>Fold contra roubo: {['BTN','CO','SB'].filter(o=>pos.BB['v'+o+'_o']>0).map(o=>`vs ${o} ${pctFmt((pos.BB['v'+o+'_f']||0)/pos.BB['v'+o+'_o']*100)} (${pos.BB['v'+o+'_o']})`).join(' · ')}</span>}
               {ph&&<span style={{color:{red:C.red,gold:C.gold,green:C.greenMid,info:P}[ph.tone],display:'flex',alignItems:'center'}}><IcoAlert s={14}/></span>}
             </div>;})}
             {hintBox(POS_ORDER.map(k=>'pos:'+k))}
+            {TT.antigas>0&&<div style={{fontSize:11.5,color:C.gold,marginTop:8,fontWeight:700}}>⚠ {TT.antigas} torneio{TT.antigas!==1?'s':''} calculado{TT.antigas!==1?'s':''} pela versão antiga das stats. Reimporte os mesmos arquivos (não duplica) pra recalcular com as definições novas.</div>}
             {POS_ORDER.some(k=>pos[k]&&pos[k].h>0&&!(pos[k].hn>0))&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>ℹ️ BB/100 com "—": mãos importadas antes desse recurso. Reimporte os mesmos arquivos (não duplica nada) que o sistema reprocessa e preenche.</div>}
           </Card>
 
@@ -3288,21 +3420,22 @@ function Dashboard({session,profile}){
         const repPeriodo=nn>0?`últimos ${nn} dias`:(report.from||report.to)?`${report.from?dLabel(report.from):'início'} a ${report.to?dLabel(report.to):'hoje'}`:'todo o histórico';
         const rws=hh.filter(r=>r.player===sp2&&(!from||(r.entry_date&&r.entry_date>=from))&&(!to||(r.entry_date&&r.entry_date<=to)));
         const S2=k=>rws.reduce((s,r)=>s+num(r[k]),0);
-        const hands2=S2('hands'), bb100v=hands2>0?S2('net_bb')/hands2*100:0;
-        const evbb=S2('allin_ev_bb'), netbb=S2('allin_net_bb'), sorte=netbb-evbb;
-        const afb=S2('af_bets'), afc=S2('af_calls');
-        const pos2={}; rws.forEach(r=>{ const pj=r.pos_json||{}; Object.keys(pj).forEach(k=>{ if(!pos2[k])pos2[k]={h:0,v:0,p:0,net:0,hn:0}; pos2[k].h+=num(pj[k].h); pos2[k].v+=num(pj[k].v); pos2[k].p+=num(pj[k].p); pos2[k].net+=num(pj[k].net); pos2[k].hn+=num(pj[k].hn); }); });
-        const insights=hhInsights({hands:hands2,vpip:S2('vpip_cnt'),pfr:S2('pfr_cnt'),tb:S2('tb_cnt'),tbOpp:S2('tb_opp'),f3b:S2('f3b_cnt'),f3bOpp:S2('f3b_opp'),steal:S2('steal_cnt'),stealOpp:S2('steal_opp'),bbdef:S2('bbdef_cnt'),bbdefOpp:S2('bbdef_opp'),cbet:S2('cbet_cnt'),cbetOpp:S2('cbet_opp'),fcb:S2('fcbet_cnt'),fcbOpp:S2('fcbet_opp'),wtsd:S2('wtsd_cnt'),wsd:S2('wsd_cnt'),wwsf:S2('wwsf_cnt'),sawflop:S2('sawflop_cnt'),afB:afb,afC:afc,sorte,allinCnt:S2('allin_cnt'),pos:pos2,bb100:hands2>0?S2('net_bb')/hands2*100:0});
+        const T2=hhTotals(rws);
+        const hands2=T2.hands, bb100v=T2.bb100;
+        const evbb=T2.allinEv, netbb=T2.allinNet, sorte=T2.sorte;
+        const afb=T2.afB, afc=T2.afC;
+        const pos2=T2.pos;
+        const insights=hhInsights(hhInsightInput(T2));
         titulo=`Relatório do jogador — ${sp2}`;
         sub=solo?`banca + estatísticas de jogo (${repPeriodo})`:`história completa na pool + estatísticas de jogo (${repPeriodo})`;
         const MET=[
-          ['VPIP',S2('vpip_cnt'),hands2,HH_BANDS.vpip],['PFR',S2('pfr_cnt'),hands2,HH_BANDS.pfr],
-          ['3-bet',S2('tb_cnt'),S2('tb_opp'),HH_BANDS.tb],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
+          ['VPIP',T2.vpip,T2.vpipDen,HH_BANDS.vpip],['PFR',T2.pfr,T2.pfrOpp,HH_BANDS.pfr],
+          ['3-bet',T2.tb,T2.tbOpp,HH_BANDS.tb],['Squeeze',T2.sq,T2.sqOpp,HH_BANDS.sq],['Fold pra 3-bet',S2('f3b_cnt'),S2('f3b_opp'),HH_BANDS.f3b],
           ['Roubo de blinds',S2('steal_cnt'),S2('steal_opp'),HH_BANDS.steal],['BB defende',S2('bbdef_cnt'),S2('bbdef_opp'),HH_BANDS.bbdef],
           ['C-bet flop',S2('cbet_cnt'),S2('cbet_opp'),HH_BANDS.cbet],['Fold pra c-bet',S2('fcbet_cnt'),S2('fcbet_opp'),HH_BANDS.fcbet],
-          ['WWSF',S2('wwsf_cnt'),S2('sawflop_cnt'),HH_BANDS.wwsf],['WTSD',S2('wtsd_cnt'),S2('sawflop_cnt'),HH_BANDS.wtsd],['W$SD',S2('wsd_cnt'),S2('wtsd_cnt'),HH_BANDS.wsd],
+          ['WWSF',S2('wwsf_cnt'),S2('sawflop_cnt'),HH_BANDS.wwsf],['WTSD',T2.wtsdNp,T2.wtsdDen,HH_BANDS.wtsd],['W$SD',S2('wsd_cnt'),S2('wtsd_cnt'),HH_BANDS.wsd],
         ];
-        const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
+        const stOf=(c,o,b)=>{ if(!o) return ['sem amostra','#6B6455']; if(!b) return ['—','#6B6455']; const pv=c/o*100; if(pv>=b[0]&&pv<=b[1]) return ['dentro',C.greenMid]; if(pv>=b[0]-5&&pv<=b[1]+5) return ['atenção',C.gold]; return ['fora',C.red]; };
         const TONE2={red:C.red,gold:C.gold,green:C.greenMid,info:P};
         corpo=<>
           {!solo&&<Sec t="Na pool — história completa">
@@ -3344,11 +3477,11 @@ function Dashboard({session,profile}){
           </Sec>
           <Sec t="Estatísticas vs faixa de reg (MTT micro/low)">
             <table className="reptable"><thead><tr><th>Estatística</th><th>Valor</th><th>Amostra</th><th>Faixa reg</th><th>Status</th></tr></thead>
-            <tbody>{MET.map(([nm,c,o,b])=>{ const [lbl,cor]=stOf(c,o,b); return <tr key={nm}><td>{nm}</td><td style={{fontWeight:700}}>{o>0?pctFmt(c/o*100):'—'}</td><td>{c}/{o}</td><td>{b[0]}–{b[1]}%</td><td style={{color:cor,fontWeight:700}}>{lbl}</td></tr>; })}</tbody></table>
+            <tbody>{MET.map(([nm,c,o,b])=>{ const [lbl,cor]=stOf(c,o,b); return <tr key={nm}><td>{nm}</td><td style={{fontWeight:700}}>{o>0?pctFmt(c/o*100):'—'}</td><td>{c}/{o}</td><td>{b?`${b[0]}–${b[1]}%`:'—'}</td><td style={{color:cor,fontWeight:700}}>{lbl}</td></tr>; })}</tbody></table>
           </Sec>
           <Sec t="Por posição">
-            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th><th>BB/100</th></tr></thead>
-            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pctFmt(pos2[k].v/pos2[k].h*100)}</td><td>{pctFmt(pos2[k].p/pos2[k].h*100)}</td><td>{pos2[k].hn>0?fmtBB(pos2[k].net/pos2[k].hn*100).replace(' bb',''):'—'}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
+            {['EP','MP','CO','BTN','SB','BB'].some(k=>pos2[k]&&pos2[k].h>0)?<table className="reptable"><thead><tr><th>Posição</th><th>Mãos</th><th>VPIP</th><th>PFR</th><th>RFI</th><th>BB/100</th><th>Ajustado</th></tr></thead>
+            <tbody>{['EP','MP','CO','BTN','SB','BB'].filter(k=>pos2[k]&&pos2[k].h>0).map(k=><tr key={k}><td><b>{k}</b></td><td>{pos2[k].h}</td><td>{pos2[k].h-pos2[k].w>0?pctFmt(pos2[k].v/(pos2[k].h-pos2[k].w)*100):'—'}</td><td>{pos2[k].po>0?pctFmt(pos2[k].p/pos2[k].po*100):'—'}</td><td>{pos2[k].ro>0?pctFmt(pos2[k].r/pos2[k].ro*100):'—'}</td><td>{pos2[k].hn>0?fmtBB(pos2[k].net/pos2[k].hn*100).replace(' bb',''):'—'}</td><td>{pos2[k].an>0?fmtBB(pos2[k].adj/pos2[k].an*100).replace(' bb',''):'—'}</td></tr>)}</tbody></table>:<div style={{fontSize:12,color:'#6B6455'}}>Sem dados de posição.</div>}
           </Sec>
           <Sec t="Leituras do jogo">
             {insights.length?insights.map((iz,ix)=><div key={ix} style={{marginBottom:8}}><div style={{fontWeight:800,fontSize:12.5,color:TONE2[iz.tone]}}>{iz.t}</div><div style={{fontSize:12,color:'#3d463f',lineHeight:1.5}}>{iz.x}</div></div>):<div style={{fontSize:12,color:'#6B6455'}}>Sem leituras — importe hand histories.</div>}
