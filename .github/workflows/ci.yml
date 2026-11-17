@@ -41,3 +41,6 @@ jobs:
 
       - name: Teste de fumaça (build + CSP estrita)
         run: node test/smoke.mjs
+
+      - name: Tela Stats com Supabase simulado (motor v2 na tela, sem tocar no banco)
+        run: node test/ui/stats.mjs

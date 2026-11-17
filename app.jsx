@@ -1793,6 +1793,7 @@ function Dashboard({session,profile}){
   const [audF,setAudF]=useState({player:'',days:30});             // filtros da aba Auditoria
   const [gloss,setGloss]=useState(false);         // glossário das siglas aberto?
   const [leitOpen,setLeitOpen]=useState(false);   // card "Leituras do jogo" expandido?
+  const [leitX,setLeitX]=useState({});   // quais leituras estão com o texto aberto ("ver mais")
   const [statHint,setStatHint]=useState(null);    // stat tocada na tela Stats (abre a leitura dela)
   const [sorteOpen,setSorteOpen]=useState(false); // card "Sorte nos all-ins" expandido?
   const [copied,setCopied]=useState(false);       // feedback do "copiar pro Coach"
@@ -2949,7 +2950,13 @@ function Dashboard({session,profile}){
                 </div>
                 {insights.map((i,ix)=><div key={ix} style={{display:'flex',gap:10,padding:'10px 12px',borderRadius:12,background:TONE[i.tone].bg,marginBottom:6,alignItems:'flex-start'}}>
                   <span style={{flexShrink:0,marginTop:1,color:TONE[i.tone].c}}><IcoAlert s={15}/></span>
-                  <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c}}>{i.t}</div><div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:2}}>{i.x}</div></div>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+                      <div style={{fontWeight:800,fontSize:13,color:TONE[i.tone].c,flex:1,minWidth:0,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{i.t}</div>
+                      {i.x&&<button onClick={()=>setLeitX(s=>({...s,[i.t]:!s[i.t]}))} style={{flexShrink:0,border:'none',background:'transparent',color:TONE[i.tone].c,fontWeight:700,fontSize:12,cursor:'pointer',padding:0,textDecoration:'underline'}}>{leitX[i.t]?'ver menos':'ver mais'}</button>}
+                    </div>
+                    {leitX[i.t]&&<div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:4}}>{i.x}</div>}
+                  </div>
                 </div>)}
               </div>}
             </Card>;
