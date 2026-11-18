@@ -296,4 +296,111 @@ S: shows [Ac Ad] (a pair of Aces)
 V collected 1800 from side pot
 V collected 300 from main pot` });
 
+
+// ---- regras confirmadas no export mão a mão do PT4 (56.255 mãos) ----
+// limp e depois enfrenta raise: é oportunidade de 3-bet (na decisão diante do raise)
+H.limpDepoisRaise = hand({ seats: six(4), button: 1, cards: 'Kd Qd', lines: `
+P2: posts small blind 10
+P3: posts big blind 20
+*** HOLE CARDS ***
+Hero: calls 20
+P5: raises 60 to 80
+P6: folds
+P1: folds
+P2: folds
+P3: folds
+Hero: calls 60
+*** FLOP *** [2c 3d 4h]
+Hero: checks
+P5: bets 100
+Hero: folds
+Uncalled bet (100) returned to P5
+P5 collected 190 from pot` });
+
+// único adversário vivo está all-in: não dá pra aumentar -> sem oportunidade de 3-bet (e sem PFR opp)
+H.soAllinNaFrente = hand({ seats: six(3, { 2: 300 }), button: 1, cards: '9h 2c', lines: `
+P2: posts small blind 10
+Hero: posts big blind 20
+*** HOLE CARDS ***
+P4: folds
+P5: folds
+P6: folds
+P1: folds
+P2: raises 280 to 300 and is all-in
+Hero: folds
+Uncalled bet (280) returned to P2
+P2 collected 40 from pot` });
+
+// oportunidade de PFR: o "raise enfrentado" é o que falta pagar (BB com 1000: falta 930 < 980 que sobram)
+H.pfrFaltaPagar = hand({ seats: six(3, { 3: 1000 }), button: 1, cards: '7c 7d', lines: `
+P2: posts small blind 10
+Hero: posts big blind 20
+*** HOLE CARDS ***
+P4: raises 40 to 60
+P5: raises 890 to 950
+P6: folds
+P1: folds
+P2: folds
+Hero: folds
+P4: folds
+Uncalled bet (890) returned to P5
+P5 collected 150 from pot` });
+
+// squeeze tardio: paga o open com caller e aumenta depois do 3-bet de outro -> conta squeeze
+H.squeezeTardio = hand({ seats: six(6), button: 1, cards: 'Ah Kh', lines: `
+P2: posts small blind 10
+P3: posts big blind 20
+*** HOLE CARDS ***
+P4: raises 30 to 50
+P5: calls 50
+Hero: calls 50
+P1: folds
+P2: raises 150 to 200
+P3: folds
+P4: folds
+P5: folds
+Hero: raises 400 to 600
+P2: folds
+Uncalled bet (400) returned to Hero
+Hero collected 570 from pot` });
+
+// mesa de 5: não existe EP (o UTG é MP)
+H.cincoNaMesa = hand({ max: '8-max', button: 1, cards: '5h 5d',
+  seats: [[1, 'P1', 1500], [2, 'P2', 1500], [3, 'P3', 1500], [4, 'Hero', 1500], [5, 'P5', 1500]], lines: `
+P2: posts small blind 10
+P3: posts big blind 20
+*** HOLE CARDS ***
+Hero: raises 30 to 50
+P5: folds
+P1: folds
+P2: folds
+P3: folds
+Uncalled bet (30) returned to Hero
+Hero collected 50 from pot` });
+
+// all-in no BLIND sem a marca "and is all-in" (a GG não escreve): P3 tem 20 fichas e posta o BB.
+// Depois do 1º all-in, P4 paga e mais tarde folda -> regra (a) do PT4: não ajusta
+H.allinNoBlind = hand({ seats: six(1, { 3: 20 }), button: 1, cards: 'Ac Ad', lines: `
+P2: posts small blind 10
+P3: posts big blind 20
+*** HOLE CARDS ***
+P4: calls 20
+P5: folds
+P6: folds
+Hero: raises 80 to 100
+P2: folds
+P4: calls 80
+*** FLOP *** [2c 7d 9h]
+P4: checks
+Hero: bets 100
+P4: folds
+Uncalled bet (100) returned to Hero
+*** TURN *** [2c 7d 9h] [Js]
+*** RIVER *** [2c 7d 9h Js] [3s]
+*** SHOW DOWN ***
+P3: shows [Kc Qc] (high card King)
+Hero: shows [Ac Ad] (a pair of Aces)
+Hero collected 170 from side pot
+Hero collected 60 from main pot` });
+
 module.exports = { H, hand, six };

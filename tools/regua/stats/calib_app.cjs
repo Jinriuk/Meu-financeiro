@@ -41,7 +41,7 @@ const M = [
   ['RFI CO', rfi('CO'), 32.11, 0.05],
   ['RFI BTN', rfi('BTN'), 42.09, 0.05],
   ['RFI SB', rfi('SB'), 51.83, 0.05],
-  ['3-bet (sem squeeze)', pc(T.tb, T.tbOpp), 10.67, 0.05],
+  ['3-bet (PT4, inclui squeeze)', pc(T.tb, T.tbOpp), 10.67, 0.05],
   ['Squeeze', pc(T.sq, T.sqOpp), 9.47, 0.05],
   ['mãos EP', (T.pos.EP || {}).h, 12083, 0], ['mãos MP', (T.pos.MP || {}).h, 14160, 0], ['mãos CO', (T.pos.CO || {}).h, 7501, 0],
   ['mãos BTN', (T.pos.BTN || {}).h, 7462, 0], ['mãos SB', (T.pos.SB || {}).h, 7509, 0], ['mãos BB', (T.pos.BB || {}).h, 7540, 0],

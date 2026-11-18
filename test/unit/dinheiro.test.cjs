@@ -119,3 +119,40 @@ test('hand history do PS continua lendo o buy-in do cabeçalho', () => {
   const { H } = require('../lib/hands.cjs');
   assert.equal(E.hhParseHand(H.openUTG, {}).buyin, 1.5);
 });
+
+test('F0.10 torneios do PokerStars a partir do hand history: colocação, prêmio, bounty, título, re-entry', () => {
+  const mao = (n, tid, linhas) => `PokerStars Hand #9000${n}: Tournament #${tid}, $1.44+$1.50+$0.36 USD Hold'em No Limit - Level I (10/20) - 2026/10/01 10:0${n}:00 ET
+Table '${tid} 1' 8-max Seat #1 is the button
+Seat 1: heroi (1500 in chips, $1.50 bounty)
+Seat 2: vil (1500 in chips, $1.50 bounty)
+heroi: posts small blind 10
+vil: posts big blind 20
+*** HOLE CARDS ***
+Dealt to heroi [Ah Kh]
+${linhas}
+*** SUMMARY ***`;
+  const txt = [
+    mao(1, '111', 'heroi wins $0.75 for eliminating vil and their own bounty increases by $0.75 to $2.25'),
+    mao(2, '111', 'heroi wins $0.50 for splitting the elimination of x and their own bounty increases by $0.50 to $2.75'),
+    mao(3, '111', 'heroi finished the tournament in 532nd place'),           // 1ª entrada caiu
+    mao(4, '111', 'heroi finished the tournament in 12th place and received $14.20.'),   // re-entry acabou no dinheiro
+    mao(5, '222', 'heroi wins the tournament and receives $58.26 - congratulations!'),
+    mao(6, '333', 'heroi: folds'),                                            // ainda rodando
+  ].join('\n\n');
+  const { rows, cont } = E.psTorneiosDoHH(txt);
+  assert.deepEqual(j(cont), { colocacoes: 2, premios: 1, bounties: 2, titulos: 1 });
+  const t1 = rows.find(r => r.tid === '111'), t2 = rows.find(r => r.tid === '222'), t3 = rows.find(r => r.tid === '333');
+  assert.deepEqual([t1.position, t1.prize, t1.bountyGanho, t1.reentries, t1.buyin, t1.bounty], [12, 14.2, 1.25, 1, 3.3, true]);
+  assert.deepEqual([t2.position, t2.prize, t2.titulo, t2.reentries], [1, 58.26, true, 0]);
+  assert.equal(t3.fim, false);
+});
+
+test('F0.11 nome de resumo com vírgula no meio não é cortado', () => {
+  const r = E.parseSummaries(`Tournament #318349389, $5 Ocean KO Opener, $1M [Stage 1], Hold'em No Limit
+Buy-in: $2.1+$0.4+$2.5
+6380 Players
+Tournament started 2026/10/08 09:30:00
+You finished the tournament in 2586th place.
+You received a total of 0 chips.`)[0];
+  assert.equal(r.name, '$5 Ocean KO Opener, $1M [Stage 1]'); assert.equal(r.buyin, 5); assert.equal(r.prize, 0);
+});

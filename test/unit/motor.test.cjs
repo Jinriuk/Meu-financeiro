@@ -32,19 +32,19 @@ test('open do UTG: EP, RFI, PFR com oportunidade', () => {
   close(h.net_bb, 1.5, 1e-9, 'net');
 });
 
-test('BB contra roubo do BTN com call do SB no meio: conta a defesa (vs BTN) e é squeeze, não 3-bet', () => {
+test('BB contra roubo do BTN com call do SB no meio: conta a defesa (vs BTN); é spot de 3-bet E de squeeze (PT4)', () => {
   const h = P('bbVsBtnSbCall');
   assert.equal(h.bbdefOpp, true); assert.equal(h.bbdef, false); assert.equal(h.bbVs, 'BTN');
-  assert.equal(h.tbOpp, false); assert.equal(h.sqOpp, true); assert.equal(h.sq, false);
+  assert.equal(h.tbOpp, true); assert.equal(h.sqOpp, true); assert.equal(h.sq, false);
   assert.equal(h.pfrOpp, true);
   const T = E.hhTotals(E.hhAggregate([h], 'X'));
   assert.equal(T.pos.BB.vBTN_o, 1); assert.equal(T.pos.BB.vBTN_f, 1);
 });
 
-test('squeeze: open + caller, herói aumenta', () => {
+test('squeeze: open + caller, herói aumenta (o 3-bet do PT4 inclui o squeeze)', () => {
   const h = P('squeeze');
   assert.equal(h.pos, 'CO');
-  assert.deepEqual([h.sqOpp, h.sq, h.tbOpp, h.tb], [true, true, false, false]);
+  assert.deepEqual([h.sqOpp, h.sq, h.tbOpp, h.tb], [true, true, true, true]);
   close(h.net_bb, 6.5, 1e-9, 'net');
 });
 
@@ -83,6 +83,9 @@ test('posições do PT4: SB/BB por quem postou, EP = UTG (+UTG+1 em 8-9), MP at�
   assert.deepEqual(['S4', 'S5', 'S6'].map(s => p6[s]), ['EP', 'MP', 'CO']);
   const p4 = E.hhPositions(seats(4), 1, 'S2', 'S3');
   assert.equal(p4.S4, 'CO');
+  const p5 = E.hhPositions(seats(5), 1, 'S2', 'S3');
+  assert.deepEqual(['S4', 'S5'].map(s => p5[s]), ['MP', 'CO'], 'mesa de 5 não tem EP');
+  assert.equal(P('cincoNaMesa').pos, 'MP');
   // "out of hand" é ignorado: mesa de 8 com 1 fora vira mesa de 7 (só 1 EP) e o lugar 7 é CO
   assert.equal(P('outOfHand').pos, 'CO');
 });
@@ -103,14 +106,26 @@ test('all-in EV com side pot: herói curto só disputa o pote principal', () => 
   close(h.net_bb, -15, 1e-9, 'net');
 });
 
-test('all-in EV: equity na última decisão do herói (flop), potes por nível de contribuição', () => {
+test('regra (c) do PT4: ação numa street depois da do 1º all-in -> não ajusta', () => {
+  // S foi all-in no pré-flop e o pote lateral foi disputado no flop: o PT4 não ajusta (conferido mão a mão)
   const h = P('allinFlopComCurto');
-  const c = R.card, flop = ['Ts', '9s', '2d'].map(c);
-  const hero = [c('Ks'), c('Qs')], V = [c('Th'), c('Td')], S = [c('Ac'), c('Ad')];
-  const e3 = R.equities([hero, V, S], flop)[0], e2 = R.equities([hero, V], flop)[0];
   close(h.net_bb, -50, 1e-9, 'net');
-  close(h.allin.ev, (e3 * 300 + e2 * 1800 - 1000) / 20, 1e-9, 'EV pela conta');
-  close(h.allin.ev, R.parseHand(H.allinFlopComCurto).ev_pt4_bb, 1e-9, 'EV x referência');
+  assert.equal(h.allin.ev, h.allin.net);
+});
+
+test('regra (a) com all-in no blind sem a marca "and is all-in": quem pagou depois e foldou -> não ajusta', () => {
+  const h = P('allinNoBlind');
+  assert.ok(h.allin); assert.equal(h.allin.ev, h.allin.net);
+});
+
+test('3-bet: limp seguido de raise é oportunidade; sem poder aumentar não é', () => {
+  const a = P('limpDepoisRaise'); assert.deepEqual([a.tbOpp, a.tb, a.rfiOpp, a.rfi], [true, false, true, false]);
+  const b = P('soAllinNaFrente'); assert.deepEqual([b.tbOpp, b.pfrOpp], [false, false]);
+});
+
+test('oportunidade de PFR usa o que falta pagar; squeeze tardio conta', () => {
+  assert.equal(P('pfrFaltaPagar').pfrOpp, true);
+  const s = P('squeezeTardio'); assert.deepEqual([s.sqOpp, s.sq, s.tbOpp, s.tb], [true, true, true, false]);
 });
 
 test('regra do PT4: ação depois da última decisão do herói -> não ajusta (EV = real)', () => {
@@ -130,9 +145,10 @@ test('diferencial com a referência: net, VPIP, PFR e c-bet batem em todas as m�
     const a = P(k), r = R.parseHand(H[k]);
     assert.ok(r && !r.skip, `referência descartou ${k}`);
     close(a.net_bb, r.net_bb, 1e-9, `${k} net`);
-    for (const f of ['vpip', 'pfr', 'cbetOpp', 'cbet', 'sawflop', 'f3bOpp', 'f3b'])
+    for (const f of ['vpip', 'pfr', 'cbetOpp', 'cbet', 'sawflop'])
       assert.equal(a[f], r[f], `${k}.${f}: app ${a[f]} x ref ${r[f]}`);
-    if (r.ev_pt4_bb != null) { assert.ok(a.allin, `${k}: ref tem all-in, app não`); close(a.allin.ev, r.ev_pt4_bb, 1e-6, `${k} EV`); }
+    // EV: compara só onde o app ajustou (a referência não tem as regras (c) e do all-in no blind)
+    if (a.allin && a.allin.ev !== a.allin.net) { assert.ok(r.ev_pt4_bb != null, `${k}: app ajustou, ref não`); close(a.allin.ev, r.ev_pt4_bb, 1e-6, `${k} EV`); }
   }
 });
 
