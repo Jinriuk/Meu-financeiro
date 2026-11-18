@@ -33,7 +33,17 @@ export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
   await page.routeWebSocket(/supabase\.co/, ws => ws.close());
   await page.route(/supabase\.co\//, async route => {
     const req = route.request(); const url = new URL(req.url());
-    if (url.pathname.startsWith('/auth/v1/user')) return route.fulfill({ json: user });
+    if (url.pathname.startsWith('/auth/v1/user')) {
+      if (req.method() === 'PUT') escritas.push({ tabela: 'auth.user', metodo: 'PUT', corpo: req.postData() });
+      return route.fulfill({ json: user });
+    }
+    if (url.pathname.startsWith('/auth/v1/token')) {
+      // login com senha: confere com db.__senha (quando o teste define uma)
+      let corpo = {}; try { corpo = JSON.parse(req.postData() || '{}'); } catch (e) {}
+      escritas.push({ tabela: 'auth.token', metodo: 'POST', corpo: req.postData() });
+      if (db.__senha != null && corpo.password !== db.__senha) return route.fulfill({ status: 400, json: { error: 'invalid_grant', error_description: 'Invalid login credentials' } });
+      return route.fulfill({ json: { ...sessao, user } });
+    }
     if (url.pathname.startsWith('/auth/v1/')) return route.fulfill({ json: {} });
     if (url.pathname.startsWith('/rest/v1/rpc/')) { const nome = url.pathname.split('/').pop(); return route.fulfill({ json: (db.__rpc || {})[nome] ?? null }); }
     if (url.pathname.startsWith('/functions/v1/')) return route.fulfill({ json: {} });

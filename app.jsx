@@ -82,6 +82,20 @@ const weekLabel = wk => `${dLabel(weekStart(wk))} a ${dLabel(wk)}`;
 // a semana encosta neste mês? (vale tanto pela segunda que abre quanto pelo domingo que fecha)
 const weekInMonth = (wk,m) => mKey(wk)===m || mKey(weekStart(wk))===m;
 
+/* F0.4: regra de senha igual em todo lugar (cadastro, troca, recuperação, primeiro acesso).
+   Mínimo 8, letras E números, fora da lista das mais usadas e sem o próprio apelido/e-mail.
+   O servidor também precisa barrar (painel do Supabase: senha vazada + requisitos) — isto é a 1ª linha. */
+const SENHAS_COMUNS=['password','password1','passw0rd','senha123','senha1234','12345678','123456789','1234567890','qwerty123',
+  'abc12345','abcd1234','a1234567','11111111','iloveyou1','admin123','poker123','pokerstars1','ggpoker1','grinderbank1','mudar123'];
+function senhaFraca(p,extras){
+  const s=String(p||'');
+  if(s.length<8) return 'A senha precisa de pelo menos 8 caracteres.';
+  if(!/[A-Za-zÀ-ÿ]/.test(s)||!/\d/.test(s)) return 'Use letras E números na senha.';
+  const low=s.toLowerCase();
+  if(SENHAS_COMUNS.includes(low)||/^(.)\1+$/.test(s)) return 'Essa senha é das mais usadas — escolhe outra.';
+  for(const x of (extras||[])){ const e=String(x||'').toLowerCase().split('@')[0]; if(e.length>=4&&low.includes(e)) return 'A senha não pode conter seu apelido ou e-mail.'; }
+  return null;
+}
 /* ---------- regras de negócio (seção 4) ---------- */
 // normaliza antes de salvar: semana do saque vira domingo; "pool/não informar" viram null (não atribuído)
 function normalizeRow(type,d){
@@ -1238,7 +1252,7 @@ function RecoveryReset(){
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
   const save=async()=>{
     setErr('');
-    if(p1.length<8) return setErr('A senha precisa de pelo menos 8 caracteres.');
+    { const fr=senhaFraca(p1); if(fr) return setErr(fr); }
     if(p1!==p2) return setErr('As duas senhas não conferem.');
     setBusy(true);
     const {error}=await sb.auth.updateUser({password:p1});
@@ -1269,14 +1283,18 @@ function RecoveryReset(){
   </div>;
 }
 
-function ChangePassModal({onClose}){
-  const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
+function ChangePassModal({onClose,email}){
+  const [p0,setP0]=useState(''); const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
   const save=async()=>{
     setErr('');
-    if(p1.length<8) return setErr('A senha precisa de pelo menos 8 caracteres.');
+    { const fr=senhaFraca(p1,[email]); if(fr) return setErr(fr); }
     if(p1!==p2) return setErr('As duas senhas não conferem.');
+    if(!p0) return setErr('Digite a senha atual.');
     setBusy(true);
+    // F0.4: confirma a senha ATUAL antes de trocar (sessão aberta num aparelho emprestado não basta)
+    const {error:e0}=await sb.auth.signInWithPassword({email,password:p0});
+    if(e0){ setBusy(false); return setErr('Senha atual incorreta.'); }
     const {error}=await sb.auth.updateUser({password:p1});
     setBusy(false);
     if(error) return setErr('Não consegui trocar a senha. Tenta de novo.');
@@ -1296,7 +1314,8 @@ function ChangePassModal({onClose}){
               <button onClick={onClose} style={{width:'100%',padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Fechar</button>
             </div>
           : <div style={{display:'flex',flexDirection:'column',gap:14}}>
-              <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.6}}>Escolhe uma senha só sua (mínimo 8 caracteres). Toque no 👁 pra conferir antes de salvar.</div>
+              <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.6}}>Escolhe uma senha só sua (mínimo 8 caracteres, com letras e números). Toque no 👁 pra conferir antes de salvar.</div>
+              <div><label style={labelStyle}>Senha atual</label><PassInput autoComplete="current-password" value={p0} onChange={e=>setP0(e.target.value)}/></div>
               <div><label style={labelStyle}>Nova senha</label><PassInput autoComplete="off" value={p1} onChange={e=>setP1(e.target.value)}/></div>
               <div><label style={labelStyle}>Confirmar nova senha</label><PassInput autoComplete="off" value={p2} onChange={e=>setP2(e.target.value)} onEnter={save}/></div>
               {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
@@ -1353,7 +1372,7 @@ function Login(){
     if(/^\d+$/.test(nome)) return setErr('O apelido não pode ser só números — mistura com letras.');
     if(!/^\S+@\S+\.\S+$/.test(mail)) return setErr('E-mail inválido.');
     if(zap&&(zap.length<10||zap.length>13)) return setErr('WhatsApp incompleto — usa DDD + número (ou deixa em branco).');
-    if(nP1.length<8) return setErr('Senha com pelo menos 8 caracteres.');
+    { const fr=senhaFraca(nP1,[nome,mail]); if(fr) return setErr(fr); }
     if(nP1!==nP2) return setErr('As duas senhas não conferem.');
     setBusy(true);
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
@@ -1560,7 +1579,7 @@ function Onboarding({session,profile,onDone}){
     if(nickname.includes('@')) return setErr('O nickname não pode ter @ (é ele que você usa pra entrar).');
     if(/^\d+$/.test(nickname)) return setErr('O nickname não pode ser só números — mistura com letras.');
     if(cpfDigits && cpfDigits.length!==11) return setErr('CPF precisa ter 11 números (ou deixa em branco).');
-    if(p1.length<8) return setErr('A senha nova precisa de pelo menos 8 caracteres.');
+    { const fr=senhaFraca(p1,[nickname,session&&session.user&&session.user.email]); if(fr) return setErr(fr); }
     if(p1!==p2) return setErr('As duas senhas não conferem.');
     setBusy(true);
     // nickname é único como numa sala de poker — só checa se está trocando (o próprio não conta)
@@ -3663,7 +3682,7 @@ function Dashboard({session,profile}){
     {quickEdit&&<QuickEditModal label={quickEdit.label} hint={quickEdit.hint} kind={quickEdit.kind} currentValue={quickEdit.current} onClose={()=>setQuickEdit(null)} onSave={quickEdit.onSave}/>}
 
     {/* modal trocar senha */}
-    {changePass&&<ChangePassModal onClose={()=>setChangePass(false)}/>}
+    {changePass&&<ChangePassModal email={session.user.email} onClose={()=>setChangePass(false)}/>}
 
     {/* modal excluir conta (LGPD) */}
     {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
