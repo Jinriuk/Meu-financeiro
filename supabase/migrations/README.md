@@ -15,16 +15,20 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
   código, triggers, grants, RLS, realtime, comentários) sai **idêntico** ao de produção.
 - `schema.sql` na raiz é gerado a partir dessas migrations (`DUMP=schema.sql bash tools/regua/banco/recriar.sh`).
 
-## Pendentes de aplicar (plano mestre) — nesta ordem
-Idempotentes; entram no banco **antes** de publicar o app que depende delas.
-1. `20261117120000_motor_stats_v2.sql` — contadores do motor de stats calibrado com o PT4 e `engine_version`.
-2. `20261117130000_dinheiro_bounty_moeda.sql` — `tournaments.bounty` e `tournaments.currency`.
-3. `20261117140000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
-   do auth, contrato checado no servidor. Cenários de ataque: `bash test/sql/run.sh`.
-4. `20261118090000_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
-   (`avisar_erros()` via pg_cron + pg_net) pro endereço em `app_secrets.alerta_webhook_url`.
+## Aplicadas em produção depois do versionamento
+- `20261118020330_motor_stats_v2.sql` — contadores do motor de stats calibrado com o PT4 e `engine_version`
+  (as 2.448 linhas antigas ficaram com versão 1).
+- `20261118020341_dinheiro_bounty_moeda.sql` — `tournaments.bounty` e `tournaments.currency`.
+Conferidas pelo md5 contra `supabase_migrations.schema_migrations`.
 
-As três são compatíveis com o app que está no ar hoje (só acrescentam colunas, travas e funções).
+## Pendentes de aplicar — nesta ordem
+1. `20261117140000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
+   do auth, contrato checado no servidor. Cenários de ataque: `bash test/sql/run.sh`.
+2. `20261118090000_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
+   (`avisar_erros()` via pg_cron + pg_net) pro endereço em `app_secrets.alerta_webhook_url`.
+Ao aplicar, o Supabase grava uma versão nova: renomeie o arquivo pra ela (e confira o md5).
+
+Todas são compatíveis com o app que está no ar hoje (só acrescentam colunas, travas e funções).
 
 ## Edge Functions (`../functions/`)
 Iguais ao que está publicado (conferido em 18/11/2026): `auth-alias` (v3), `hotmart-webhook` (v2),
