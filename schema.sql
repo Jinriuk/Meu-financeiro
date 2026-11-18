@@ -1,428 +1,33 @@
 -- ============================================================
---  Pool de Poker (Gabriel & Guedes) · estrutura do banco
---  Supabase / Postgres. Cole tudo no SQL Editor e clique em RUN.
+-- GrinderBank · schema public GERADO (não edite à mão)
+-- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
+-- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
+-- Conferido contra produção em 18/11/2026: catálogo idêntico até 20260805135400.
 -- ============================================================
 --
---  DIFERENÇA IMPORTANTE em relação ao app "Meu Financeiro":
---  aqui os dados são COMPARTILHADOS entre os dois jogadores.
---  Não é 1 usuário por linha — os dois veem a MESMA banca, o
---  mesmo make-up, os mesmos lançamentos. Por isso a política de
---  RLS é "qualquer autenticado vê tudo". Como só existirão 2
---  usuários (criados à mão no painel, cadastro público desligado),
---  isso é seguro e suficiente. Guardamos `created_by` só para
---  auditoria (saber quem lançou), nunca para restringir leitura.
--- ============================================================
+-- PostgreSQL database dump
+--
 
--- ---------- Configuração da pool (uma única linha) ----------
-create table if not exists public.pool_config (
-  id uuid primary key default gen_random_uuid(),
-  player1_name text not null default 'Gabriel',
-  player2_name text not null default 'Guedes',
-  player_pct numeric not null default 0.5,          -- fatia do jogador no lucro (0.5 = 50%)
-  abi_max numeric not null default 2,               -- ABI máximo padrão / fallback (US$)
-  abi_max_player1 numeric not null default 2,       -- ABI máximo do jogador 1 (US$)
-  abi_max_player2 numeric not null default 2,       -- ABI máximo do jogador 2 (US$)
-  piso_minimo numeric not null default 300,         -- banca não pode ficar abaixo disso (US$)
-  makeup_max_recomendado numeric not null default 100,
-  makeup_inicial_player1 numeric not null default 0,
-  makeup_inicial_player2 numeric not null default 0,
-  stoploss_daily_buyins numeric not null default 10,
-  stoploss_weekly_pct numeric not null default 0.15,
-  banca_inicial numeric not null default 400,       -- acima do piso, pra sobrar margem de saque
-  week_start_date date not null default current_date,
-  sites_permitidos text[] not null default '{PokerStars,"GG Poker"}',
-  modalidades_permitidas text[] not null default '{MTT,Spin,Cash,"Sit & Go"}',
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
--- a pool tem UMA config: índice único sobre constante impede segunda linha
--- (protege contra o app recriar a config padrão numa falha transitória de leitura)
-create unique index if not exists pool_config_single_row on public.pool_config ((true));
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
 
--- ---------- Lançamento diário (fonte da verdade) ----------
-create table if not exists public.daily_entries (
-  id uuid primary key default gen_random_uuid(),
-  entry_date date not null,
-  player text not null,
-  site text,
-  saldo_inicial numeric not null default 0,   -- SEMPRE digitado (o que o jogador vê no site)
-  deposito numeric not null default 0,
-  saque numeric not null default 0,
-  saldo_final numeric not null default 0,      -- SEMPRE digitado
-  qtd_torneios int not null default 0,
-  total_buyins numeric not null default 0,
-  maior_buyin numeric not null default 0,
-  maior_premiacao numeric not null default 0,
-  observacoes text,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
+CREATE SCHEMA public;
 
--- ---------- Torneios (complementar / opcional) ----------
-create table if not exists public.tournaments (
-  id uuid primary key default gen_random_uuid(),
-  entry_date date not null,
-  player text not null,
-  site text,
-  tournament_name text,
-  modality text,
-  buyin numeric not null default 0,
-  reentries int not null default 0,
-  field_size int not null default 0,
-  final_position int,
-  prize numeric not null default 0,
-  observacoes text,
-  -- id do torneio no site (GG "Tournament #301071014"): permite importar o resumo do torneio
-  -- sem duplicar o que já foi lançado, e reimportar a mesma pasta sem medo
-  site_tournament_id text,
-  -- entrada paga com BILHETE (ticket/T$ ganho num satélite): conta como nível jogado, mas
-  -- nenhum dinheiro sai da banca — o custo já foi pago quando o satélite foi jogado
-  ticket boolean not null default false,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
--- ---------- Banca central (ledger) ----------
-create table if not exists public.bankroll_ledger (
-  id uuid primary key default gen_random_uuid(),
-  entry_date date not null,
-  wallet text not null,                        -- PokerStars / GG Poker / Reserva / Outros
-  player text,                                 -- opcional: atribui o movimento a um jogador
-  entrada numeric not null default 0,
-  saida numeric not null default 0,
-  observacao text,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
+--
+-- Name: SCHEMA public; Type: COMMENT; Schema: -; Owner: -
+--
 
--- ---------- Saldo inicial de cada jogador por plataforma ----------
-create table if not exists public.player_wallets (
-  id uuid primary key default gen_random_uuid(),
-  player text not null,
-  wallet text not null,                        -- PokerStars / GG Poker / Reserva / Outros
-  saldo_inicial numeric not null default 0,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now(),
-  unique (player, wallet)
-);
+COMMENT ON SCHEMA public IS 'standard public schema';
 
--- ---------- Saques (só o que foi realmente pago) ----------
-create table if not exists public.withdrawals (
-  id uuid primary key default gen_random_uuid(),
-  week_ending_date date not null,              -- domingo de fechamento da semana
-  player text not null,
-  wallet text,                                 -- opcional: de qual plataforma saiu o dinheiro
-  valor_sacado numeric not null default 0,
-  observacoes text,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
+--
+-- Name: aplicar_ativacao(); Type: FUNCTION; Schema: public; Owner: -
+--
 
--- ---------- Estatísticas de hand history (motor de stats) ----------
--- 1 linha por (jogador, site, torneio) — SÓ agregados (contagens + oportunidades,
--- pra somar qualquer período). O texto bruto das mãos NUNCA sobe pro banco.
-create table if not exists public.hh_tournament_stats (
-  id uuid primary key default gen_random_uuid(),
-  player text not null,
-  site text not null,                      -- PokerStars / GG Poker
-  site_tournament_id text not null,        -- Tournament # do arquivo
-  tournament_name text,
-  entry_date date,
-  buyin numeric not null default 0,
-  hands int not null default 0,
-  net_bb numeric not null default 0,       -- resultado em big blinds (fichas)
-  vpip_cnt int not null default 0,
-  pfr_cnt int not null default 0,
-  tb_cnt int not null default 0,  tb_opp int not null default 0,     -- 3-bet
-  f3b_cnt int not null default 0, f3b_opp int not null default 0,    -- fold para 3-bet
-  steal_cnt int not null default 0, steal_opp int not null default 0,
-  bbdef_cnt int not null default 0, bbdef_opp int not null default 0,
-  cbet_cnt int not null default 0, cbet_opp int not null default 0,
-  fcbet_cnt int not null default 0, fcbet_opp int not null default 0,
-  sawflop_cnt int not null default 0,
-  wwsf_cnt int not null default 0,
-  wtsd_cnt int not null default 0,
-  wsd_cnt int not null default 0,
-  af_bets int not null default 0, af_calls int not null default 0,
-  allin_cnt int not null default 0,
-  allin_ev_bb numeric not null default 0,  -- quanto DEVIA ter ganho pela equity (sorte = net - ev)
-  allin_net_bb numeric not null default 0,
-  pos_json jsonb,                          -- {BTN:{h,v,p},...} mãos/vpip/pfr por posição
-  stack_json jsonb,                        -- por faixa de stack em bb
-  hand_ids jsonb not null default '[]'::jsonb, -- nº de cada mão já importada (dedup: reimportar não conta 2x)
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now(),
-  unique (player, site, site_tournament_id)
-);
-
--- ============================================================
---  Segurança (RLS): pool compartilhada — qualquer AUTENTICADO
---  vê e mexe em tudo. Cadastro público deve ficar DESLIGADO
---  (Authentication → só os 2 usuários criados à mão entram).
--- ============================================================
-alter table public.pool_config     enable row level security;
-alter table public.daily_entries   enable row level security;
-alter table public.tournaments     enable row level security;
-alter table public.bankroll_ledger enable row level security;
-alter table public.player_wallets  enable row level security;
-alter table public.withdrawals     enable row level security;
-alter table public.hh_tournament_stats enable row level security;
-
-create table if not exists public.player_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  email text not null,                     -- espelho do e-mail do auth (pro lookup de login)
-  nickname text,
-  cpf text,                                -- só dígitos (11)
-  password_changed boolean not null default false,
-  role text not null default 'pool',       -- 'pool' = sócio (vê tudo) · 'guest' = convidado (só as próprias stats)
-  created_at timestamptz not null default now()
-);
-
--- papel do usuário logado (security definer: não entra em loop com o RLS dos perfis)
-create or replace function public.my_role() returns text
-language sql stable security definer set search_path=''
-as $$ select coalesce((select p.role from public.player_profiles p where p.user_id=auth.uid()),'pool') $$;
-revoke all on function public.my_role() from public;
-grant execute on function public.my_role() to authenticated;
-
--- Tabelas da POOL: só sócios (role='pool'). Convidado não lê nem escreve, nem pela API.
-do $$
-declare t text;
-begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals'] loop
-    execute format('drop policy if exists pool_shared on public.%I;', t);
-    execute format(
-      'create policy pool_shared on public.%I
-         for all to authenticated
-         using (public.my_role()=''pool'') with check (public.my_role()=''pool'');', t);
-  end loop;
-end $$;
-
--- Stats de hand history: sócios veem tudo; convidado só as linhas que ELE criou
-drop policy if exists pool_shared on public.hh_tournament_stats;
-create policy pool_shared on public.hh_tournament_stats
-  for all to authenticated
-  using (public.my_role()='pool' or created_by=auth.uid())
-  with check (public.my_role()='pool' or created_by=auth.uid());
-
--- ---------- Histórico de alterações dos Ajustes ----------
--- Quem mudou o quê, de que valor pra qual, quando. Usado pra avisar o outro
--- jogador em tempo real e pra julgar "fora da grade" pelo ABI vigente NA DATA
--- do torneio (mudar o ABI hoje não reprova torneio antigo).
-create table if not exists public.config_changes (
-  id uuid primary key default gen_random_uuid(),
-  field text not null,
-  old_value text,
-  new_value text,
-  resumo text not null,
-  changed_by_name text,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
-alter table public.config_changes enable row level security;
-drop policy if exists pool_shared on public.config_changes;
-create policy pool_shared on public.config_changes
-  for all to authenticated
-  using (public.my_role()='pool') with check (public.my_role()='pool');
-
--- ---------- Diagnóstico de import de hand history ----------
--- 1 linha por TENTATIVA de import, só metadados (nome/tamanho dos arquivos, entradas
--- do zip, 1ª linha de cada texto, contagens e motivos) — nunca as mãos em si.
--- Serve pra investigar um import que "não foi" sem precisar do arquivo da pessoa.
-create table if not exists public.hh_import_log (
-  id uuid primary key default gen_random_uuid(),
-  player text,
-  saved int not null default 0,
-  novas int not null default 0,
-  repetidas int not null default 0,
-  ignored int not null default 0,
-  reasons jsonb,
-  issues jsonb,
-  meta jsonb,
-  created_by uuid references auth.users(id) default auth.uid(),
-  created_at timestamptz not null default now()
-);
-alter table public.hh_import_log enable row level security;
-drop policy if exists pool_shared on public.hh_import_log;
-create policy pool_shared on public.hh_import_log
-  for all to authenticated
-  using (public.my_role()='pool' or created_by=auth.uid())
-  with check (public.my_role()='pool' or created_by=auth.uid());
-
--- ============================================================
---  Perfil dos jogadores: nickname/CPF pra login e primeiro acesso
---  (o app força troca de senha + cadastro no primeiro login;
---   depois dá pra entrar com e-mail, nickname ou CPF)
--- ============================================================
-create unique index if not exists player_profiles_nickname_key on public.player_profiles (lower(nickname)) where nickname is not null;
-create unique index if not exists player_profiles_cpf_key on public.player_profiles (cpf) where cpf is not null;
-
-alter table public.player_profiles enable row level security;
-drop policy if exists pool_shared on public.player_profiles;
--- sócios veem todos os perfis; convidado só o próprio (não enxerga e-mail/CPF dos outros)
-create policy pool_shared on public.player_profiles
-  for all to authenticated
-  using (public.my_role()='pool' or user_id=auth.uid())
-  with check (public.my_role()='pool' or user_id=auth.uid());
-
--- Traduz nickname/CPF/e-mail -> e-mail do auth. Mantida por compat, mas NÃO exposta:
--- o login por apelido é resolvido no servidor pela Edge Function auth-alias (não vaza e-mail).
-create or replace function public.email_for_login(identifier text)
-returns text
-language sql stable security definer
-set search_path = ''
-as $$
-  select p.email from public.player_profiles p
-  where (p.nickname is not null and lower(p.nickname) = lower(trim(identifier)))
-     or lower(p.email) = lower(trim(identifier))
-     or (p.cpf is not null and p.cpf = regexp_replace(identifier, '\D', '', 'g'))
-  limit 1;
-$$;
--- #4 (P1): fora do alcance de anon/authenticated — fecha deanonimização apelido/CPF->e-mail
-revoke all on function public.email_for_login(text) from public, anon, authenticated;
-
--- ============================================================
---  Tempo real: o lançamento de um jogador aparece na hora
---  na tela do outro (o app assina postgres_changes).
--- ============================================================
-do $$
-declare t text;
-begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats','config_changes'] loop
-    if not exists (
-      select 1 from pg_publication_tables
-      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
-    ) then
-      execute format('alter publication supabase_realtime add table public.%I;', t);
-    end if;
-  end loop;
-end $$;
-
--- ============================================================
---  FASE 1 (GrinderBank): MULTI-TENANT EM BANCO ÚNICO
---  Cada conta = um "workspace" (a pool é o único tipo 'team';
---  clientes são 'solo'). Este bloco SUBSTITUI as políticas
---  pool/guest acima: rodado por cima delas, derruba pool_shared
---  e instala o isolamento por associação de workspace.
--- ============================================================
-create table if not exists public.workspaces (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  kind text not null default 'solo' check (kind in ('team','solo')),
-  plan text not null default 'free',   -- fail-closed: workspace fora do RPC nasce sem plano pago
-  created_at timestamptz not null default now()
-);
-create table if not exists public.workspace_members (
-  workspace_id uuid not null references public.workspaces(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  role text not null default 'owner',
-  created_at timestamptz not null default now(),
-  primary key (workspace_id, user_id)
-);
-create or replace function public.my_workspaces() returns setof uuid
-language sql stable security definer set search_path=''
-as $$ select workspace_id from public.workspace_members where user_id = auth.uid() $$;
-revoke all on function public.my_workspaces() from public;
-grant execute on function public.my_workspaces() to authenticated;
-
--- porta de entrada do cadastro self-service: cria o workspace SOLO do usuário logado.
--- security definer (o usuário novo ainda não é membro de nada); trava: 1 conta = 1 workspace.
-create or replace function public.create_solo_workspace(ws_name text) returns uuid
-language plpgsql security definer set search_path=''
-as $$
-declare wid uuid;
-begin
-  if auth.uid() is null then raise exception 'não autenticado'; end if;
-  if exists (select 1 from public.workspace_members where user_id=auth.uid()) then
-    raise exception 'usuário já tem workspace';
-  end if;
-  insert into public.workspaces (name,kind,plan)
-    values (coalesce(nullif(trim(ws_name),''),'Meu grind'),'solo','free')
-    returning id into wid;
-  insert into public.workspace_members (workspace_id,user_id,role) values (wid,auth.uid(),'owner');
-  return wid;
-end $$;
-revoke all on function public.create_solo_workspace(text) from public, anon;
-grant execute on function public.create_solo_workspace(text) to authenticated;
-
-alter table public.workspaces enable row level security;
-alter table public.workspace_members enable row level security;
-drop policy if exists ws_self on public.workspaces;
-create policy ws_self on public.workspaces for all to authenticated
-  using (id in (select public.my_workspaces())) with check (id in (select public.my_workspaces()));
-drop policy if exists wsm_self on public.workspace_members;
-create policy wsm_self on public.workspace_members for select to authenticated
-  using (user_id = auth.uid());
-
--- workspace_id em toda tabela de dados + trigger de preenchimento + RLS por associação
-create or replace function public.set_workspace_id() returns trigger
-language plpgsql security definer set search_path=''
-as $$ begin
-  if new.workspace_id is null then
-    select workspace_id into new.workspace_id from public.workspace_members where user_id=auth.uid() order by created_at limit 1;
-  end if;
-  return new;
-end $$;
-do $$
-declare t text;
-begin
-  foreach t in array array['pool_config','daily_entries','tournaments','bankroll_ledger','player_wallets','withdrawals','hh_tournament_stats','hh_import_log','config_changes'] loop
-    execute format('alter table public.%I add column if not exists workspace_id uuid references public.workspaces(id);', t);
-    execute format('drop trigger if exists set_ws on public.%I;', t);
-    execute format('create trigger set_ws before insert on public.%I for each row execute function public.set_workspace_id();', t);
-    execute format('drop policy if exists pool_shared on public.%I;', t);
-    execute format('drop policy if exists ws_members on public.%I;', t);
-    execute format(
-      'create policy ws_members on public.%I for all to authenticated
-         using (workspace_id in (select public.my_workspaces()))
-         with check (workspace_id in (select public.my_workspaces()));', t);
-  end loop;
-end $$;
-
--- únicos por workspace (clientes diferentes podem repetir nome/torneio/carteira)
-drop index if exists pool_config_single_row;
-create unique index if not exists pool_config_one_per_ws on public.pool_config (workspace_id);
-alter table public.hh_tournament_stats drop constraint if exists hh_tournament_stats_player_site_site_tournament_id_key;
-create unique index if not exists hh_stats_ws_key on public.hh_tournament_stats (workspace_id, player, site, site_tournament_id);
--- import de resumo de torneio sem duplicar: dois jogadores da pool podem jogar o MESMO
--- torneio, então a chave inclui o jogador. Parcial: lançamento manual (sem id) não entra.
-create unique index if not exists tournaments_site_tid_uniq
-  on public.tournaments (workspace_id, player, site, site_tournament_id)
-  where site_tournament_id is not null;
-alter table public.player_wallets drop constraint if exists player_wallets_player_wallet_key;
-create unique index if not exists player_wallets_ws_key on public.player_wallets (workspace_id, player, wallet);
-
--- perfis: o próprio + colegas de workspace
-drop policy if exists pool_shared on public.player_profiles;
-drop policy if exists profile_self_or_teammates on public.player_profiles;
-create policy profile_self_or_teammates on public.player_profiles for all to authenticated
-  using (user_id=auth.uid() or exists (
-    select 1 from public.workspace_members m where m.user_id=player_profiles.user_id and m.workspace_id in (select public.my_workspaces())))
-  with check (user_id=auth.uid());
--- NOTA: as sementes (workspace da pool com os 2 sócios, workspaces solo) são por instalação —
--- ver migration workspaces_multitenant no projeto.
-
--- ---------- Cadastro GrinderBank: apelido único + WhatsApp + ativações de plano ----------
-alter table public.player_profiles add column if not exists whatsapp text;
-create or replace function public.nickname_disponivel(nick text) returns boolean
-language sql stable security definer set search_path=''
-as $$ select not exists (select 1 from public.player_profiles p where lower(p.nickname)=lower(trim(nick))) $$;
-revoke all on function public.nickname_disponivel(text) from public;
-grant execute on function public.nickname_disponivel(text) to anon, authenticated;
--- pagou (Kiwify/manual) -> linha aqui; no login a conta com o e-mail aplica sozinha
-create table if not exists public.plan_activations (
-  id uuid primary key default gen_random_uuid(),
-  email text not null,
-  plan text not null check (plan in ('gestao','pro','founder')),
-  status text not null default 'pending' check (status in ('pending','used','revoked')),
-  source text, note text,
-  created_at timestamptz not null default now(),
-  used_at timestamptz, used_by uuid references auth.users(id)
-);
-alter table public.plan_activations enable row level security;  -- sem policies: só via RPC/admin
-create index if not exists plan_activations_email_idx on public.plan_activations (lower(email)) where status='pending';
-create or replace function public.aplicar_ativacao() returns text
-language plpgsql security definer set search_path=''
-as $$
+CREATE FUNCTION public.aplicar_ativacao() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 declare act record; wid uuid; meu_email text;
 begin
   meu_email := lower(coalesce(auth.jwt()->>'email',''));
@@ -431,142 +36,19 @@ begin
   if act.id is null then return null; end if;
   select workspace_id into wid from public.workspace_members where user_id=auth.uid() order by created_at limit 1;
   if wid is null then return null; end if;
-  update public.workspaces set plan=act.plan where id=wid;
+  update public.workspaces set plan=act.plan, trial_ends_at=null where id=wid;
   update public.plan_activations set status='used', used_at=now(), used_by=auth.uid() where id=act.id;
   return act.plan;
 end $$;
-revoke all on function public.aplicar_ativacao() from public;
--- os default privileges do Supabase concedem execute a anon em função nova — revoga explícito
-revoke execute on function public.aplicar_ativacao() from anon;
-grant execute on function public.aplicar_ativacao() to authenticated;
 
--- ============================================================
--- Passe de auditoria pré-produção (P0/P1/P2). A FONTE DA VERDADE do banco são as
--- migrations versionadas no projeto Supabase (supabase_migrations.schema_migrations);
--- para um snapshot completo recriável use `supabase db pull`. Este arquivo é o espelho
--- legível e reflete o estado atual de segurança abaixo.
--- ============================================================
+--
+-- Name: create_solo_workspace(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
 
--- #1 (P0) entitlement no servidor: cliente NÃO escreve workspaces (plano só muda via RPC definer)
-revoke insert, update, delete, truncate on public.workspaces from anon, authenticated;
-revoke insert, update, delete, truncate on public.workspace_members from anon, authenticated;
-revoke all on public.plan_activations from anon, authenticated;
-revoke insert, update, delete, truncate on public.player_profiles from anon;
--- #10 (P0/P2) fail-closed: plano nasce 'free' e só aceita valores conhecidos
-alter table public.workspaces alter column plan set default 'free';
-alter table public.workspaces drop constraint if exists workspaces_plan_check;
-alter table public.workspaces add constraint workspaces_plan_check
-  check (plan in ('free','gestao','pro','founder','team'));
-
--- #11 (P2) índices de FK (RLS filtra por workspace_id em toda query)
-do $$ declare t text; c text;
-begin
-  foreach t in array array['bankroll_ledger','config_changes','daily_entries','hh_import_log',
-    'hh_tournament_stats','player_wallets','pool_config','tournaments','withdrawals'] loop
-    execute format('create index if not exists idx_%s_ws on public.%I(workspace_id);', t, t);
-    execute format('create index if not exists idx_%s_cb on public.%I(created_by);', t, t);
-  end loop;
-  create index if not exists idx_plan_activations_usedby on public.plan_activations(used_by);
-  create index if not exists idx_wsm_ws on public.workspace_members(workspace_id);
-  create index if not exists idx_wsm_user on public.workspace_members(user_id);
-end $$;
--- #11 (P2) initplan: avalia auth.uid() uma vez por query, não por linha
-drop policy if exists wsm_self on public.workspace_members;
-create policy wsm_self on public.workspace_members for select using (user_id = (select auth.uid()));
-drop policy if exists profile_self_or_teammates on public.player_profiles;
-create policy profile_self_or_teammates on public.player_profiles for all
-  using (user_id = (select auth.uid()) or exists (
-    select 1 from public.workspace_members m
-    where m.user_id = player_profiles.user_id and m.workspace_id in (select my_workspaces())))
-  with check (user_id = (select auth.uid()));
-
--- #6 (P1/LGPD) exclusão definitiva: apaga TUDO do usuário; pool compartilhada só perde o membro
-create or replace function public.excluir_minha_conta() returns void
-language plpgsql security definer set search_path to '' as $$
-declare uid uuid := auth.uid(); wsid uuid; membros int;
-begin
-  if uid is null then raise exception 'não autenticado'; end if;
-  for wsid in select workspace_id from public.workspace_members where user_id=uid loop
-    select count(*) into membros from public.workspace_members where workspace_id=wsid;
-    if membros<=1 then
-      delete from public.bankroll_ledger where workspace_id=wsid;
-      delete from public.config_changes where workspace_id=wsid;
-      delete from public.daily_entries where workspace_id=wsid;
-      delete from public.hh_import_log where workspace_id=wsid;
-      delete from public.hh_tournament_stats where workspace_id=wsid;
-      delete from public.player_wallets where workspace_id=wsid;
-      delete from public.tournaments where workspace_id=wsid;
-      delete from public.withdrawals where workspace_id=wsid;
-      delete from public.pool_config where workspace_id=wsid;
-      delete from public.workspace_members where workspace_id=wsid;
-      delete from public.workspaces where id=wsid;
-    else
-      delete from public.workspace_members where workspace_id=wsid and user_id=uid;
-    end if;
-  end loop;
-  update public.plan_activations set used_by=null where used_by=uid;
-  delete from public.player_profiles where user_id=uid;
-  delete from auth.users where id=uid;
-end $$;
-revoke all on function public.excluir_minha_conta() from public, anon;
-grant execute on function public.excluir_minha_conta() to authenticated;
-
--- #2 (P0) cobrança: idempotência + ativar/revogar plano (chamadas pelo webhook via service role)
-create table if not exists public.webhook_events(
-  provider text not null, event_id text not null,
-  received_at timestamptz not null default now(), primary key(provider,event_id));
-alter table public.webhook_events enable row level security;  -- sem policy: só service role/admin
-alter table public.plan_activations add column if not exists order_id text;
-create or replace function public.webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text)
-returns text language plpgsql security definer set search_path to '' as $$
-declare wid uuid; uid uuid;
-begin
-  if p_plan not in ('gestao','pro','founder','team') then raise exception 'plano inválido: %', p_plan; end if;
-  insert into public.plan_activations(email,plan,status,source,order_id)
-    values(lower(p_email),p_plan,'pending',coalesce(p_source,'kiwify'),p_order_id);
-  select pp.user_id into uid from public.player_profiles pp where lower(pp.email)=lower(p_email) limit 1;
-  if uid is not null then
-    select workspace_id into wid from public.workspace_members where user_id=uid order by created_at limit 1;
-    if wid is not null then
-      update public.workspaces set plan=p_plan where id=wid;
-      update public.plan_activations set status='used', used_at=now(), used_by=uid
-        where lower(email)=lower(p_email) and status='pending' and plan=p_plan;
-    end if;
-  end if;
-  return 'ok';
-end $$;
-create or replace function public.webhook_revogar_plano(p_email text, p_order_id text)
-returns text language plpgsql security definer set search_path to '' as $$
-declare wid uuid; uid uuid;
-begin
-  update public.plan_activations set status='revoked' where lower(email)=lower(p_email) and status='pending';
-  select pp.user_id into uid from public.player_profiles pp where lower(pp.email)=lower(p_email) limit 1;
-  if uid is not null then
-    select workspace_id into wid from public.workspace_members where user_id=uid order by created_at limit 1;
-    if wid is not null then
-      update public.workspaces set plan='free' where id=wid and plan not in ('team','founder');
-    end if;
-  end if;
-  return 'ok';
-end $$;
-revoke all on function public.webhook_ativar_plano(text,text,text,text) from public, anon, authenticated;
-revoke all on function public.webhook_revogar_plano(text,text) from public, anon, authenticated;
-
--- Edge Functions (código em supabase/functions/, deploy pelo painel/CLI):
---   auth-alias     : login/reset por apelido resolvido no servidor (não vaza e-mail)  [#4]
---   kiwify-webhook : recebe a cobrança da Kiwify, chama os RPCs acima                 [#2]
-
--- ============================================================
--- Teste grátis de 15 dias (2026-07-19). trial_ends_at:
---   null = pool/fundador/assinatura ativa (nunca bloqueia)
---   data = conta em teste -> app bloqueia quando now() passa da data
--- ============================================================
-alter table public.workspaces add column if not exists trial_ends_at timestamptz;
-
--- cria o workspace solo já com 15 dias de teste do plano escolhido
-drop function if exists public.create_solo_workspace(text);
-create or replace function public.create_solo_workspace(ws_name text, plan_escolhido text default 'gestao')
-returns uuid language plpgsql security definer set search_path='' as $$
+CREATE FUNCTION public.create_solo_workspace(ws_name text, plan_escolhido text DEFAULT 'gestao'::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
 declare wid uuid; pl text;
 begin
   if auth.uid() is null then raise exception 'não autenticado'; end if;
@@ -580,10 +62,1663 @@ begin
   insert into public.workspace_members (workspace_id,user_id,role) values (wid,auth.uid(),'owner');
   return wid;
 end $$;
-revoke all on function public.create_solo_workspace(text,text) from public, anon;
-grant execute on function public.create_solo_workspace(text,text) to authenticated;
 
--- ativar plano (manual/Kiwify) zera o trial (assinatura ativa); revogar expira na hora (bloqueia).
--- Corpo completo em supabase/migrations/20260719_trial_15_dias.sql — aqui só a regra do trial:
---   aplicar_ativacao / webhook_ativar_plano  -> update workspaces set plan=..., trial_ends_at=null
---   webhook_revogar_plano                     -> update workspaces set plan='free', trial_ends_at=now()
+--
+-- Name: email_for_login(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_for_login(identifier text) RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select p.email from public.player_profiles p
+  where (p.nickname is not null and lower(p.nickname) = lower(trim(identifier)))
+     or lower(p.email) = lower(trim(identifier))
+     or (p.cpf is not null and p.cpf = regexp_replace(identifier, '\D', '', 'g'))
+  limit 1;
+$$;
+
+--
+-- Name: excluir_minha_conta(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.excluir_minha_conta() RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare uid uuid := auth.uid(); wsid uuid; membros int;
+begin
+  if uid is null then raise exception 'não autenticado'; end if;
+  for wsid in select workspace_id from public.workspace_members where user_id=uid loop
+    select count(*) into membros from public.workspace_members where workspace_id=wsid;
+    if membros<=1 then
+      delete from public.bankroll_ledger      where workspace_id=wsid;
+      delete from public.config_changes        where workspace_id=wsid;
+      delete from public.daily_entries         where workspace_id=wsid;
+      delete from public.hh_import_log          where workspace_id=wsid;
+      delete from public.hh_tournament_stats    where workspace_id=wsid;
+      delete from public.player_wallets         where workspace_id=wsid;
+      delete from public.tournaments            where workspace_id=wsid;
+      delete from public.withdrawals            where workspace_id=wsid;
+      delete from public.pool_config            where workspace_id=wsid;
+      delete from public.workspace_members      where workspace_id=wsid;
+      delete from public.workspaces             where id=wsid;
+    else
+      delete from public.workspace_members where workspace_id=wsid and user_id=uid;
+    end if;
+  end loop;
+  -- solta referências e apaga identidade
+  update public.plan_activations set used_by=null where used_by=uid;
+  delete from public.player_profiles where user_id=uid;
+  delete from auth.users where id=uid;
+end $$;
+
+--
+-- Name: meu_status(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.meu_status() RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select jsonb_build_object(
+    'agora', now(),
+    'workspace_id', w.id,
+    'plano', w.plan,
+    'trial_ends_at', w.trial_ends_at,
+    'ativo', (w.trial_ends_at is null or w.trial_ends_at > now()),
+    'pode_stats', (w.kind <> 'solo' or w.plan in ('pro','founder','team')))
+  from public.workspace_members m join public.workspaces w on w.id = m.workspace_id
+  where m.user_id = auth.uid() order by m.created_at limit 1;
+$$;
+
+--
+-- Name: my_workspaces(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_workspaces() RETURNS SETOF uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$ select workspace_id from public.workspace_members where user_id = auth.uid() $$;
+
+--
+-- Name: nickname_disponivel(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.nickname_disponivel(nick text) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$ select not exists (select 1 from public.player_profiles p where lower(p.nickname)=lower(trim(nick))) $$;
+
+--
+-- Name: perfil_protegido(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.perfil_protegido() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare em text;
+begin
+  select u.email into em from auth.users u where u.id = new.user_id;
+  if em is null then raise exception 'perfil sem usuário no auth'; end if;
+  new.email := em;
+  -- só o servidor (service_role / migrations) define papel diferente de 'solo' ou troca o papel
+  if coalesce(auth.role(), '') = 'authenticated' then
+    if tg_op = 'INSERT' then new.role := 'solo';
+    else new.role := old.role; new.user_id := old.user_id; new.created_at := old.created_at;
+    end if;
+  end if;
+  return new;
+end $$;
+
+--
+-- Name: perfil_sync_email(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.perfil_sync_email() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  update public.player_profiles set email = new.email where user_id = new.id and email is distinct from new.email;
+  return new;
+end $$;
+
+--
+-- Name: set_workspace_id(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_workspace_id() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$ begin
+  if new.workspace_id is null then
+    select workspace_id into new.workspace_id from public.workspace_members where user_id=auth.uid() order by created_at limit 1;
+  end if;
+  return new;
+end $$;
+
+--
+-- Name: webhook_ativar_plano(text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare wid uuid; uid uuid;
+begin
+  if p_plan not in ('gestao','pro','founder','team') then raise exception 'plano inválido: %', p_plan; end if;
+  insert into public.plan_activations(email,plan,status,source,order_id)
+    values(lower(p_email),p_plan,'pending',coalesce(p_source,'kiwify'),p_order_id);
+  select u.id into uid from auth.users u
+   where lower(u.email) = lower(p_email) and u.email_confirmed_at is not null limit 1;
+  if uid is not null then
+    select workspace_id into wid from public.workspace_members where user_id = uid order by created_at limit 1;
+    if wid is not null then
+      update public.workspaces set plan = p_plan, trial_ends_at = null where id = wid;
+      update public.plan_activations set status='used', used_at=now(), used_by=uid
+        where lower(email) = lower(p_email) and status = 'pending' and plan = p_plan;
+    end if;
+  end if;
+  return 'ok';
+end $$;
+
+--
+-- Name: webhook_revogar_plano(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.webhook_revogar_plano(p_email text, p_order_id text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare wid uuid; uid uuid;
+begin
+  update public.plan_activations set status='revoked' where lower(email) = lower(p_email) and status = 'pending';
+  select u.id into uid from auth.users u
+   where lower(u.email) = lower(p_email) and u.email_confirmed_at is not null limit 1;
+  if uid is not null then
+    select workspace_id into wid from public.workspace_members where user_id = uid order by created_at limit 1;
+    if wid is not null then
+      update public.workspaces set plan='free', trial_ends_at=now() where id = wid and plan not in ('team','founder');
+    end if;
+  end if;
+  return 'ok';
+end $$;
+
+--
+-- Name: ws_ativo(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ws_ativo(ws uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.workspaces w
+                 where w.id = ws and (w.trial_ends_at is null or w.trial_ends_at > now()));
+$$;
+
+--
+-- Name: ws_pode_stats(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ws_pode_stats(ws uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select exists (select 1 from public.workspaces w
+                 where w.id = ws and (w.kind <> 'solo' or w.plan in ('pro','founder','team')));
+$$;
+
+--
+-- Name: app_secrets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_secrets (
+    name text NOT NULL,
+    value text DEFAULT ''::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: bankroll_ledger; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bankroll_ledger (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    entry_date date NOT NULL,
+    wallet text NOT NULL,
+    entrada numeric DEFAULT 0 NOT NULL,
+    saida numeric DEFAULT 0 NOT NULL,
+    observacao text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    player text,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: config_changes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.config_changes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    field text NOT NULL,
+    old_value text,
+    new_value text,
+    resumo text NOT NULL,
+    changed_by_name text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: daily_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.daily_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    entry_date date NOT NULL,
+    player text NOT NULL,
+    site text,
+    saldo_inicial numeric DEFAULT 0 NOT NULL,
+    deposito numeric DEFAULT 0 NOT NULL,
+    saque numeric DEFAULT 0 NOT NULL,
+    saldo_final numeric DEFAULT 0 NOT NULL,
+    qtd_torneios integer DEFAULT 0 NOT NULL,
+    total_buyins numeric DEFAULT 0 NOT NULL,
+    maior_buyin numeric DEFAULT 0 NOT NULL,
+    maior_premiacao numeric DEFAULT 0 NOT NULL,
+    observacoes text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: hh_import_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.hh_import_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    player text,
+    saved integer DEFAULT 0 NOT NULL,
+    novas integer DEFAULT 0 NOT NULL,
+    repetidas integer DEFAULT 0 NOT NULL,
+    ignored integer DEFAULT 0 NOT NULL,
+    reasons jsonb,
+    issues jsonb,
+    meta jsonb,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: hh_tournament_stats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.hh_tournament_stats (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    player text NOT NULL,
+    site text NOT NULL,
+    site_tournament_id text NOT NULL,
+    tournament_name text,
+    entry_date date,
+    buyin numeric DEFAULT 0 NOT NULL,
+    hands integer DEFAULT 0 NOT NULL,
+    net_bb numeric DEFAULT 0 NOT NULL,
+    vpip_cnt integer DEFAULT 0 NOT NULL,
+    pfr_cnt integer DEFAULT 0 NOT NULL,
+    tb_cnt integer DEFAULT 0 NOT NULL,
+    tb_opp integer DEFAULT 0 NOT NULL,
+    f3b_cnt integer DEFAULT 0 NOT NULL,
+    f3b_opp integer DEFAULT 0 NOT NULL,
+    steal_cnt integer DEFAULT 0 NOT NULL,
+    steal_opp integer DEFAULT 0 NOT NULL,
+    bbdef_cnt integer DEFAULT 0 NOT NULL,
+    bbdef_opp integer DEFAULT 0 NOT NULL,
+    cbet_cnt integer DEFAULT 0 NOT NULL,
+    cbet_opp integer DEFAULT 0 NOT NULL,
+    fcbet_cnt integer DEFAULT 0 NOT NULL,
+    fcbet_opp integer DEFAULT 0 NOT NULL,
+    sawflop_cnt integer DEFAULT 0 NOT NULL,
+    wwsf_cnt integer DEFAULT 0 NOT NULL,
+    wtsd_cnt integer DEFAULT 0 NOT NULL,
+    wsd_cnt integer DEFAULT 0 NOT NULL,
+    af_bets integer DEFAULT 0 NOT NULL,
+    af_calls integer DEFAULT 0 NOT NULL,
+    allin_cnt integer DEFAULT 0 NOT NULL,
+    allin_ev_bb numeric DEFAULT 0 NOT NULL,
+    allin_net_bb numeric DEFAULT 0 NOT NULL,
+    pos_json jsonb,
+    stack_json jsonb,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    hand_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
+    workspace_id uuid NOT NULL,
+    engine_version integer DEFAULT 1 NOT NULL,
+    walk_cnt integer DEFAULT 0 NOT NULL,
+    pfr_opp integer DEFAULT 0 NOT NULL,
+    rfi_cnt integer DEFAULT 0 NOT NULL,
+    rfi_opp integer DEFAULT 0 NOT NULL,
+    sq_cnt integer DEFAULT 0 NOT NULL,
+    sq_opp integer DEFAULT 0 NOT NULL,
+    sawflop_np_cnt integer DEFAULT 0 NOT NULL,
+    wtsd_np_cnt integer DEFAULT 0 NOT NULL
+);
+
+--
+-- Name: COLUMN hh_tournament_stats.engine_version; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.hh_tournament_stats.engine_version IS 'Versão das definições do motor de stats que calculou a linha (HH_ENGINE no app). 1 = até jul/2026, 2 = PT4.';
+
+--
+-- Name: plan_activations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.plan_activations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    email text NOT NULL,
+    plan text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    source text,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    used_at timestamp with time zone,
+    used_by uuid,
+    order_id text,
+    CONSTRAINT plan_activations_plan_check CHECK ((plan = ANY (ARRAY['gestao'::text, 'pro'::text, 'founder'::text]))),
+    CONSTRAINT plan_activations_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'used'::text, 'revoked'::text])))
+);
+
+--
+-- Name: player_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.player_profiles (
+    user_id uuid NOT NULL,
+    email text NOT NULL,
+    nickname text,
+    cpf text,
+    password_changed boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    role text DEFAULT 'pool'::text NOT NULL,
+    whatsapp text
+);
+
+--
+-- Name: player_wallets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.player_wallets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    player text NOT NULL,
+    wallet text NOT NULL,
+    saldo_inicial numeric DEFAULT 0 NOT NULL,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: pool_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pool_config (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    player1_name text DEFAULT 'Gabriel'::text NOT NULL,
+    player2_name text DEFAULT 'Guedes'::text NOT NULL,
+    player_pct numeric DEFAULT 0.5 NOT NULL,
+    abi_max numeric DEFAULT 2 NOT NULL,
+    piso_minimo numeric DEFAULT 300 NOT NULL,
+    makeup_max_recomendado numeric DEFAULT 100 NOT NULL,
+    makeup_inicial_player1 numeric DEFAULT 0 NOT NULL,
+    makeup_inicial_player2 numeric DEFAULT 0 NOT NULL,
+    stoploss_daily_buyins numeric DEFAULT 10 NOT NULL,
+    stoploss_weekly_pct numeric DEFAULT 0.15 NOT NULL,
+    banca_inicial numeric DEFAULT 400 NOT NULL,
+    week_start_date date DEFAULT CURRENT_DATE NOT NULL,
+    sites_permitidos text[] DEFAULT '{PokerStars,"GG Poker"}'::text[] NOT NULL,
+    modalidades_permitidas text[] DEFAULT '{MTT,Spin,Cash,"Sit & Go"}'::text[] NOT NULL,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    abi_max_player1 numeric DEFAULT 2 NOT NULL,
+    abi_max_player2 numeric DEFAULT 2 NOT NULL,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: tournaments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tournaments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    entry_date date NOT NULL,
+    player text NOT NULL,
+    site text,
+    tournament_name text,
+    modality text,
+    buyin numeric DEFAULT 0 NOT NULL,
+    reentries integer DEFAULT 0 NOT NULL,
+    field_size integer DEFAULT 0 NOT NULL,
+    final_position integer,
+    prize numeric DEFAULT 0 NOT NULL,
+    observacoes text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    workspace_id uuid NOT NULL,
+    site_tournament_id text,
+    ticket boolean DEFAULT false NOT NULL,
+    bounty numeric DEFAULT 0 NOT NULL,
+    currency text DEFAULT 'USD'::text NOT NULL,
+    CONSTRAINT tournaments_bounty_check CHECK ((bounty >= (0)::numeric))
+);
+
+--
+-- Name: COLUMN tournaments.ticket; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tournaments.ticket IS 'true = entrou com bilhete/T$: não sai dinheiro da banca (buy-in vale só como nível/ABI).';
+
+--
+-- Name: COLUMN tournaments.bounty; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tournaments.bounty IS 'Bounties de PKO ganhos no torneio (fora do prêmio por colocação).';
+
+--
+-- Name: COLUMN tournaments.currency; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.tournaments.currency IS 'Moeda dos valores do torneio como veio do arquivo do site (USD, EUR, GBP, CNY).';
+
+--
+-- Name: webhook_cobrancas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_cobrancas (
+    provider text NOT NULL,
+    order_id text NOT NULL,
+    status text DEFAULT ''::text NOT NULL,
+    email text,
+    plano_id text,
+    produto_id text,
+    valor_centavos text,
+    plano_liberado text,
+    chave_usada text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: TABLE webhook_cobrancas; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.webhook_cobrancas IS 'Toda cobrança aprovada vista pelo webhook. plano_liberado null = pagou e não liberou.';
+
+--
+-- Name: webhook_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_events (
+    provider text NOT NULL,
+    event_id text NOT NULL,
+    received_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: withdrawals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.withdrawals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    week_ending_date date NOT NULL,
+    player text NOT NULL,
+    valor_sacado numeric DEFAULT 0 NOT NULL,
+    observacoes text,
+    created_by uuid DEFAULT auth.uid(),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    wallet text,
+    workspace_id uuid NOT NULL
+);
+
+--
+-- Name: workspace_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_members (
+    workspace_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role text DEFAULT 'owner'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+--
+-- Name: workspaces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspaces (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    kind text DEFAULT 'solo'::text NOT NULL,
+    plan text DEFAULT 'free'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    trial_ends_at timestamp with time zone,
+    CONSTRAINT workspaces_kind_check CHECK ((kind = ANY (ARRAY['team'::text, 'solo'::text]))),
+    CONSTRAINT workspaces_plan_check CHECK ((plan = ANY (ARRAY['free'::text, 'gestao'::text, 'pro'::text, 'founder'::text, 'team'::text])))
+);
+
+--
+-- Name: app_secrets app_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_secrets
+    ADD CONSTRAINT app_secrets_pkey PRIMARY KEY (name);
+
+--
+-- Name: bankroll_ledger bankroll_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bankroll_ledger
+    ADD CONSTRAINT bankroll_ledger_pkey PRIMARY KEY (id);
+
+--
+-- Name: config_changes config_changes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_changes
+    ADD CONSTRAINT config_changes_pkey PRIMARY KEY (id);
+
+--
+-- Name: daily_entries daily_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_entries
+    ADD CONSTRAINT daily_entries_pkey PRIMARY KEY (id);
+
+--
+-- Name: hh_import_log hh_import_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_import_log
+    ADD CONSTRAINT hh_import_log_pkey PRIMARY KEY (id);
+
+--
+-- Name: hh_tournament_stats hh_tournament_stats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_tournament_stats
+    ADD CONSTRAINT hh_tournament_stats_pkey PRIMARY KEY (id);
+
+--
+-- Name: plan_activations plan_activations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plan_activations
+    ADD CONSTRAINT plan_activations_pkey PRIMARY KEY (id);
+
+--
+-- Name: player_profiles player_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player_profiles
+    ADD CONSTRAINT player_profiles_pkey PRIMARY KEY (user_id);
+
+--
+-- Name: player_wallets player_wallets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player_wallets
+    ADD CONSTRAINT player_wallets_pkey PRIMARY KEY (id);
+
+--
+-- Name: pool_config pool_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pool_config
+    ADD CONSTRAINT pool_config_pkey PRIMARY KEY (id);
+
+--
+-- Name: tournaments tournaments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tournaments
+    ADD CONSTRAINT tournaments_pkey PRIMARY KEY (id);
+
+--
+-- Name: webhook_cobrancas webhook_cobrancas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_cobrancas
+    ADD CONSTRAINT webhook_cobrancas_pkey PRIMARY KEY (provider, order_id, status);
+
+--
+-- Name: webhook_events webhook_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_events
+    ADD CONSTRAINT webhook_events_pkey PRIMARY KEY (provider, event_id);
+
+--
+-- Name: withdrawals withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.withdrawals
+    ADD CONSTRAINT withdrawals_pkey PRIMARY KEY (id);
+
+--
+-- Name: workspace_members workspace_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_members
+    ADD CONSTRAINT workspace_members_pkey PRIMARY KEY (workspace_id, user_id);
+
+--
+-- Name: workspaces workspaces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+--
+-- Name: hh_stats_ws_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX hh_stats_ws_key ON public.hh_tournament_stats USING btree (workspace_id, player, site, site_tournament_id);
+
+--
+-- Name: idx_bankroll_ledger_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bankroll_ledger_cb ON public.bankroll_ledger USING btree (created_by);
+
+--
+-- Name: idx_bankroll_ledger_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_bankroll_ledger_ws ON public.bankroll_ledger USING btree (workspace_id);
+
+--
+-- Name: idx_config_changes_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_config_changes_cb ON public.config_changes USING btree (created_by);
+
+--
+-- Name: idx_config_changes_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_config_changes_ws ON public.config_changes USING btree (workspace_id);
+
+--
+-- Name: idx_daily_entries_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_daily_entries_cb ON public.daily_entries USING btree (created_by);
+
+--
+-- Name: idx_daily_entries_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_daily_entries_ws ON public.daily_entries USING btree (workspace_id);
+
+--
+-- Name: idx_hh_import_log_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hh_import_log_cb ON public.hh_import_log USING btree (created_by);
+
+--
+-- Name: idx_hh_import_log_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hh_import_log_ws ON public.hh_import_log USING btree (workspace_id);
+
+--
+-- Name: idx_hh_stats_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hh_stats_cb ON public.hh_tournament_stats USING btree (created_by);
+
+--
+-- Name: idx_hh_stats_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hh_stats_ws ON public.hh_tournament_stats USING btree (workspace_id);
+
+--
+-- Name: idx_plan_activations_usedby; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_plan_activations_usedby ON public.plan_activations USING btree (used_by);
+
+--
+-- Name: idx_player_wallets_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_wallets_cb ON public.player_wallets USING btree (created_by);
+
+--
+-- Name: idx_player_wallets_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_player_wallets_ws ON public.player_wallets USING btree (workspace_id);
+
+--
+-- Name: idx_pool_config_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pool_config_cb ON public.pool_config USING btree (created_by);
+
+--
+-- Name: idx_pool_config_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_pool_config_ws ON public.pool_config USING btree (workspace_id);
+
+--
+-- Name: idx_tournaments_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tournaments_cb ON public.tournaments USING btree (created_by);
+
+--
+-- Name: idx_tournaments_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tournaments_ws ON public.tournaments USING btree (workspace_id);
+
+--
+-- Name: idx_withdrawals_cb; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_withdrawals_cb ON public.withdrawals USING btree (created_by);
+
+--
+-- Name: idx_withdrawals_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_withdrawals_ws ON public.withdrawals USING btree (workspace_id);
+
+--
+-- Name: idx_wsm_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wsm_user ON public.workspace_members USING btree (user_id);
+
+--
+-- Name: idx_wsm_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_wsm_ws ON public.workspace_members USING btree (workspace_id);
+
+--
+-- Name: plan_activations_email_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX plan_activations_email_idx ON public.plan_activations USING btree (lower(email)) WHERE (status = 'pending'::text);
+
+--
+-- Name: player_profiles_cpf_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX player_profiles_cpf_key ON public.player_profiles USING btree (cpf) WHERE (cpf IS NOT NULL);
+
+--
+-- Name: player_profiles_email_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX player_profiles_email_key ON public.player_profiles USING btree (lower(email));
+
+--
+-- Name: player_profiles_nickname_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX player_profiles_nickname_key ON public.player_profiles USING btree (lower(nickname)) WHERE (nickname IS NOT NULL);
+
+--
+-- Name: player_wallets_ws_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX player_wallets_ws_key ON public.player_wallets USING btree (workspace_id, player, wallet);
+
+--
+-- Name: pool_config_one_per_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX pool_config_one_per_ws ON public.pool_config USING btree (workspace_id);
+
+--
+-- Name: tournaments_site_tid_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX tournaments_site_tid_uniq ON public.tournaments USING btree (workspace_id, player, site, site_tournament_id) WHERE (site_tournament_id IS NOT NULL);
+
+--
+-- Name: player_profiles perfil_protegido; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER perfil_protegido BEFORE INSERT OR UPDATE ON public.player_profiles FOR EACH ROW EXECUTE FUNCTION public.perfil_protegido();
+
+--
+-- Name: bankroll_ledger set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.bankroll_ledger FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: config_changes set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.config_changes FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: daily_entries set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.daily_entries FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: hh_import_log set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.hh_import_log FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: hh_tournament_stats set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.hh_tournament_stats FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: player_wallets set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.player_wallets FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: pool_config set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.pool_config FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: tournaments set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.tournaments FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: withdrawals set_ws; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER set_ws BEFORE INSERT ON public.withdrawals FOR EACH ROW EXECUTE FUNCTION public.set_workspace_id();
+
+--
+-- Name: bankroll_ledger bankroll_ledger_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bankroll_ledger
+    ADD CONSTRAINT bankroll_ledger_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: bankroll_ledger bankroll_ledger_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bankroll_ledger
+    ADD CONSTRAINT bankroll_ledger_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: config_changes config_changes_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_changes
+    ADD CONSTRAINT config_changes_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: config_changes config_changes_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.config_changes
+    ADD CONSTRAINT config_changes_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: daily_entries daily_entries_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_entries
+    ADD CONSTRAINT daily_entries_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: daily_entries daily_entries_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_entries
+    ADD CONSTRAINT daily_entries_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: hh_import_log hh_import_log_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_import_log
+    ADD CONSTRAINT hh_import_log_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: hh_import_log hh_import_log_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_import_log
+    ADD CONSTRAINT hh_import_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: hh_tournament_stats hh_tournament_stats_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_tournament_stats
+    ADD CONSTRAINT hh_tournament_stats_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: hh_tournament_stats hh_tournament_stats_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.hh_tournament_stats
+    ADD CONSTRAINT hh_tournament_stats_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: plan_activations plan_activations_used_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plan_activations
+    ADD CONSTRAINT plan_activations_used_by_fkey FOREIGN KEY (used_by) REFERENCES auth.users(id);
+
+--
+-- Name: player_profiles player_profiles_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player_profiles
+    ADD CONSTRAINT player_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+--
+-- Name: player_wallets player_wallets_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player_wallets
+    ADD CONSTRAINT player_wallets_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: player_wallets player_wallets_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.player_wallets
+    ADD CONSTRAINT player_wallets_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: pool_config pool_config_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pool_config
+    ADD CONSTRAINT pool_config_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: pool_config pool_config_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pool_config
+    ADD CONSTRAINT pool_config_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: tournaments tournaments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tournaments
+    ADD CONSTRAINT tournaments_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: tournaments tournaments_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tournaments
+    ADD CONSTRAINT tournaments_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: withdrawals withdrawals_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.withdrawals
+    ADD CONSTRAINT withdrawals_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
+
+--
+-- Name: withdrawals withdrawals_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.withdrawals
+    ADD CONSTRAINT withdrawals_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+--
+-- Name: workspace_members workspace_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_members
+    ADD CONSTRAINT workspace_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+--
+-- Name: workspace_members workspace_members_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_members
+    ADD CONSTRAINT workspace_members_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+--
+-- Name: app_secrets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.app_secrets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bankroll_ledger; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bankroll_ledger ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: config_changes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.config_changes ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: daily_entries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.daily_entries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: hh_import_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.hh_import_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: hh_tournament_stats; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.hh_tournament_stats ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: plan_activations; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.plan_activations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: player_profiles; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.player_profiles ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: player_wallets; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.player_wallets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: pool_config; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.pool_config ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: player_profiles profile_self_or_teammates; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY profile_self_or_teammates ON public.player_profiles USING (((user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM public.workspace_members m
+  WHERE ((m.user_id = player_profiles.user_id) AND (m.workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))))))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));
+
+--
+-- Name: tournaments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: webhook_cobrancas; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.webhook_cobrancas ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: webhook_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.webhook_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: withdrawals; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.withdrawals ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: workspace_members; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.workspace_members ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: workspaces; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: bankroll_ledger ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.bankroll_ledger AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: config_changes ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.config_changes AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: daily_entries ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.daily_entries AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_import_log ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.hh_import_log AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_tournament_stats ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.hh_tournament_stats AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: player_wallets ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.player_wallets AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: pool_config ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.pool_config AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: tournaments ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.tournaments AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: withdrawals ws_ativo_del; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_del ON public.withdrawals AS RESTRICTIVE FOR DELETE TO authenticated USING (public.ws_ativo(workspace_id));
+
+--
+-- Name: bankroll_ledger ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.bankroll_ledger AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: config_changes ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.config_changes AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: daily_entries ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.daily_entries AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_import_log ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.hh_import_log AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_tournament_stats ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.hh_tournament_stats AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: player_wallets ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.player_wallets AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: pool_config ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.pool_config AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: tournaments ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.tournaments AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: withdrawals ws_ativo_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_ins ON public.withdrawals AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: bankroll_ledger ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.bankroll_ledger AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: config_changes ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.config_changes AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: daily_entries ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.daily_entries AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_import_log ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.hh_import_log AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: hh_tournament_stats ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.hh_tournament_stats AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: player_wallets ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.player_wallets AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: pool_config ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.pool_config AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: tournaments ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.tournaments AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: withdrawals ws_ativo_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_ativo_upd ON public.withdrawals AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_ativo(workspace_id));
+
+--
+-- Name: bankroll_ledger ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.bankroll_ledger TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: config_changes ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.config_changes TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: daily_entries ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.daily_entries TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: hh_import_log ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.hh_import_log TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: hh_tournament_stats ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.hh_tournament_stats TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: player_wallets ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.player_wallets TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: pool_config ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.pool_config TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: tournaments ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.tournaments TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: withdrawals ws_members; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_members ON public.withdrawals TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: workspaces ws_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_self ON public.workspaces TO authenticated USING ((id IN ( SELECT public.my_workspaces() AS my_workspaces))) WITH CHECK ((id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+--
+-- Name: hh_tournament_stats ws_stats_ins; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_stats_ins ON public.hh_tournament_stats AS RESTRICTIVE FOR INSERT TO authenticated WITH CHECK (public.ws_pode_stats(workspace_id));
+
+--
+-- Name: hh_tournament_stats ws_stats_upd; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY ws_stats_upd ON public.hh_tournament_stats AS RESTRICTIVE FOR UPDATE TO authenticated USING (true) WITH CHECK (public.ws_pode_stats(workspace_id));
+
+--
+-- Name: workspace_members wsm_self; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY wsm_self ON public.workspace_members FOR SELECT USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+--
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
+--
+
+GRANT USAGE ON SCHEMA public TO anon;
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO service_role;
+
+--
+-- Name: FUNCTION aplicar_ativacao(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.aplicar_ativacao() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.aplicar_ativacao() TO authenticated;
+GRANT ALL ON FUNCTION public.aplicar_ativacao() TO service_role;
+
+--
+-- Name: FUNCTION create_solo_workspace(ws_name text, plan_escolhido text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_solo_workspace(ws_name text, plan_escolhido text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_solo_workspace(ws_name text, plan_escolhido text) TO authenticated;
+GRANT ALL ON FUNCTION public.create_solo_workspace(ws_name text, plan_escolhido text) TO service_role;
+
+--
+-- Name: FUNCTION email_for_login(identifier text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.email_for_login(identifier text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.email_for_login(identifier text) TO service_role;
+
+--
+-- Name: FUNCTION excluir_minha_conta(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.excluir_minha_conta() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.excluir_minha_conta() TO authenticated;
+GRANT ALL ON FUNCTION public.excluir_minha_conta() TO service_role;
+
+--
+-- Name: FUNCTION meu_status(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.meu_status() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.meu_status() TO authenticated;
+GRANT ALL ON FUNCTION public.meu_status() TO service_role;
+
+--
+-- Name: FUNCTION my_workspaces(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.my_workspaces() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.my_workspaces() TO authenticated;
+GRANT ALL ON FUNCTION public.my_workspaces() TO service_role;
+
+--
+-- Name: FUNCTION nickname_disponivel(nick text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.nickname_disponivel(nick text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO anon;
+GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO authenticated;
+GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO service_role;
+
+--
+-- Name: FUNCTION perfil_protegido(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.perfil_protegido() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.perfil_protegido() TO service_role;
+
+--
+-- Name: FUNCTION perfil_sync_email(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.perfil_sync_email() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.perfil_sync_email() TO service_role;
+
+--
+-- Name: FUNCTION set_workspace_id(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_workspace_id() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_workspace_id() TO service_role;
+
+--
+-- Name: FUNCTION webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text) TO service_role;
+
+--
+-- Name: FUNCTION webhook_revogar_plano(p_email text, p_order_id text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.webhook_revogar_plano(p_email text, p_order_id text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.webhook_revogar_plano(p_email text, p_order_id text) TO service_role;
+
+--
+-- Name: FUNCTION ws_ativo(ws uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ws_ativo(ws uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ws_ativo(ws uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.ws_ativo(ws uuid) TO service_role;
+
+--
+-- Name: FUNCTION ws_pode_stats(ws uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.ws_pode_stats(ws uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.ws_pode_stats(ws uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.ws_pode_stats(ws uuid) TO service_role;
+
+--
+-- Name: TABLE app_secrets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.app_secrets TO service_role;
+
+--
+-- Name: TABLE bankroll_ledger; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.bankroll_ledger TO anon;
+GRANT ALL ON TABLE public.bankroll_ledger TO authenticated;
+GRANT ALL ON TABLE public.bankroll_ledger TO service_role;
+
+--
+-- Name: TABLE config_changes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.config_changes TO anon;
+GRANT ALL ON TABLE public.config_changes TO authenticated;
+GRANT ALL ON TABLE public.config_changes TO service_role;
+
+--
+-- Name: TABLE daily_entries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.daily_entries TO anon;
+GRANT ALL ON TABLE public.daily_entries TO authenticated;
+GRANT ALL ON TABLE public.daily_entries TO service_role;
+
+--
+-- Name: TABLE hh_import_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.hh_import_log TO anon;
+GRANT ALL ON TABLE public.hh_import_log TO authenticated;
+GRANT ALL ON TABLE public.hh_import_log TO service_role;
+
+--
+-- Name: TABLE hh_tournament_stats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.hh_tournament_stats TO anon;
+GRANT ALL ON TABLE public.hh_tournament_stats TO authenticated;
+GRANT ALL ON TABLE public.hh_tournament_stats TO service_role;
+
+--
+-- Name: TABLE plan_activations; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.plan_activations TO service_role;
+
+--
+-- Name: TABLE player_profiles; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER ON TABLE public.player_profiles TO anon;
+GRANT ALL ON TABLE public.player_profiles TO authenticated;
+GRANT ALL ON TABLE public.player_profiles TO service_role;
+
+--
+-- Name: TABLE player_wallets; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.player_wallets TO anon;
+GRANT ALL ON TABLE public.player_wallets TO authenticated;
+GRANT ALL ON TABLE public.player_wallets TO service_role;
+
+--
+-- Name: TABLE pool_config; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.pool_config TO anon;
+GRANT ALL ON TABLE public.pool_config TO authenticated;
+GRANT ALL ON TABLE public.pool_config TO service_role;
+
+--
+-- Name: TABLE tournaments; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tournaments TO anon;
+GRANT ALL ON TABLE public.tournaments TO authenticated;
+GRANT ALL ON TABLE public.tournaments TO service_role;
+
+--
+-- Name: TABLE webhook_cobrancas; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.webhook_cobrancas TO anon;
+GRANT ALL ON TABLE public.webhook_cobrancas TO authenticated;
+GRANT ALL ON TABLE public.webhook_cobrancas TO service_role;
+
+--
+-- Name: TABLE webhook_events; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.webhook_events TO anon;
+GRANT ALL ON TABLE public.webhook_events TO authenticated;
+GRANT ALL ON TABLE public.webhook_events TO service_role;
+
+--
+-- Name: TABLE withdrawals; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.withdrawals TO anon;
+GRANT ALL ON TABLE public.withdrawals TO authenticated;
+GRANT ALL ON TABLE public.withdrawals TO service_role;
+
+--
+-- Name: TABLE workspace_members; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER ON TABLE public.workspace_members TO anon;
+GRANT SELECT,REFERENCES,TRIGGER ON TABLE public.workspace_members TO authenticated;
+GRANT ALL ON TABLE public.workspace_members TO service_role;
+
+--
+-- Name: TABLE workspaces; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT SELECT,REFERENCES,TRIGGER ON TABLE public.workspaces TO anon;
+GRANT SELECT,REFERENCES,TRIGGER ON TABLE public.workspaces TO authenticated;
+GRANT ALL ON TABLE public.workspaces TO service_role;
+
+--
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+
+--
+-- Name: DEFAULT PRIVILEGES FOR FUNCTIONS; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
+
+--
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+
+--
+-- PostgreSQL database dump complete
+--
+

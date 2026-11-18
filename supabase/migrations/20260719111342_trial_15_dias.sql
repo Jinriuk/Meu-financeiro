@@ -1,12 +1,13 @@
--- ============================================================
--- Teste grátis de 15 dias. trial_ends_at em workspaces:
---   null = pool interna / fundador / assinatura paga ativa -> nunca bloqueia
---   data = conta em teste -> o app bloqueia quando now() passa da data
--- Idempotente.
--- ============================================================
+-- Teste grátis de 15 dias: trial_ends_at marca quando o acesso trava.
+--   null  = sem trial (pool interna, fundador, ou assinatura paga ativa) -> nunca bloqueia
+--   data  = conta em teste -> bloqueada quando now() passa da data
 alter table public.workspaces add column if not exists trial_ends_at timestamptz;
 
--- create_solo_workspace passa a receber o plano escolhido e abre 15 dias de teste desse plano.
+-- contas que já existem (pool team + Lucas fundador) NÃO entram em trial
+update public.workspaces set trial_ends_at = null;
+
+-- create_solo_workspace agora recebe o plano escolhido e abre 15 dias de teste desse plano.
+-- Remove a versão antiga de 1 argumento pra não gerar ambiguidade com o default.
 drop function if exists public.create_solo_workspace(text);
 create or replace function public.create_solo_workspace(ws_name text, plan_escolhido text default 'gestao')
 returns uuid language plpgsql security definer set search_path='' as $$
@@ -26,7 +27,7 @@ end $$;
 revoke all on function public.create_solo_workspace(text,text) from public, anon;
 grant execute on function public.create_solo_workspace(text,text) to authenticated;
 
--- ativação (manual/Kiwify): assinatura ativa -> zera o trial (deixa de bloquear)
+-- ativação (manual/Kiwify) = assinatura ativa -> zera o trial (deixa de bloquear)
 create or replace function public.aplicar_ativacao() returns text
 language plpgsql security definer set search_path='' as $$
 declare act record; wid uuid; meu_email text;
@@ -45,7 +46,7 @@ revoke all on function public.aplicar_ativacao() from public;
 revoke execute on function public.aplicar_ativacao() from anon;
 grant execute on function public.aplicar_ativacao() to authenticated;
 
--- webhook: pagar zera o trial; cancelar/estornar expira na hora (bloqueia)
+-- webhook: pagar zera o trial (assinatura ativa); cancelar/estornar expira na hora (bloqueia)
 create or replace function public.webhook_ativar_plano(p_email text, p_plan text, p_source text, p_order_id text)
 returns text language plpgsql security definer set search_path='' as $$
 declare wid uuid; uid uuid;

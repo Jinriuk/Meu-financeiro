@@ -1,51 +1,44 @@
-# Pool de Poker — Gabriel & Guedes
+# GrinderBank
 
-App de controle de uma **pool de poker (staking)** entre dois jogadores: banca central, make-up individual, split de lucro, controle de ABI/grade, saque semanal e dashboards semanal e mensal. Pensado para ser fácil de usar no celular e no computador, pelos dois ao mesmo tempo.
+Gestão de banca e estatísticas de MTT para jogador solo e para times de staking. Site: grinderbank.com.
 
-É um único arquivo estático (`index.html`) que salva os dados num projeto **Supabase** (login por e-mail e senha). Sem build, sem servidor.
+## Como é feito
 
-> Este repositório passou a ser o app da **pool**. O antigo "Meu Financeiro" (finanças pessoais) foi mantido só como referência na pasta [`legado/`](./legado) — não é mais usado e não compartilha banco nem deploy com a pool. A pool usa um **projeto Supabase próprio**.
+- **Front**: React 18 sem bundler. A fonte é `app.jsx`; `node build.js` gera `app.js` (commitado). A Vercel serve os
+  arquivos estáticos direto, com CSP estrita (`vercel.json`): nada de script inline nem `eval`.
+- **Banco**: Supabase (projeto `pegrfpsyddzdvvuliugr`). Multi-tenant em banco único: cada conta é um *workspace*
+  e o RLS só entrega as linhas dos workspaces de quem está logado. Plano e teste grátis são checados no
+  servidor (policies + `meu_status()`), não só na tela.
+- **Edge Functions**: `auth-alias` (login por apelido sem vazar e-mail), `kiwify-webhook` e `hotmart-webhook`
+  (liberam/revogam plano achando o cliente pelo e-mail confirmado do login).
+- **Motor de stats**: roda no navegador; pro banco sobem só agregados por torneio. Definições calibradas
+  mão a mão com o PokerTracker 4 (56.255 mãos, 0 divergência nos contadores). Detalhes em
+  `tools/regua/README.md`.
 
-## Diferença importante de segurança
+## Pastas
 
-Diferente do app financeiro (onde cada usuário só vê os próprios dados), aqui a pool é **compartilhada**: os dois jogadores veem e editam os **mesmos** dados (mesma banca, mesmo make-up, mesmos lançamentos). Por isso o RLS é "qualquer autenticado vê tudo". Como só existem **2 usuários** (criados à mão no painel, com cadastro público desligado), isso é seguro e suficiente. Cada linha guarda `created_by` só para auditoria — nunca para restringir a visibilidade.
+| Caminho | O quê |
+|---|---|
+| `app.jsx` / `app.js` | o app (fonte / compilado) |
+| `supabase/migrations/` | histórico completo do banco (ver o README de lá) |
+| `supabase/functions/` | Edge Functions publicadas |
+| `schema.sql` | schema gerado a partir das migrations (não edite à mão) |
+| `test/` | testes: unidade (motor, dinheiro, amostra real anonimizada), telas com Supabase simulado, segurança SQL |
+| `tools/regua/` | régua de auditoria: calibração com o PT4, gerador da amostra, recriação do banco do zero |
 
-## Como funciona a regra da pool (resumo)
+## Rodar e testar
 
-- **Torneio é a fonte da verdade**: você lança cada torneio (com o jogador, buy-in, re-entries e premiação) e o app monta sozinho o resultado de cada jogador por dia — `resultado = Σ (prêmio − buy-in×(1+re-entries))`. O **Diário** é um resumo automático por jogador/dia (dá pra abrir e corrigir editando os torneios).
-- Na aba **Torneios**, em cima fica **"Hoje"** (lançamento do dia + placar por jogador) e embaixo os **dias anteriores** como relatórios recolhidos — nada é apagado, só sai da lista de trabalho quando o dia vira.
-- A semana **fecha no domingo**. Para cada jogador, o resultado da semana abate o **make-up** acumulado; só o que sobra vira **lucro divisível**, dividido pelo `player_pct` (padrão 50/50) entre jogador e pool.
-- Só há **saque autorizado** quando o make-up zera **e** a banca continua acima do **piso mínimo**.
-- **ABI/grade por jogador**: cada jogador tem seu próprio limite de ABI (em Ajustes). Um torneio fica "FORA DA GRADE" se o buy-in passou do máximo **daquele jogador**; "ATENÇÃO" se o ABI médio do dia chegou perto do limite. O alerta de fora-da-grade no Painel é clicável e mostra quais torneios e de quem. Ao lançar um torneio fora da grade aparece um aviso pro próprio jogador, e o **outro jogador** recebe um aviso em tempo real ("fulano jogou fora da grade").
-- **Banca por jogador e plataforma** (aba Banca): cada um registra o saldo inicial por plataforma (PokerStars, GG Poker, Reserva, Outros) e o outro vê. O saldo se atualiza sozinho com torneios (pelo site), movimentos atribuídos ao jogador e saques daquela carteira. A banca central da pool segue sendo a fonte de verdade pro make-up/saque.
-- **Semanal**: um card **"geral da pool"** soma os dois jogadores semana a semana, além da visão por jogador. Quando o mês vira, as semanas dos meses anteriores viram **histórico recolhível**. O status de saque (autorizado/bloqueado) não aparece mais aqui — só na aba **Saques**, na hora de sacar.
-- **Diário com filtros**: dá pra filtrar por **jogador, plataforma ou modalidade** e escolher um **período** (últimos 7/15/30 dias ou um intervalo de datas), com um **cálculo agregado** do período (resultado, ROI, ABI médio, ITM, torneios).
-- Todos os agregados (make-up, totais semanais/mensais, banca corrente) são **calculados no navegador** a partir dos lançamentos brutos — nada de tabela pré-computada.
-- **Gráficos**: no Painel, curva de **lucro acumulado por jogador** (interativa) e evolução da banca com eixos e valor ao passar o dedo; barras com valor ao tocar. No Mensal, **desempenho por site e por modalidade** (resultado e ROI), com filtro **Geral / por jogador**.
-- **Stats (motor de hand history)**: importe os .txt do PokerStars ou o export do PokerCraft/GG (aceita .zip) na aba **Stats**. O parser roda **no navegador** — pro banco sobem só **agregados por torneio** (contagens + oportunidades). Mostra VPIP, PFR, 3-bet, fold pra 3-bet, roubo/defesa de blinds, c-bet, WWSF/WTSD/W$SD, agressão, stats por posição, bb/100 e **Sorte (all-in EV)** — quanto você ganhou nos all-ins vs o que a equity dizia. Tiles com faixas saudáveis (verde/amarelo/vermelho). Reimportar o mesmo torneio substitui, não duplica. Parser GG em beta até calibrar com um export real.
-- **Tempo real**: o lançamento de um jogador aparece na hora na tela do outro (Supabase Realtime, sem precisar recarregar).
-- **Backup**: em Ajustes → Backup (CSV) dá pra baixar todos os dados brutos, prontos pro Excel/Planilhas.
-- **Login flexível**: entra com **e-mail, nickname ou CPF**. No primeiro acesso o app força a troca da senha padrão e completa o cadastro (nickname/CPF) — tabela `player_profiles` + função `email_for_login`.
+```bash
+npm ci
+node build.js                 # app.jsx -> app.js (o CI falha se app.js estiver desatualizado)
+npm test                      # unidade + fumaça + telas + segurança SQL (precisa de Chromium e Postgres 15+)
+npm run test:unit             # só o motor e o dinheiro (rápido, sem navegador)
+```
 
-## Telas
+Calibração completa com os seus arquivos (fora do repo): `node tools/regua/stats/calib_app.cjs <pasta_gg> <pasta_ps>`.
 
-Painel · Torneios · Diário · Semanal · Mensal · Stats · Saques · Banca · Ajustes.
+## Mudança de banco
 
-## Arquivos
-
-- `index.html` — o app inteiro. Antes de subir, cole a URL e a chave anon do seu Supabase no bloco de configuração no topo do arquivo.
-- `schema.sql` — estrutura do banco (tabelas + RLS compartilhado). Rode no SQL Editor do Supabase.
-- `COMO-SUBIR.md` — passo a passo completo (~10 min): criar o banco, criar os **dois** logins, configurar e hospedar.
-
-## Começar rápido
-
-1. Crie um projeto no Supabase e rode o `schema.sql`.
-2. Crie **os dois usuários** (Gabriel e Guedes) em Authentication → Users e desligue novos cadastros.
-3. Cole a URL e a chave anon no topo do `index.html`.
-4. Hospede o arquivo (Netlify Drop, Vercel ou Cloudflare Pages) e faça login.
-
-Detalhes em [`COMO-SUBIR.md`](./COMO-SUBIR.md).
-
-## Stack
-
-HTML + React 18 (via CDN) + Babel Standalone (fixado na v7) + Supabase. Sem dependências instaladas, sem etapa de build.
+1. Escreva a migration em `supabase/migrations/AAAAMMDDHHMMSS_nome.sql` (idempotente).
+2. Aplique primeiro em homologação, depois em produção, **antes** de publicar o app que depende dela.
+3. Regere o `schema.sql`: `DUMP=schema.sql bash tools/regua/banco/recriar.sh`.
