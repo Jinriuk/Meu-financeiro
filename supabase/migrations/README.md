@@ -21,6 +21,8 @@ Idempotentes; entram no banco **antes** de publicar o app que depende delas.
 2. `20261117130000_dinheiro_bounty_moeda.sql` — `tournaments.bounty` e `tournaments.currency`.
 3. `20261117140000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
    do auth, contrato checado no servidor. Cenários de ataque: `bash test/sql/run.sh`.
+4. `20261118090000_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
+   (`avisar_erros()` via pg_cron + pg_net) pro endereço em `app_secrets.alerta_webhook_url`.
 
 As três são compatíveis com o app que está no ar hoje (só acrescentam colunas, travas e funções).
 

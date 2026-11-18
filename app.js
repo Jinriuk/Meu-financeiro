@@ -9,6 +9,38 @@ const {
 const CONFIGURED = window.SUPABASE_URL && !window.SUPABASE_URL.startsWith("COLE_AQUI");
 const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
 
+/* ---------- F0.17: erro em produção vai pro banco (app_erros) e vira aviso pro responsável ----------
+   Só a mensagem e um pedaço da pilha; nada de dado digitado. Mesma mensagem 1x por carregamento. */
+const ERROS_VISTOS = new Set();
+function registrarErro(origem, mensagem, detalhe) {
+  try {
+    const msg = String(mensagem || '').slice(0, 500);
+    if (!sb || !msg || ERROS_VISTOS.has(origem + '|' + msg) || ERROS_VISTOS.size > 20) return;
+    if (/ResizeObserver loop|Script error\.?$|chrome-extension:|moz-extension:/i.test(msg)) return; // ruído do navegador
+    ERROS_VISTOS.add(origem + '|' + msg);
+    sb.rpc('registrar_erro', {
+      p_origem: origem,
+      p_mensagem: msg,
+      p_detalhe: detalhe || null,
+      p_build: typeof HH_BUILD !== 'undefined' ? HH_BUILD : null
+    }).then(() => {}, () => {});
+  } catch (e) {}
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('error', e => registrarErro('app', e && e.message, {
+    onde: String(e && e.filename || '').split('/').pop() + ':' + (e && e.lineno),
+    pilha: String(e && e.error && e.error.stack || '').slice(0, 600),
+    tela: location.pathname
+  }));
+  window.addEventListener('unhandledrejection', e => {
+    const r = e && e.reason;
+    registrarErro('app', r && r.message || String(r), {
+      pilha: String(r && r.stack || '').slice(0, 600),
+      tela: location.pathname
+    });
+  });
+}
+
 /* ---------- constantes ---------- */
 const C = {
   bg: '#F5F0E6',
@@ -7007,6 +7039,10 @@ function Dashboard({
         setTours(t => t.map(y => y.id === x.atual.id ? data : y));
       }
     }
+    if (erros.length) registrarErro('import', 'resumos: ' + erros.length + ' erro(s) ao salvar — ' + String(erros[0]).slice(0, 200), {
+      inseridos,
+      completados
+    });
     setTsImp({
       busy: false,
       prog: '',
@@ -7247,6 +7283,11 @@ function Dashboard({
       }).select();
       if (error) {
         issues.push(`lote de torneios ${i + 1}+: não salvou (${error.message})`);
+        registrarErro('import', 'stats: lote não salvou — ' + error.message, {
+          lote: i,
+          tamanho: chunk.length,
+          codigo: error.code || null
+        });
         continue;
       }
       const recs = (data && data.length === chunk.length ? data : chunk).map(semIds);

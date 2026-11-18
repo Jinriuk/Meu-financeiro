@@ -46,3 +46,10 @@ grant usage on schema public to anon, authenticated, service_role;
 grant select on public.workspaces, public.workspace_members to authenticated;
 grant select, insert, update, delete on public.player_profiles, public.tournaments, public.hh_tournament_stats to authenticated;
 grant all on all tables in schema public to service_role;
+
+-- (F0.17) segredos e um net.http_post falso que só anota a chamada
+create table public.app_secrets (name text primary key, value text not null default '', updated_at timestamptz not null default now());
+alter table public.app_secrets enable row level security;
+create schema net;
+create table net.chamadas (id serial, url text, body jsonb);
+create or replace function net.http_post(url text, body jsonb, headers jsonb default null) returns bigint language sql as $$ insert into net.chamadas(url, body) values (url, body) returning id::bigint $$;

@@ -42,6 +42,44 @@ begin
 end $$;
 
 --
+-- Name: avisar_erros(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.avisar_erros() RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $_$
+declare url text; txt text; n int; ids bigint[];
+begin
+  select array_agg(id order by id) into ids from (select id from public.app_erros where avisado_em is null order by id limit 500) s;
+  n := coalesce(array_length(ids,1),0);
+  if n = 0 then return null; end if;
+  select 'GrinderBank: ' || n || ' erro(s) novo(s) — ' ||
+         string_agg(origem || ' ' || c, ', ' order by origem) into txt
+    from (select origem, count(*) c from public.app_erros where id = any(ids) group by origem) g;
+  select txt || ' | ' || string_agg(left(regexp_replace(mensagem, '[^ -~À-ÿ]', ' ', 'g'), 120), ' | ') into txt
+    from (select mensagem from public.app_erros where id = any(ids) order by id desc limit 3) m;
+  select nullif(trim(value),'') into url from public.app_secrets where name = 'alerta_webhook_url';
+  if url is not null then
+    begin
+      if url ~ 'discord' then
+        execute 'select net.http_post(url := $1, body := $2, headers := ''{"Content-Type":"application/json"}''::jsonb)' using url, jsonb_build_object('content', txt);
+      elsif url ~ 'hooks\.slack' then
+        execute 'select net.http_post(url := $1, body := $2, headers := ''{"Content-Type":"application/json"}''::jsonb)' using url, jsonb_build_object('text', txt);
+      else   -- ntfy.sh e afins: publica em JSON na raiz do servidor ({topic, message})
+        execute 'select net.http_post(url := $1, body := $2, headers := ''{"Content-Type":"application/json"}''::jsonb)'
+          using 'https://' || split_part(url,'/',3), jsonb_build_object('topic', split_part(url,'/',4), 'message', txt);
+      end if;
+    exception when others then
+      raise notice 'aviso não saiu: %', sqlerrm;   -- registra e tenta de novo na próxima rodada
+      return txt;
+    end;
+  end if;
+  update public.app_erros set avisado_em = now() where id = any(ids);
+  return txt;
+end $_$;
+
+--
 -- Name: create_solo_workspace(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -186,6 +224,27 @@ begin
 end $$;
 
 --
+-- Name: registrar_erro(text, text, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb DEFAULT NULL::jsonb, p_build text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare uid uuid := auth.uid(); ws uuid;
+begin
+  if uid is null then return; end if;
+  if p_origem not in ('app','import') then return; end if;          -- cliente não fala por webhook/servidor
+  -- limite: 30 por usuário por hora (erro em loop não enche o banco)
+  if (select count(*) from public.app_erros where user_id = uid and created_at > now() - interval '1 hour') >= 30 then return; end if;
+  select workspace_id into ws from public.workspace_members where user_id = uid order by created_at limit 1;
+  insert into public.app_erros(origem, mensagem, detalhe, build, user_id, workspace_id)
+  values (p_origem, left(coalesce(p_mensagem,'(sem mensagem)'), 500),
+          case when p_detalhe is null or length(p_detalhe::text) > 4000 then null else p_detalhe end,
+          left(p_build, 40), uid, ws);
+end $$;
+
+--
 -- Name: set_workspace_id(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -270,6 +329,36 @@ CREATE FUNCTION public.ws_pode_stats(ws uuid) RETURNS boolean
   select exists (select 1 from public.workspaces w
                  where w.id = ws and (w.kind <> 'solo' or w.plan in ('pro','founder','team')));
 $$;
+
+--
+-- Name: app_erros; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.app_erros (
+    id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    origem text NOT NULL,
+    mensagem text NOT NULL,
+    detalhe jsonb,
+    build text,
+    user_id uuid DEFAULT auth.uid(),
+    workspace_id uuid,
+    avisado_em timestamp with time zone,
+    CONSTRAINT app_erros_origem_check CHECK ((origem = ANY (ARRAY['app'::text, 'import'::text, 'webhook'::text, 'servidor'::text])))
+);
+
+--
+-- Name: app_erros_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.app_erros ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.app_erros_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 --
 -- Name: app_secrets; Type: TABLE; Schema: public; Owner: -
@@ -612,6 +701,13 @@ CREATE TABLE public.workspaces (
 );
 
 --
+-- Name: app_erros app_erros_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.app_erros
+    ADD CONSTRAINT app_erros_pkey PRIMARY KEY (id);
+
+--
 -- Name: app_secrets app_secrets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -722,6 +818,18 @@ ALTER TABLE ONLY public.workspace_members
 
 ALTER TABLE ONLY public.workspaces
     ADD CONSTRAINT workspaces_pkey PRIMARY KEY (id);
+
+--
+-- Name: app_erros_pendentes; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX app_erros_pendentes ON public.app_erros USING btree (created_at) WHERE (avisado_em IS NULL);
+
+--
+-- Name: app_erros_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX app_erros_user ON public.app_erros USING btree (user_id, created_at);
 
 --
 -- Name: hh_stats_ws_key; Type: INDEX; Schema: public; Owner: -
@@ -1112,6 +1220,12 @@ ALTER TABLE ONLY public.workspace_members
     ADD CONSTRAINT workspace_members_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 --
+-- Name: app_erros; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.app_erros ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: app_secrets; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1472,6 +1586,13 @@ GRANT ALL ON FUNCTION public.aplicar_ativacao() TO authenticated;
 GRANT ALL ON FUNCTION public.aplicar_ativacao() TO service_role;
 
 --
+-- Name: FUNCTION avisar_erros(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.avisar_erros() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.avisar_erros() TO service_role;
+
+--
 -- Name: FUNCTION create_solo_workspace(ws_name text, plan_escolhido text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -1534,6 +1655,14 @@ REVOKE ALL ON FUNCTION public.perfil_sync_email() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.perfil_sync_email() TO service_role;
 
 --
+-- Name: FUNCTION registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb, p_build text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb, p_build text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb, p_build text) TO authenticated;
+GRANT ALL ON FUNCTION public.registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb, p_build text) TO service_role;
+
+--
 -- Name: FUNCTION set_workspace_id(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -1569,6 +1698,20 @@ GRANT ALL ON FUNCTION public.ws_ativo(ws uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.ws_pode_stats(ws uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.ws_pode_stats(ws uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.ws_pode_stats(ws uuid) TO service_role;
+
+--
+-- Name: TABLE app_erros; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.app_erros TO service_role;
+
+--
+-- Name: SEQUENCE app_erros_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.app_erros_id_seq TO anon;
+GRANT ALL ON SEQUENCE public.app_erros_id_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.app_erros_id_seq TO service_role;
 
 --
 -- Name: TABLE app_secrets; Type: ACL; Schema: public; Owner: -

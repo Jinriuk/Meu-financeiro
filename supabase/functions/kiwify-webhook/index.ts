@@ -36,6 +36,12 @@ async function segredos(admin: any): Promise<{ token: string; map: Record<string
   return { token, map };
 }
 
+// F0.17: falha que precisa de gente olhando vai pro app_erros (o banco avisa o responsável em minutos).
+// Só o essencial: provedor, pedido e motivo — nunca o e-mail do comprador.
+async function alertar(admin: any, mensagem: string, detalhe: Record<string, unknown> = {}) {
+  try { await admin.from('app_erros').insert({ origem: 'webhook', mensagem: ('kiwify: ' + mensagem).slice(0, 500), detalhe }); } catch (_) {}
+}
+
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
 
@@ -171,6 +177,7 @@ Deno.serve(async (req) => {
     // chegaram — é assim que se descobre o identificador do plano quando o painel não exibe.
     // Junto vai um mapa de TODOS os campos com cara de id, com o caminho de cada um: sem isso,
     // um painel que esconde o plan_id deixaria a integração emperrada sem pista nenhuma.
+    if (!plan) await alertar(admin, 'PAGOU E NÃO LIBEROU: plano fora do kiwify_plan_map', { orderId, planoId, ofertaId, productId, valor: valor || valorBase });
     if (!plan) return json({
       error: 'plano não está no kiwify_plan_map',
       candidatos: { planoId, ofertaId, productId, valor: valor || valorBase },
@@ -180,12 +187,12 @@ Deno.serve(async (req) => {
       registrado: 'a cobrança ficou em webhook_cobrancas com plano_liberado null — liberação manual pendente',
     }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'ativação falhou: ' + error.message, { orderId, plan }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'ativado', plan, chave });
   }
   if (revoga) {
     const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'revogação falhou: ' + error.message, { orderId }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'revogado' });
   }
   return json({ ok: true, ignored: status });
