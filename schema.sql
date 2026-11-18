@@ -2,7 +2,7 @@
 -- GrinderBank · schema public GERADO (não edite à mão)
 -- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
 -- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
--- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118120000 (fase 1).
+-- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118120100.
 -- ============================================================
 --
 -- PostgreSQL database dump
@@ -1696,10 +1696,24 @@ CREATE INDEX bankroll_ledger_unidade ON public.bankroll_ledger USING btree (unid
 
 
 --
+-- Name: convite_pessoa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX convite_pessoa ON public.convite USING btree (pessoa_id);
+
+
+--
 -- Name: convite_unidade; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX convite_unidade ON public.convite USING btree (unidade_id);
+
+
+--
+-- Name: convite_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX convite_workspace ON public.convite USING btree (workspace_id);
 
 
 --
@@ -1994,6 +2008,13 @@ CREATE INDEX tournaments_unidade ON public.tournaments USING btree (unidade_id) 
 --
 
 CREATE INDEX unidade_caminho ON public.unidade USING btree (caminho text_pattern_ops);
+
+
+--
+-- Name: unidade_mae; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX unidade_mae ON public.unidade USING btree (mae_id);
 
 
 --
@@ -2580,7 +2601,7 @@ ALTER TABLE public.acesso ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY acesso_ler ON public.acesso FOR SELECT TO authenticated USING (((EXISTS ( SELECT 1
    FROM public.pessoa p
-  WHERE ((p.id = acesso.pessoa_id) AND (p.user_id = auth.uid())))) OR public.pode('administrar'::text, unidade_id)));
+  WHERE ((p.id = acesso.pessoa_id) AND (p.user_id = ( SELECT auth.uid() AS uid))))) OR public.pode('administrar'::text, unidade_id)));
 
 
 --
