@@ -29,6 +29,8 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
 - `20261118120000_fase1_convites.sql` — convite por link (token só no link, hash no banco).
 - `20261118120100_fase1_indices.sql` — índices das chaves novas e `acesso_ler` sem `auth.uid()` por linha
   (o histórico de produção gravou outra versão e foi corrigido pra esta, que vem depois das tabelas).
+- `20261118130000_fase1_dinheiro_time.sql` — contrato por faixas (lifetime realizado, divisão marginal), capital
+  (MU), saque com divisão no servidor, aprovação e confirmação do recebido com a diferença. Aplicada pelo SQL Editor.
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.

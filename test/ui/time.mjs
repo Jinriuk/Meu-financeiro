@@ -1,0 +1,89 @@
+// Aba Time (fase 1): jogador vê a conta e pede saque com prévia; admin aprova saque e gera link; sem estrutura, sem aba.
+import { abrirApp, dbBase } from './harness.mjs';
+const falhas = []; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ ') + m); if (!c) falhas.push(m); };
+const EU = '00000000-0000-0000-0000-00000000aaaa';
+async function cenario(nome, db, fn) {
+  const { page, erros, escritas, fechar } = await abrirApp(db);
+  try { await fn(page, escritas); } catch (e) { falhas.push(nome + ': ' + e.message); console.log('✗', nome, e.message); }
+  ok(erros.length === 0, nome + ': sem erro de página/console' + (erros.length ? ': ' + erros.join(' | ') : ''));
+  await fechar();
+}
+const rpc = (escritas, n) => escritas.filter(e => e.tabela === 'rpc.' + n).map(e => JSON.parse(e.corpo || '{}'));
+const CONTRATO = [{ ate: 10000, jogador: 0.35 }, { ate: null, jogador: 0.40 }];
+const estrutura = (extra = {}) => dbBase({
+  workspaces: [{ id: 'w1', name: 'Samba', kind: 'team', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
+  unidade: [
+    { id: 'u1', workspace_id: 'w1', mae_id: null, nome: 'Samba', rotulo: 'Time', caminho: '/u1/', arquivada: false },
+    { id: 'u2', workspace_id: 'w1', mae_id: 'u1', nome: 'Base', rotulo: 'Base', caminho: '/u1/u2/', arquivada: false },
+    { id: 'u3', workspace_id: 'w1', mae_id: 'u2', nome: 'Pandeiro', rotulo: 'Reta', caminho: '/u1/u2/u3/', arquivada: false },
+  ],
+  pessoa: [
+    { id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' },
+    { id: 'p2', workspace_id: 'w1', user_id: null, nome: 'João', status: 'convidado' },
+    { id: 'p3', workspace_id: 'w1', user_id: 'x3', nome: 'Maria', status: 'ativo' },
+  ],
+  vinculo: [
+    { id: 'v1', pessoa_id: 'p1', unidade_id: 'u3', inicio: '2026-01-01', fim: null },
+    { id: 'v2', pessoa_id: 'p2', unidade_id: 'u3', inicio: '2026-01-01', fim: null },
+    { id: 'v3', pessoa_id: 'p3', unidade_id: 'u3', inicio: '2026-01-01', fim: null },
+  ],
+  acesso: [], convite: [], saque: [], contrato: [{ id: 'c1', workspace_id: 'w1', unidade_id: 'u1', pessoa_id: null, faixas: CONTRATO, inicio: '2026-01-01', criado_em: '2026-01-01T00:00:00Z' }],
+  ...extra,
+});
+const abrirTime = async (page) => { await page.getByRole('button', { name: /^Time$/ }).first().click({ timeout: 15000 }); await page.getByText('Estrutura do time').waitFor({ timeout: 10000 }); };
+
+// 1) jogador: vê MU, contrato e pede saque com a prévia do servidor
+await cenario('jogador', estrutura({ __rpc: {
+  situacao_jogador: { mu: 310, lifetime: 200, contrato: CONTRATO },
+  simular_saque: { parte_jogador: 57.75, parte_time: 107.25, total_time: 417.25, devolucao: 310, banca_depois: 150, mu_depois: 0 },
+  solicitar_saque: 'novo-saque' } }), async (page, escritas) => {
+  await abrirTime(page);
+  const t = await page.locator('body').innerText();
+  ok(/Minha conta no time/.test(t) && /\$\s?310[.,]00/.test(await page.locator('[data-mu]').innerText()), 'mostra o MU');
+  ok(/35% pro jogador/.test(t) && /40% pro jogador/.test(t), 'mostra o contrato');
+  ok(!/Contrato do time/.test(t) && !/Saques do time/.test(t), 'jogador não vê contrato pra editar nem saques dos outros');
+  ok(await page.getByRole('button', { name: 'Link da reta' }).count() === 0, 'jogador não gera link');
+  await page.getByRole('button', { name: 'Pedir saque' }).first().click();
+  const campos = page.locator('input[inputmode="decimal"]');
+  await campos.nth(0).fill('625'); await campos.nth(1).fill('310'); await campos.nth(2).fill('165');
+  await page.locator('[data-saque-previa]').waitFor({ timeout: 5000 });
+  const sim = rpc(escritas, 'simular_saque').pop();
+  ok(sim && sim.p_banca === 625 && sim.p_devolucao === 310 && sim.p_cashout === 165 && sim.p_pessoa === 'p1', 'prévia calculada no servidor com os valores digitados');
+  ok(/57,75/.test(await page.locator('[data-saque-previa]').innerText()) && /417,25/.test(await page.locator('[data-saque-previa]').innerText()), 'prévia mostra a parte do jogador e do time');
+  await page.locator('[data-saque-previa]').locator('xpath=..').getByRole('button', { name: 'Pedir saque' }).click();
+  await page.waitForTimeout(500);
+  const sol = rpc(escritas, 'solicitar_saque').pop();
+  ok(sol && sol.p_banca === 625 && sol.p_devolucao === 310 && sol.p_cashout === 165, 'pedido enviado com os mesmos valores');
+});
+
+// 2) admin: aprova saque, gera link da reta, vê contrato
+await cenario('admin', estrutura({
+  acesso: [{ id: 'a1', pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
+  saque: [{ id: 's1', workspace_id: 'w1', pessoa_id: 'p3', unidade_id: 'u3', status: 'solicitado', banca: 625, mu_antes: 310, devolucao: 310, cashout: 165,
+    parte_jogador: 57.75, parte_time: 107.25, total_time: 417.25, banca_depois: 150, solicitado_em: '2026-10-25T20:21:00Z' }],
+  __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO }, criar_convite: 'ab'.repeat(32), decidir_saque: null } }), async (page, escritas) => {
+  await abrirTime(page);
+  const t = await page.locator('body').innerText();
+  ok(/Saques do time/.test(t) && /Maria/.test(t) && /417,25/.test(t), 'vê o saque da Maria com o total do time');
+  ok(/Contrato do time/.test(t), 'vê o contrato pra editar');
+  ok(await page.locator('[data-jogador="João"]').getByRole('button', { name: 'Link pessoal' }).count() === 1, 'jogador sem conta tem link pessoal');
+  await page.locator('[data-saque="Maria"]').getByRole('button', { name: 'Aprovar' }).click();
+  await page.waitForTimeout(400);
+  const dec = rpc(escritas, 'decidir_saque').pop();
+  ok(dec && dec.p_id === 's1' && dec.p_aprovar === true, 'aprovar chama o servidor');
+  await page.getByRole('button', { name: 'Link da reta' }).last().click();
+  await page.locator('[data-link-convite]').waitFor({ timeout: 5000 });
+  const url = await page.locator('[data-link-convite]').inputValue();
+  ok(url.endsWith('/?convite=' + 'ab'.repeat(32)), 'link da reta montado com o token');
+  const cv = rpc(escritas, 'criar_convite').pop();
+  ok(cv && cv.p_unidade === 'u3' && cv.p_pessoa === null, 'link pedido pra unidade certa');
+});
+
+// 3) sem estrutura (solo/pool antigo): sem aba Time
+await cenario('sem estrutura', dbBase(), async (page) => {
+  await page.getByRole('button', { name: /^Ajustes$/ }).first().waitFor({ timeout: 15000 });
+  ok(await page.getByRole('button', { name: /^Time$/ }).count() === 0, 'aba Time não aparece');
+});
+
+console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
+process.exit(falhas.length ? 1 : 0);
