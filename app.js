@@ -6333,6 +6333,789 @@ function SemanalPlayer({
 }
 
 /* ---------- app ---------- */
+/* ---------- TIME (fase 1): estrutura, pessoas, convites, contrato e saques do time ----------
+   Só aparece em workspace com estrutura. Tudo que grava passa por funções do servidor, que conferem a
+   permissão de novo; aqui a permissão só decide o que MOSTRAR. */
+const CAPS_ROTULO = {
+  ver_desempenho: 'vê desempenho',
+  ver_financeiro: 'vê financeiro',
+  gerir_pessoas: 'gere pessoas',
+  promover: 'promove',
+  configurar_regras: 'configura regras',
+  aprovar_saques: 'aprova saques',
+  administrar: 'administra'
+};
+const dataBR = s => {
+  const t = String(s || '');
+  return t.length >= 10 ? `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(0, 4)}` : t;
+};
+const SAQUE_ROTULO = {
+  solicitado: 'aguardando aprovação',
+  aprovado: 'aprovado · falta confirmar o recebimento',
+  recusado: 'recusado',
+  cancelado: 'cancelado',
+  pago: 'pago'
+};
+function faixasTexto(f) {
+  if (!Array.isArray(f) || !f.length) return 'sem contrato definido';
+  const o = [...f].sort((a, b) => (a.ate == null ? 1e15 : a.ate) - (b.ate == null ? 1e15 : b.ate));
+  let ant = 0;
+  return o.map(x => {
+    const pct = Math.round(Number(x.jogador) * 1000) / 10 + '% pro jogador';
+    const t = x.ate == null ? ant ? `acima de ${fmt(ant)} sacados: ${pct}` : pct : `até ${fmt(x.ate)} sacados: ${pct}`;
+    ant = x.ate || ant;
+    return t;
+  }).join(' · ');
+}
+function TimeTela({
+  session
+}) {
+  const uid = session.user.id;
+  const [d, setD] = useState(null);
+  const [aviso, setAviso] = useState(null); // {ok|erro, texto}
+  const [link, setLink] = useState(null); // {titulo, url}
+  const [perg, setPerg] = useState(null); // QuickEditModal aberto: {label,hint,kind,opts,valor,onSave}
+  const [saqueAberto, setSaqueAberto] = useState(false);
+  const carregar = async () => {
+    const q = t => sb.from(t).select('*');
+    const [u, p, v, a, cv, sq, ct] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato')]);
+    const pessoas = p.data || [],
+      vinculos = v.data || [];
+    const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
+    let sit = null;
+    if (eu && vinculos.some(x => x.pessoa_id === eu.id && !x.fim)) {
+      const r = await sb.rpc('situacao_jogador', {
+        p_pessoa: eu.id
+      });
+      if (!r.error) sit = r.data;
+    }
+    setD({
+      unidades: (u.data || []).filter(x => !x.arquivada).sort((x, y) => String(x.caminho).localeCompare(String(y.caminho))),
+      pessoas,
+      vinculos,
+      acessos: a.data || [],
+      convites: cv.data || [],
+      saques: (sq.data || []).sort((x, y) => String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
+      contratos: ct.data || [],
+      eu,
+      sit
+    });
+  };
+  useEffect(() => {
+    carregar();
+  }, []);
+  const rodar = async (nome, args, okTexto) => {
+    setAviso(null);
+    const {
+      data,
+      error
+    } = await sb.rpc(nome, args);
+    if (error) {
+      setAviso({
+        erro: true,
+        texto: error.message || 'Não deu certo.'
+      });
+      return null;
+    }
+    if (okTexto) setAviso({
+      erro: false,
+      texto: okTexto
+    });
+    await carregar();
+    return data ?? true;
+  };
+  if (!d) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      placeItems: 'center',
+      padding: 60
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "spin"
+  }));
+  const U = Object.fromEntries(d.unidades.map(u => [u.id, u]));
+  const raiz = d.unidades.find(u => !u.mae_id);
+  const meus = d.eu ? d.acessos.filter(a => a.pessoa_id === d.eu.id) : [];
+  const pode = (cap, uid_) => {
+    const t = U[uid_];
+    if (!t) return false;
+    return meus.some(a => {
+      const u = U[a.unidade_id];
+      return u && String(t.caminho).startsWith(u.caminho) && (a.capacidades.includes(cap) || a.capacidades.includes('administrar'));
+    });
+  };
+  const podeAlgum = cap => d.unidades.some(u => pode(cap, u.id));
+  const caminhoNome = u => {
+    const ids = String(u.caminho).split('/').filter(Boolean);
+    return ids.map(i => U[i]?.nome).filter(Boolean).slice(1).join(' › ') || u.nome;
+  };
+  const ativo = pid => d.vinculos.find(v => v.pessoa_id === pid && !v.fim);
+  const jogadoresDe = uid_ => d.pessoas.filter(p => p.status !== 'saiu' && ativo(p.id)?.unidade_id === uid_).sort((a, b) => a.nome.localeCompare(b.nome));
+  const nomeDe = pid => d.pessoas.find(p => p.id === pid)?.nome || '—';
+  const urlConvite = t => `${window.location.origin}/?convite=${t}`;
+  const novoLink = async (unidade, pessoa, titulo) => {
+    const t = await rodar('criar_convite', {
+      p_unidade: unidade,
+      p_pessoa: pessoa || null,
+      p_dias: 7,
+      p_usos: null
+    });
+    if (t && typeof t === 'string') setLink({
+      titulo,
+      url: urlConvite(t)
+    });
+  };
+  const btn = {
+    padding: '7px 11px',
+    borderRadius: 10,
+    border: `1.5px solid ${C.border}`,
+    background: C.surface,
+    color: P,
+    fontWeight: 700,
+    fontSize: 12.5,
+    cursor: 'pointer'
+  };
+  const tit = {
+    fontFamily: "'Space Grotesk',sans-serif",
+    fontSize: 20,
+    fontWeight: 600,
+    margin: '0 0 10px'
+  };
+  const meusSaques = d.eu ? d.saques.filter(s => s.pessoa_id === d.eu.id) : [];
+  const paraDecidir = d.saques.filter(s => (!d.eu || s.pessoa_id !== d.eu.id) && pode('aprovar_saques', s.unidade_id));
+  const contratoRaiz = raiz ? d.contratos.filter(c => c.unidade_id === raiz.id && !c.pessoa_id).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0] : null;
+  const Unidade = ({
+    u,
+    nivel
+  }) => {
+    const filhas = d.unidades.filter(x => x.mae_id === u.id);
+    const js = jogadoresDe(u.id);
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginLeft: nivel ? 14 : 0,
+        borderLeft: nivel ? `2px solid ${C.border}` : 'none',
+        paddingLeft: nivel ? 12 : 0,
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 15
+      }
+    }, u.nome, u.rotulo && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 600,
+        fontSize: 12,
+        color: C.inkSoft
+      }
+    }, " \xB7 ", u.rotulo)), pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => setPerg({
+        label: 'Convidar jogador',
+        hint: `Nome do jogador (como ele aparece nos lançamentos). Entra em ${u.nome}; depois é só mandar o link pessoal.`,
+        kind: 'text',
+        valor: '',
+        onSave: async nome => {
+          setPerg(null);
+          if (!nome) return;
+          const p = await rodar('convidar_jogador', {
+            p_unidade: u.id,
+            p_nome: nome,
+            p_nick_ps: null,
+            p_id_gg: null
+          });
+          if (p && typeof p === 'string') await novoLink(u.id, p, `Link pessoal de ${nome}`);
+        }
+      })
+    }, "+ Jogador"), pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => novoLink(u.id, null, `Link de ${u.nome} (vale 7 dias, várias pessoas)`)
+    }, "Link da reta"), pode('administrar', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => setPerg({
+        label: `Nova unidade dentro de ${u.nome}`,
+        hint: 'Ex.: Pandeiro, Reco-reco, Turma A.',
+        kind: 'text',
+        valor: '',
+        onSave: async nome => {
+          setPerg(null);
+          if (nome) await rodar('criar_unidade', {
+            p_mae: u.id,
+            p_nome: nome,
+            p_rotulo: null,
+            p_ordem: 0
+          }, `${nome} criada.`);
+        }
+      })
+    }, "+ Unidade")), js.map(p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      "data-jogador": p.nome,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        padding: '8px 0',
+        borderBottom: `1px solid ${C.border}`
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 140,
+        fontSize: 14,
+        fontWeight: 600
+      }
+    }, p.nome, p.status === 'convidado' && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11.5,
+        fontWeight: 700,
+        color: C.gold
+      }
+    }, " \xB7 sem conta ainda")), p.status === 'convidado' && pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => novoLink(u.id, p.id, `Link pessoal de ${p.nome}`)
+    }, "Link pessoal"), pode('aprovar_saques', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => setPerg({
+        label: `Capital mandado pra ${p.nome}`,
+        hint: 'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',
+        kind: 'money',
+        valor: 0,
+        onSave: async v => {
+          setPerg(null);
+          if (v) await rodar('registrar_aporte', {
+            p_pessoa: p.id,
+            p_valor: v,
+            p_data: todayISO(),
+            p_obs: null
+          }, `Capital de ${fmt(v)} registrado pra ${p.nome}.`);
+        }
+      })
+    }, "Capital"), pode('promover', u.id) && /*#__PURE__*/React.createElement("button", {
+      style: btn,
+      onClick: () => {
+        const destinos = d.unidades.filter(x => x.id !== u.id && pode('promover', x.id));
+        if (!destinos.length) return setAviso({
+          erro: true,
+          texto: 'Você não tem outra unidade pra onde mover.'
+        });
+        setPerg({
+          label: `Mover ${p.nome}`,
+          hint: 'O histórico até hoje fica na unidade atual; daqui pra frente conta na nova.',
+          kind: 'select',
+          opts: destinos.map(caminhoNome),
+          valor: caminhoNome(destinos[0]),
+          onSave: async nome => {
+            setPerg(null);
+            const alvo = destinos.find(x => caminhoNome(x) === nome);
+            if (alvo) await rodar('mover_jogador', {
+              p_alvo: p.id,
+              p_destino: alvo.id,
+              p_motivo: 'promocao'
+            }, `${p.nome} agora está em ${alvo.nome}.`);
+          }
+        });
+      }
+    }, "Mover"), pode('gerir_pessoas', u.id) && p.user_id !== uid && /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btn,
+        color: C.red
+      },
+      onClick: () => setPerg({
+        label: `Saída de ${p.nome}`,
+        hint: 'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',
+        kind: 'text',
+        valor: '',
+        onSave: async t => {
+          setPerg(null);
+          if (String(t).trim().toUpperCase() === 'SAIU') await rodar('registrar_saida', {
+            p_alvo: p.id
+          }, `Saída de ${p.nome} registrada.`);
+        }
+      })
+    }, "Sa\xEDda"))), filhas.map(f => /*#__PURE__*/React.createElement(Unidade, {
+      key: f.id,
+      u: f,
+      nivel: nivel + 1
+    })));
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ftfade",
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, aviso && /*#__PURE__*/React.createElement("div", {
+    "data-time-aviso": aviso.erro ? 'erro' : 'ok',
+    style: {
+      background: aviso.erro ? C.redSoft : C.greenSoft,
+      color: aviso.erro ? C.red : C.greenMid,
+      borderRadius: 12,
+      padding: '11px 14px',
+      fontSize: 13.5,
+      fontWeight: 600
+    }
+  }, aviso.texto), link && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 15,
+      marginBottom: 6
+    }
+  }, link.titulo), /*#__PURE__*/React.createElement("input", {
+    readOnly: true,
+    "data-link-convite": true,
+    value: link.url,
+    style: {
+      ...inputStyle,
+      fontSize: 13
+    },
+    onFocus: e => e.target.select()
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btn,
+      background: P,
+      color: '#fff',
+      border: 'none'
+    },
+    onClick: () => {
+      try {
+        navigator.clipboard.writeText(link.url);
+        setAviso({
+          erro: false,
+          texto: 'Link copiado. Manda pro jogador pelo Discord ou WhatsApp.'
+        });
+      } catch (e) {}
+    }
+  }, "Copiar link"), /*#__PURE__*/React.createElement("button", {
+    style: btn,
+    onClick: () => setLink(null)
+  }, "Fechar")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      marginTop: 8,
+      lineHeight: 1.5
+    }
+  }, "O link aparece s\xF3 agora: guarde ou mande j\xE1. Quem abrir cria a conta e entra direto no time.")), d.sit && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tit
+  }, "Minha conta no time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: labelStyle
+  }, "MU (capital do time)"), /*#__PURE__*/React.createElement("div", {
+    "data-mu": true,
+    style: {
+      fontWeight: 800,
+      fontSize: 20
+    }
+  }, fmt(d.sit.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: labelStyle
+  }, "Lucro j\xE1 sacado"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 20
+    }
+  }, fmt(d.sit.lifetime)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 8
+    }
+  }, "Contrato: ", faixasTexto(d.sit.contrato)), /*#__PURE__*/React.createElement("button", {
+    disabled: meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)) || !d.sit.contrato,
+    onClick: () => setSaqueAberto(true),
+    style: {
+      marginTop: 14,
+      padding: '12px 18px',
+      borderRadius: 13,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 14.5,
+      cursor: 'pointer',
+      opacity: meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)) || !d.sit.contrato ? .5 : 1
+    }
+  }, "Pedir saque"), meusSaques.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, meusSaques.slice(0, 6).map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      padding: '8px 0',
+      borderTop: `1px solid ${C.border}`,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 160
+    }
+  }, dataBR(s.solicitado_em), " \xB7 MU ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 time ", fmt(s.total_time), ", voc\xEA ", fmt(s.parte_jogador)), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      color: s.status === 'pago' ? C.greenMid : s.status === 'recusado' ? C.red : C.gold
+    }
+  }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '', s.motivo ? ` · ${s.motivo}` : ''), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+    style: btn,
+    onClick: () => rodar('cancelar_saque', {
+      p_id: s.id
+    }, 'Pedido cancelado.')
+  }, "Cancelar"))))), paraDecidir.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tit
+  }, "Saques do time"), paraDecidir.slice(0, 30).map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    "data-saque": nomeDe(s.pessoa_id),
+    style: {
+      padding: '10px 0',
+      borderTop: `1px solid ${C.border}`,
+      fontSize: 13.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700
+    }
+  }, nomeDe(s.pessoa_id), " \xB7 ", dataBR(s.solicitado_em), " \xB7 ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: s.status === 'pago' ? C.greenMid : s.status === 'recusado' ? C.red : C.gold
+    }
+  }, SAQUE_ROTULO[s.status])), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.inkSoft,
+      marginTop: 3,
+      lineHeight: 1.5
+    }
+  }, "Banca ", fmt(s.banca), " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.ink
+    }
+  }, "time recebe ", fmt(s.total_time)), " \xB7 banca depois ", fmt(s.banca_depois), s.observacao ? ` · "${s.observacao}"` : ''), s.status === 'pago' && Number(s.diferenca) !== 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 700,
+      marginTop: 3
+    }
+  }, "Recebido ", fmt(s.recebido), ": diferen\xE7a de ", fmt(s.diferenca)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginTop: 8,
+      flexWrap: 'wrap'
+    }
+  }, s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btn,
+      background: P,
+      color: '#fff',
+      border: 'none'
+    },
+    onClick: () => rodar('decidir_saque', {
+      p_id: s.id,
+      p_aprovar: true,
+      p_motivo: null
+    }, 'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')
+  }, "Aprovar"), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btn,
+      color: C.red
+    },
+    onClick: () => setPerg({
+      label: 'Motivo da recusa',
+      hint: 'O jogador vê este motivo.',
+      kind: 'text',
+      valor: '',
+      onSave: async m => {
+        setPerg(null);
+        if (m) await rodar('decidir_saque', {
+          p_id: s.id,
+          p_aprovar: false,
+          p_motivo: m
+        }, 'Saque recusado.');
+      }
+    })
+  }, "Recusar"), s.status === 'aprovado' && /*#__PURE__*/React.createElement("button", {
+    style: btn,
+    onClick: () => setPerg({
+      label: 'Quanto o time recebeu?',
+      hint: `Esperado: ${fmt(s.total_time)}. Some tudo que chegou (todas as carteiras).`,
+      kind: 'money',
+      valor: s.total_time,
+      onSave: async v => {
+        setPerg(null);
+        const r = await rodar('confirmar_recebimento', {
+          p_id: s.id,
+          p_recebido: v
+        });
+        if (r && typeof r === 'object') setAviso({
+          erro: Number(r.diferenca) !== 0,
+          texto: Number(r.diferenca) === 0 ? 'Recebimento confirmado, sem diferença.' : `Recebimento confirmado com diferença de ${fmt(r.diferenca)} (esperado ${fmt(r.total_time)}, recebido ${fmt(r.recebido)}).`
+        });
+      }
+    })
+  }, "Confirmar recebimento"))))), raiz && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tit
+  }, "Estrutura do time"), meus.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginBottom: 4
+    }
+  }, "Seu acesso: ", meus.map(a => `${U[a.unidade_id]?.nome || '?'} (${a.capacidades.map(c => CAPS_ROTULO[c] || c).join(', ')})`).join(' · ')), /*#__PURE__*/React.createElement(Unidade, {
+    u: raiz,
+    nivel: 0
+  })), raiz && pode('configurar_regras', raiz.id) && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tit
+  }, "Contrato do time"), /*#__PURE__*/React.createElement("div", {
+    "data-contrato": true,
+    style: {
+      fontSize: 13.5,
+      marginBottom: 10
+    }
+  }, faixasTexto(contratoRaiz?.faixas)), /*#__PURE__*/React.createElement("button", {
+    style: btn,
+    onClick: () => setPerg({
+      label: 'Contrato: % do jogador',
+      hint: 'Formato: limite;%até;%acima — ex.: 10000;35;40 = 35% pro jogador até 10 mil sacados de lucro, 40% depois. A faixa conta só o lucro já sacado (não a devolução de capital).',
+      kind: 'text',
+      valor: '10000;35;40',
+      onSave: async t => {
+        setPerg(null);
+        const [lim, a, b] = String(t).split(';').map(x => parseValor(x));
+        if (!(lim > 0 && a >= 0 && a <= 100 && b >= 0 && b <= 100)) return setAviso({
+          erro: true,
+          texto: 'Use o formato 10000;35;40.'
+        });
+        await rodar('definir_contrato', {
+          p_unidade: raiz.id,
+          p_pessoa: null,
+          p_faixas: [{
+            ate: lim,
+            jogador: a / 100
+          }, {
+            ate: null,
+            jogador: b / 100
+          }],
+          p_inicio: todayISO()
+        }, 'Contrato salvo.');
+      }
+    })
+  }, "Definir contrato")), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+    label: perg.label,
+    hint: perg.hint,
+    kind: perg.kind,
+    opts: perg.opts,
+    currentValue: perg.valor,
+    onClose: () => setPerg(null),
+    onSave: perg.onSave
+  }), saqueAberto && d.eu && /*#__PURE__*/React.createElement(SaqueModal, {
+    pessoa: d.eu.id,
+    onClose: () => setSaqueAberto(false),
+    onPedir: async a => {
+      const r = await rodar('solicitar_saque', a, 'Pedido de saque enviado. Aguarde a aprovação do time.');
+      if (r) setSaqueAberto(false);
+    }
+  }));
+}
+function SaqueModal({
+  pessoa,
+  onClose,
+  onPedir
+}) {
+  const [f, setF] = useState({
+    banca: '',
+    devolucao: '',
+    cashout: '',
+    obs: ''
+  });
+  const [prev, setPrev] = useState(null);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const b = parseValor(f.banca),
+      dv = parseValor(f.devolucao) || 0,
+      co = parseValor(f.cashout) || 0;
+    if (!(b > 0) || !(dv + co > 0)) {
+      setPrev(null);
+      setErr('');
+      return;
+    }
+    const t = setTimeout(async () => {
+      const {
+        data,
+        error
+      } = await sb.rpc('simular_saque', {
+        p_pessoa: pessoa,
+        p_banca: b,
+        p_devolucao: dv,
+        p_cashout: co
+      });
+      if (error) {
+        setPrev(null);
+        setErr(error.message || 'Valores inválidos.');
+      } else {
+        setPrev(data);
+        setErr('');
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [f.banca, f.devolucao, f.cashout]);
+  const campo = (k, rot, dica) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, rot), /*#__PURE__*/React.createElement("input", {
+    style: inputStyle,
+    inputMode: "decimal",
+    value: f[k],
+    placeholder: dica,
+    onChange: e => setF(x => ({
+      ...x,
+      [k]: e.target.value
+    }))
+  }));
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    className: "ftfade",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 460,
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12,
+      maxHeight: '92vh',
+      overflowY: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Pedir saque"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), campo('banca', 'Banca atual (todas as salas)', 'ex.: 625'), campo('devolucao', 'Devolver de MU', 'ex.: 310'), campo('cashout', 'Cashout (lucro que você quer sacar)', 'ex.: 165'), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "Observa\xE7\xE3o (opcional)"), /*#__PURE__*/React.createElement("input", {
+    style: inputStyle,
+    value: f.obs,
+    placeholder: "ex.: 50 saindo da PS pra Bullet",
+    onChange: e => setF(x => ({
+      ...x,
+      obs: e.target.value
+    }))
+  })), err && /*#__PURE__*/React.createElement("div", {
+    "data-saque-erro": true,
+    style: {
+      color: C.red,
+      fontSize: 13,
+      fontWeight: 600
+    }
+  }, err), prev && /*#__PURE__*/React.createElement("div", {
+    "data-saque-previa": true,
+    style: {
+      background: C.plumSoft,
+      borderRadius: 12,
+      padding: '12px 14px',
+      fontSize: 13.5,
+      lineHeight: 1.6
+    }
+  }, "Voc\xEA fica com ", /*#__PURE__*/React.createElement("b", null, fmt(prev.parte_jogador)), " \xB7 time recebe ", /*#__PURE__*/React.createElement("b", null, fmt(prev.total_time)), " (", fmt(prev.devolucao), " de MU + ", fmt(prev.parte_time), " do cashout)", /*#__PURE__*/React.createElement("br", null), "Banca depois: ", fmt(prev.banca_depois), " \xB7 MU depois: ", fmt(prev.mu_depois)), /*#__PURE__*/React.createElement("button", {
+    disabled: !prev,
+    onClick: () => onPedir({
+      p_banca: parseValor(f.banca),
+      p_devolucao: parseValor(f.devolucao) || 0,
+      p_cashout: parseValor(f.cashout) || 0,
+      p_carteiras: null,
+      p_obs: f.obs.trim() || null
+    }),
+    style: {
+      padding: '15px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 16,
+      cursor: prev ? 'pointer' : 'default',
+      opacity: prev ? 1 : .5
+    }
+  }, "Pedir saque")));
+}
 function Dashboard({
   session,
   profile
@@ -6343,6 +7126,7 @@ function Dashboard({
   const [srvStatus, setSrvStatus] = useState(null); // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup, setNeedsSetup] = useState(false); // solo sem config ainda -> onboarding de 3 passos
   const [conviteErro, setConviteErro] = useState(null); // convite de time recusado pelo servidor (vencido, conta em outro lugar…)
+  const [temTime, setTemTime] = useState(false); // workspace com estrutura de time (fase 1) -> aba Time
   const [askTour, setAskTour] = useState(false); // convite pro tour guiado (1º acesso)
   const [tour, setTour] = useState(0); // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
@@ -6543,6 +7327,13 @@ function Dashboard({
       })]);
       const myWs = wsr.data && wsr.data[0] || null;
       setWs(myWs);
+      // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
+      try {
+        const {
+          data: un
+        } = await sb.from('unidade').select('id').limit(1);
+        setTemTime(!!(un && un.length));
+      } catch (e) {}
       const ehSolo = myWs ? myWs.kind === 'solo' : !!(profile && (profile.role === 'guest' || profile.role === 'solo'));
       // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
       // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
@@ -8014,7 +8805,12 @@ function Dashboard({
     id: 'config',
     label: 'Ajustes',
     Icon: IcoGear
-  }].filter(n => !solo || n.id !== 'saques'); // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
+  }].filter(n => !solo || n.id !== 'saques');
+  if (temTime) nav.splice(nav.length - 1, 0, {
+    id: 'time',
+    label: 'Time',
+    Icon: IcoShield
+  }); // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
 
   /* ---------- mensal ---------- */
   // O mês é o mês do CALENDÁRIO em que o dia foi jogado: lançou dia 28/07, conta em julho.
@@ -11440,7 +12236,9 @@ function Dashboard({
         }, net >= 0 ? '+' : '−', fmt(Math.abs(net)))
       });
     }
-  })), view === 'config' && /*#__PURE__*/React.createElement("div", {
+  })), view === 'time' && temTime && /*#__PURE__*/React.createElement(TimeTela, {
+    session: session
+  }), view === 'config' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade"
   }, /*#__PURE__*/React.createElement(Card, {
     style: {
