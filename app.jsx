@@ -900,6 +900,99 @@ function hhInsights(d){
 }
 
 /* ---------- ícones ---------- */
+/* ---------- planilha pessoal do Samba (.xlsx) -> abertura do jogador no time ----------
+   Funções puras (testadas em test/unit/planilha.test.cjs). O .xlsx é um zip de XML; o app abre com o fflate
+   e estas funções leem os valores JÁ CALCULADOS que a planilha salvou (não reexecutam fórmula).
+   Os valores são achados pelo RÓTULO (MakeUp, Cashout, Contrato, %, Bankroll, Lifetime), não por posição fixa. */
+const xmlTexto=s=>String(s??'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+  .replace(/&#(\d+);/g,(m,n)=>String.fromCharCode(+n)).replace(/&#x([0-9a-f]+);/gi,(m,n)=>String.fromCharCode(parseInt(n,16))).replace(/&amp;/g,'&');
+function xlsxShared(xml){
+  const out=[]; const re=/<si>([\s\S]*?)<\/si>/g; let m;
+  while((m=re.exec(String(xml||'')))) out.push(xmlTexto((m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g)||[]).map(t=>t.replace(/<t[^>]*>|<\/t>/g,'')).join('')));
+  return out;
+}
+// caminho da aba pelo nome (workbook.xml + rels); sem nome, a primeira aba
+function xlsxAba(workbookXml,relsXml,nome){
+  const abas=[...String(workbookXml||'').matchAll(/<sheet\b[^>]*>/g)].map(m=>({nome:xmlTexto((m[0].match(/name="([^"]*)"/)||[])[1]),rid:(m[0].match(/r:id="([^"]*)"/)||[])[1]}));
+  const aba=abas.find(a=>nome&&a.nome.toLowerCase()===String(nome).toLowerCase())||abas[0];
+  if(!aba) return null;
+  const rel=[...String(relsXml||'').matchAll(/<Relationship\b[^>]*>/g)].map(m=>m[0]).find(r=>r.includes(`Id="${aba.rid}"`));
+  const alvo=rel&&(rel.match(/Target="([^"]*)"/)||[])[1];
+  return alvo?(alvo.startsWith('/')?alvo.slice(1):'xl/'+alvo.replace(/^\.\//,'')):null;
+}
+// {A1: valor} com o valor salvo de cada célula (texto, número ou booleano)
+function xlsxCelulas(sheetXml,shared){
+  const out={}; const re=/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g; let m;
+  while((m=re.exec(String(sheetXml||'')))){
+    const at=m[1], corpo=m[2]||''; const ref=(at.match(/\br="([A-Z]+\d+)"/)||[])[1]; if(!ref) continue;
+    const t=(at.match(/\bt="([^"]*)"/)||[])[1]; const v=(corpo.match(/<v>([\s\S]*?)<\/v>/)||[])[1];
+    let val=null;
+    if(t==='s') val=v!=null?(shared||[])[+v]??null:null;
+    else if(t==='inlineStr') val=xmlTexto((corpo.match(/<t[^>]*>([\s\S]*?)<\/t>/g)||[]).map(x=>x.replace(/<t[^>]*>|<\/t>/g,'')).join(''));
+    else if(t==='str'||t==='e') val=v!=null?xmlTexto(v):null;
+    else if(t==='b') val=v==='1';
+    else if(v!=null&&v!=='') val=Number(v);
+    if(val!==null&&val!=='') out[ref]=val;
+  }
+  return out;
+}
+const xlsxCol=ref=>ref.replace(/\d+/g,''); const xlsxLin=ref=>+ref.replace(/[A-Z]+/g,'');
+const xlsxColNum=c=>[...c].reduce((n,ch)=>n*26+ch.charCodeAt(0)-64,0);
+const xlsxColLetra=n=>{ let s=''; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; };
+const xlsxDesloca=(ref,dc,dl)=>xlsxColLetra(xlsxColNum(xlsxCol(ref))+dc)+(xlsxLin(ref)+dl);
+const xlsxData=n=>{ if(typeof n!=='number'||!isFinite(n)||n<20000||n>80000) return null; const d=new Date(Date.UTC(1899,11,30)+Math.round(n*86400000)); return d.toISOString().slice(0,10); };
+const numPlanilha=v=>typeof v==='number'?v:(v==null||v===''?0:parseValor(String(v)));
+// "35% até 10k" -> {jogador:0.35, ate:10000}
+function faixaPlanilha(txt){
+  const m=String(txt||'').toLowerCase().replace(/\s+/g,' ').match(/(\d+(?:[.,]\d+)?)\s*%(?:\s*(?:até|ate)\s*\$?\s*(\d+(?:[.,]\d+)?)\s*(k|mil)?)?/);
+  if(!m) return null;
+  const pct=parseValor(m[1])/100; let ate=m[2]?parseValor(m[2]):null; if(ate!=null&&m[3]) ate*=1000;
+  return pct>0&&pct<=1?{jogador:pct,ate}:null;
+}
+const SAMBA_TIPOS=['semanal','reentry semanal','turbo/fast','reentry turbo','sunday','reentry sunday','extra','reentry extras','sng'];
+function lerPlanilhaSamba(cel){
+  const avisos=[]; const refs=Object.keys(cel);
+  const acha=rot=>refs.filter(r=>typeof cel[r]==='string'&&cel[r].trim().toLowerCase()===rot.toLowerCase()).sort((a,b)=>xlsxLin(a)-xlsxLin(b)||xlsxColNum(xlsxCol(a))-xlsxColNum(xlsxCol(b)))[0];
+  const abaixo=rot=>{ const r=acha(rot); return r?cel[xlsxDesloca(r,0,1)]:undefined; };
+  const direita=rot=>{ const r=acha(rot); return r?cel[xlsxDesloca(r,1,0)]:undefined; };
+  const rMk=acha('MakeUp');
+  if(!rMk) return {erro:'Não achei a célula "MakeUp". Essa é a planilha pessoal do Samba (aba Jogador)?'};
+  const makeup=numPlanilha(abaixo('MakeUp')), cashout=numPlanilha(abaixo('Cashout'));
+  // salas: rótulos na linha do MakeUp, à esquerda dele; saldo na linha de baixo
+  const saldos=[]; const lin=xlsxLin(rMk), colMk=xlsxColNum(xlsxCol(rMk));
+  for(let c=1;c<colMk;c++){ const rot=cel[xlsxColLetra(c)+lin]; if(rot==null||rot==='') continue;
+    saldos.push({sala:String(rot).trim(),saldo:numPlanilha(cel[xlsxColLetra(c)+(lin+1)])}); }
+  const banca=Math.round(saldos.reduce((a,b)=>a+b.saldo,0)*100)/100;
+  const bancaPlanilha=direita('Bankroll'); const lifetimePlanilha=direita('Lifetime');
+  const lucro=Math.round((banca-makeup)*100)/100; const lifetime=Math.round((cashout+lucro)*100)/100;
+  if(typeof bancaPlanilha==='number'&&Math.abs(bancaPlanilha-banca)>0.01) avisos.push(`Bankroll da planilha (${bancaPlanilha}) diferente da soma das salas (${banca}).`);
+  if(typeof lifetimePlanilha==='number'&&Math.abs(lifetimePlanilha-lifetime)>0.01) avisos.push(`Lifetime da planilha (${lifetimePlanilha}) diferente de Cashout + Profit (${lifetime}).`);
+  const contratoRaw=abaixo('Contrato'); const contratoTexto=abaixo('%');
+  const faixa=faixaPlanilha(contratoTexto); if(contratoTexto&&!faixa) avisos.push(`Não entendi o percentual "${contratoTexto}".`);
+  // nome na primeira célula com texto; apelido e data de atualização logo abaixo dos saldos
+  const nomeRef=refs.filter(r=>typeof cel[r]==='string').sort((a,b)=>xlsxLin(a)-xlsxLin(b)||xlsxColNum(xlsxCol(a))-xlsxColNum(xlsxCol(b)))[0];
+  const nick=cel['A'+(lin+2)]; const atualizado=xlsxData(cel['A'+(lin+3)]);
+  // grade: coluna dos tipos (Semanal, Sunday…); sala à esquerda (célula mesclada: vale até a próxima); 3 colunas de categoria à direita
+  const grade=[]; const primeira=refs.filter(r=>String(cel[r]).trim().toLowerCase()==='semanal').sort((a,b)=>xlsxLin(a)-xlsxLin(b))[0];
+  if(primeira){ const ct=xlsxColNum(xlsxCol(primeira)); let site='', vazias=0;
+    for(let l=xlsxLin(primeira);l<xlsxLin(primeira)+80&&vazias<4;l++){
+      const tipo=cel[xlsxColLetra(ct)+l]; const s=cel[xlsxColLetra(ct-1)+l]; if(typeof s==='string'&&s.trim()) site=s.trim();
+      if(typeof tipo!=='string'||!SAMBA_TIPOS.includes(tipo.trim().toLowerCase())){ vazias++; continue; } vazias=0;
+      const v=k=>{ const x=cel[xlsxColLetra(ct+k)+l]; return x==null?'':String(x).trim(); };
+      grade.push({site,tipo:tipo.trim(),regular:v(1),prog_ko:v(2),hyper:v(3)});
+    } }
+  return {nome:typeof cel[nomeRef]==='string'?cel[nomeRef].trim():'',nick:typeof nick==='string'?nick.trim():'',
+    saldos,banca,makeup,cashout,lucro,lifetime,contrato_fim:xlsxData(contratoRaw),contrato_texto:contratoTexto==null?'':String(contratoTexto),
+    faixa,atualizado_em:atualizado,grade,avisos};
+}
+// .xlsx inteiro (entradas do fflate) -> leitura da planilha
+function lerXlsxSamba(entradas,decod){
+  const txt=k=>entradas[k]?decod(entradas[k]):'';
+  const aba=xlsxAba(txt('xl/workbook.xml'),txt('xl/_rels/workbook.xml.rels'),'Jogador');
+  if(!aba||!entradas[aba]) return {erro:'Não achei a aba "Jogador" na planilha.'};
+  return lerPlanilhaSamba(xlsxCelulas(txt(aba),xlsxShared(txt('xl/sharedStrings.xml'))));
+}
+
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
 const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
@@ -1952,17 +2045,30 @@ function TimeTela({session}){
   const [link,setLink]=useState(null);         // {titulo, url}
   const [perg,setPerg]=useState(null);         // QuickEditModal aberto: {label,hint,kind,opts,valor,onSave}
   const [saqueAberto,setSaqueAberto]=useState(false);
+  const [planilha,setPlanilha]=useState(null);    // planilha do Samba lida no aparelho, antes de enviar
+  const lerPlanilha=async file=>{
+    setAviso(null);
+    if(!file) return;
+    if(!/\.xlsx$/i.test(file.name)) return setAviso({erro:true,texto:'Mande o arquivo .xlsx (no Google Planilhas: Arquivo → Fazer download → Microsoft Excel).'});
+    if(!window.fflate) return setAviso({erro:true,texto:'Leitor de planilha não carregou. Recarregue a página e tente de novo.'});
+    try{
+      const u=new Uint8Array(await file.arrayBuffer());
+      const r=lerXlsxSamba(fflate.unzipSync(u),b=>fflate.strFromU8(b));
+      if(r.erro) return setAviso({erro:true,texto:r.erro});
+      setPlanilha(r);
+    }catch(e){ setAviso({erro:true,texto:'Não consegui abrir essa planilha ('+(e.message||'arquivo inválido')+').'}); }
+  };
   const carregar=async()=>{
     const q=t=>sb.from(t).select('*');
-    const [u,p,v,a,cv,sq,ct]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
-      sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato')]);
+    const [u,p,v,a,cv,sq,ct,ab]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
+      sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
     if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data; }
     setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
       acessos:a.data||[],convites:cv.data||[],saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
-      contratos:ct.data||[],eu,sit});
+      contratos:ct.data||[],aberturas:ab.data||[],eu,sit});
   };
   useEffect(()=>{ carregar(); },[]);
   const rodar=async(nome,args,okTexto)=>{
@@ -1988,6 +2094,9 @@ function TimeTela({session}){
   const btn={padding:'7px 11px',borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:12.5,cursor:'pointer'};
   const tit={fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 10px'};
   const meusSaques=d.eu?d.saques.filter(s=>s.pessoa_id===d.eu.id):[];
+  const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
+  const paraConferir=d.aberturas.filter(a=>a.status==='enviada'&&(!d.eu||a.pessoa_id!==d.eu.id)&&pode('aprovar_saques',a.unidade_id));
+  const minhaGrade=(minhaAbertura?.planilha?.grade)||[];
   const paraDecidir=d.saques.filter(s=>(!d.eu||s.pessoa_id!==d.eu.id)&&pode('aprovar_saques',s.unidade_id));
   const contratoRaiz=raiz?d.contratos.filter(c=>c.unidade_id===raiz.id&&!c.pessoa_id).sort((a,b)=>String(b.criado_em).localeCompare(String(a.criado_em)))[0]:null;
 
@@ -2037,6 +2146,13 @@ function TimeTela({session}){
         <div><div style={labelStyle}>Lucro já sacado</div><div style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.lifetime)}</div></div>
       </div>
       <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
+      {minhaAbertura?.status==='confirmada'
+        ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha do Samba conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
+        :<div style={{marginTop:10}}>
+          {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
+          <label style={{...btn,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar minha planilha do Samba'}
+            <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
+        </div>}
       <button disabled={meusSaques.some(s=>['solicitado','aprovado'].includes(s.status))||!d.sit.contrato} onClick={()=>setSaqueAberto(true)}
         style={{marginTop:14,padding:'12px 18px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer',opacity:meusSaques.some(s=>['solicitado','aprovado'].includes(s.status))||!d.sit.contrato?.5:1}}>Pedir saque</button>
       {meusSaques.length>0&&<div style={{marginTop:14}}>{meusSaques.slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
@@ -2061,6 +2177,32 @@ function TimeTela({session}){
       </div>)}
     </Card>}
 
+    {paraConferir.length>0&&<Card style={{padding:20}}>
+      <h3 style={tit}>Planilhas pra conferir</h3>
+      {paraConferir.map(a=>{ const pl=a.planilha||{}; return <div key={a.id} data-conferir={nomeDe(a.pessoa_id)} style={{padding:'10px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+        <div style={{fontWeight:700}}>{nomeDe(a.pessoa_id)} · enviada {dataBR(a.enviado_em)}{pl.atualizado_em?` · planilha de ${dataBR(pl.atualizado_em)}`:''}</div>
+        <div style={{color:C.inkSoft,marginTop:3,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
+        {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
+        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+          <button style={{...btn,background:P,color:'#fff',border:'none'}} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
+          <button style={btn} onClick={()=>setPerg({label:`MakeUp de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU (capital do time com o jogador).',kind:'money',valor:a.mu,
+            onSave:mu=>setPerg({label:`Cashout de ${nomeDe(a.pessoa_id)}`,hint:'Lucro que ele já sacou no time (conta pra faixa do contrato).',kind:'money',valor:a.cashout,
+              onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
+        </div>
+      </div>; })}
+    </Card>}
+
+    {minhaGrade.length>0&&<Card style={{padding:20}}>
+      <h3 style={tit}>Minha grade</h3>
+      <div style={{overflowX:'auto'}}><table data-grade style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
+        <thead><tr>{['Sala','Tipo','Regular','Prog KO','Hyper'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 6px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+        <tbody>{minhaGrade.map((g,i)=><tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
+          <td style={{padding:'6px',fontWeight:700}}>{i===0||minhaGrade[i-1].site!==g.site?g.site:''}</td><td style={{padding:'6px'}}>{g.tipo}</td>
+          <td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.regular||'—'}</td><td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.prog_ko||'—'}</td><td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.hyper||'—'}</td></tr>)}</tbody>
+      </table></div>
+      <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
+    </Card>}
+
     {raiz&&<Card style={{padding:20}}>
       <h3 style={tit}>Estrutura do time</h3>
       {meus.length>0&&<div style={{fontSize:12.5,color:C.inkSoft,marginBottom:4}}>Seu acesso: {meus.map(a=>`${U[a.unidade_id]?.nome||'?'} (${a.capacidades.map(c=>CAPS_ROTULO[c]||c).join(', ')})`).join(' · ')}</div>}
@@ -2077,7 +2219,35 @@ function TimeTela({session}){
     </Card>}
 
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+    {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
     {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
+  </div>;
+}
+function PlanilhaModal({p,onClose,onEnviar}){
+  const [busy,setBusy]=useState(false);
+  const linha=(rot,val,forte)=><div style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderBottom:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rot}</span><b style={{color:forte?C.ink:C.inkSoft}}>{val}</b></div>;
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-planilha-previa className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:10,maxHeight:'92vh',overflowY:'auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Conferir antes de enviar</h3>
+        <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      <div style={{fontSize:13,color:C.inkSoft}}>{p.nome}{p.atualizado_em?` · planilha de ${dataBR(p.atualizado_em)}`:''}</div>
+      <div>
+        {(p.saldos||[]).filter(s=>s.saldo).map(s=><React.Fragment key={s.sala}>{linha(s.sala,fmt(s.saldo))}</React.Fragment>)}
+        {linha('Banca (soma das salas)',fmt(p.banca),true)}
+        {linha('MakeUp (capital do time)',fmt(p.makeup),true)}
+        {linha('Lucro na banca',fmt(p.lucro))}
+        {linha('Cashout (lucro já sacado)',fmt(p.cashout),true)}
+        {linha('Lifetime',fmt(p.lifetime))}
+        {linha('Contrato',`${p.contrato_texto||'—'}${p.contrato_fim?` · até ${dataBR(p.contrato_fim)}`:''}`)}
+        {linha('Grade',`${(p.grade||[]).length} linhas`)}
+      </div>
+      {(p.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:13,fontWeight:600}}>{t}</div>)}
+      <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5}}>O time confere esses valores antes de valer. Depois de conferida, a planilha vira o ponto de partida: os saques e o capital entram por aqui.</div>
+      <button disabled={busy} onClick={async()=>{ setBusy(true); await onEnviar(); setBusy(false); }}
+        style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.6:1}}>Enviar pro time conferir</button>
+    </div>
   </div>;
 }
 function SaqueModal({pessoa,onClose,onPedir}){

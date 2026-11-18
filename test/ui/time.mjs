@@ -79,6 +79,38 @@ await cenario('admin', estrutura({
   ok(cv && cv.p_unidade === 'u3' && cv.p_pessoa === null, 'link pedido pra unidade certa');
 });
 
+// 3) jogador importa a planilha do Samba: lê no aparelho, mostra a prévia e envia pro time conferir
+await cenario('importar planilha', estrutura({ __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'sem' }, enviar_planilha: 'ab1' } }), async (page, escritas) => {
+  await abrirTime(page);
+  await page.locator('[data-importar-planilha]').setInputFiles(new URL('../fixtures/planilha_samba_exemplo.xlsx', import.meta.url).pathname);
+  await page.locator('[data-planilha-previa]').waitFor({ timeout: 5000 });
+  const t = await page.locator('[data-planilha-previa]').innerText();
+  ok(/200,00/.test(t) && /500,00/.test(t) && /250,00/.test(t) && /35% até 10k/.test(t) && /4 linhas/.test(t), 'prévia mostra MakeUp, Cashout, banca, contrato e grade');
+  await page.getByRole('button', { name: 'Enviar pro time conferir' }).click();
+  await page.waitForTimeout(500);
+  const env = rpc(escritas, 'enviar_planilha').pop();
+  ok(env && env.p_planilha.makeup === 200 && env.p_planilha.cashout === 500 && env.p_planilha.grade.length === 4, 'enviou a leitura completa');
+});
+
+// 4) quem aprova confere a planilha de outro jogador; jogador vê a própria grade
+await cenario('conferir planilha', estrutura({
+  acesso: [{ id: 'a1', pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
+  abertura: [
+    { id: 'ab1', pessoa_id: 'p3', unidade_id: 'u3', status: 'enviada', mu: 200, cashout: 500, enviado_em: '2026-11-18T10:00:00Z', planilha: { banca: 250, lifetime: 550, contrato_texto: '35% até 10k', avisos: [] } },
+    { id: 'ab2', pessoa_id: 'p1', unidade_id: 'u3', status: 'confirmada', mu: 0, cashout: 0, enviado_em: '2026-11-17T10:00:00Z', confirmado_em: '2026-11-17T12:00:00Z',
+      planilha: { grade: [{ site: 'GGpoker', tipo: 'Semanal', regular: 'até $2,50', prog_ko: 'até $3,20', hyper: 'Até $2' }] } },
+  ],
+  __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'confirmada' }, conferir_abertura: null } }), async (page, escritas) => {
+  await abrirTime(page);
+  ok(/Planilhas pra conferir/.test(await page.locator('body').innerText()), 'lista de planilhas pra conferir');
+  await page.locator('[data-conferir="Maria"]').getByRole('button', { name: 'Conferir como está' }).click();
+  await page.waitForTimeout(400);
+  const c = rpc(escritas, 'conferir_abertura').pop();
+  ok(c && c.p_pessoa === 'p3' && c.p_mu === 200 && c.p_cashout === 500, 'confere com os valores da planilha');
+  ok(/até \$3,20/.test(await page.locator('[data-grade]').innerText()), 'jogador vê a própria grade');
+  ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida');
+});
+
 // 3) sem estrutura (solo/pool antigo): sem aba Time
 await cenario('sem estrutura', dbBase(), async (page) => {
   await page.getByRole('button', { name: /^Ajustes$/ }).first().waitFor({ timeout: 15000 });
