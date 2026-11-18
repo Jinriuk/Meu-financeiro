@@ -2,7 +2,7 @@
 -- GrinderBank · schema public GERADO (não edite à mão)
 -- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
 -- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
--- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118120100.
+-- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118130000.
 -- ============================================================
 --
 -- PostgreSQL database dump
@@ -138,6 +138,64 @@ end $_$;
 
 
 --
+-- Name: cancelar_saque(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancelar_saque(p_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  update public.saque s set status = 'cancelado', decidido_em = now(), decidido_por = auth.uid()
+   where s.id = p_id and s.status = 'solicitado'
+     and s.pessoa_id in (select x.id from public.pessoa x where x.user_id = auth.uid());
+  if not found then raise exception 'só o próprio jogador cancela, e só enquanto está solicitado'; end if;
+end $$;
+
+
+--
+-- Name: confirmar_recebimento(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.confirmar_recebimento(p_id uuid, p_recebido numeric) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare s record; dif numeric;
+begin
+  select * into s from public.saque where id = p_id for update;
+  if s.id is null or not public.pode('aprovar_saques', s.unidade_id) then
+    raise exception 'precisa de "aprovar_saques" na unidade do jogador' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.pessoa where id = s.pessoa_id and user_id = auth.uid()) then
+    raise exception 'ninguém confirma o próprio saque' using errcode = 'insufficient_privilege'; end if;
+  if s.status <> 'aprovado' then raise exception 'só saque aprovado é confirmado (está %)', s.status; end if;
+  if p_recebido is null or p_recebido < 0 then raise exception 'informe quanto o time recebeu'; end if;
+  dif := round(p_recebido - s.total_time, 2);
+  update public.saque set status = 'pago', recebido = round(p_recebido, 2), diferenca = dif, pago_em = now() where id = p_id;
+  return jsonb_build_object('total_time', s.total_time, 'recebido', round(p_recebido, 2), 'diferenca', dif);
+end $$;
+
+
+--
+-- Name: contrato_de(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.contrato_de(p uuid) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select coalesce(
+    (select c.faixas from public.contrato c where c.pessoa_id = p and c.inicio <= current_date order by c.inicio desc, c.criado_em desc limit 1),
+    (select c.faixas from public.contrato c
+       join public.unidade cu on cu.id = c.unidade_id
+       join public.vinculo v on v.pessoa_id = p and v.fim is null
+       join public.unidade pu on pu.id = v.unidade_id
+      where c.pessoa_id is null and c.inicio <= current_date and pu.caminho like cu.caminho || '%'
+      order by length(cu.caminho) desc, c.inicio desc, c.criado_em desc limit 1));
+$$;
+
+
+--
 -- Name: convidar_gestor(uuid, text, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -262,6 +320,28 @@ end $$;
 
 
 --
+-- Name: decidir_saque(uuid, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.decidir_saque(p_id uuid, p_aprovar boolean, p_motivo text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare s record;
+begin
+  select * into s from public.saque where id = p_id for update;
+  if s.id is null or not public.pode('aprovar_saques', s.unidade_id) then
+    raise exception 'precisa de "aprovar_saques" na unidade do jogador' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.pessoa where id = s.pessoa_id and user_id = auth.uid()) then
+    raise exception 'ninguém aprova o próprio saque' using errcode = 'insufficient_privilege'; end if;
+  if s.status <> 'solicitado' then raise exception 'saque não está aguardando decisão (está %)', s.status; end if;
+  if not p_aprovar and coalesce(btrim(p_motivo), '') = '' then raise exception 'diga o motivo da recusa'; end if;
+  update public.saque set status = case when p_aprovar then 'aprovado' else 'recusado' end,
+         decidido_por = auth.uid(), decidido_em = now(), motivo = p_motivo where id = p_id;
+end $$;
+
+
+--
 -- Name: definir_acesso(uuid, uuid, text[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -277,6 +357,56 @@ begin
     insert into public.acesso(pessoa_id, unidade_id, capacidades) values (p_alvo, p_unidade, p_caps)
       on conflict (pessoa_id, unidade_id) do update set capacidades = excluded.capacidades;
   end if;
+end $$;
+
+
+--
+-- Name: definir_contrato(uuid, uuid, jsonb, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date DEFAULT CURRENT_DATE) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare ws uuid; alvo uuid; novo uuid;
+begin
+  perform public.validar_faixas(p_faixas);
+  if p_pessoa is not null then
+    select unidade_id into alvo from public.vinculo where pessoa_id = p_pessoa and fim is null;
+    if alvo is null then raise exception 'pessoa sem vínculo ativo'; end if;
+  else alvo := p_unidade; end if;
+  if alvo is null or not public.pode('configurar_regras', alvo) then
+    raise exception 'precisa de "configurar_regras" na unidade' using errcode = 'insufficient_privilege'; end if;
+  select workspace_id into ws from public.unidade where id = alvo;
+  insert into public.contrato(workspace_id, unidade_id, pessoa_id, faixas, inicio)
+  values (ws, case when p_pessoa is null then p_unidade end, p_pessoa, p_faixas, coalesce(p_inicio, current_date)) returning id into novo;
+  return novo;
+end $$;
+
+
+--
+-- Name: dividir_cashout(jsonb, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric) RETURNS jsonb
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO ''
+    AS $$
+declare f jsonb; ini numeric := 0; fim numeric; a numeric; b numeric; parte numeric; jog numeric := 0; det jsonb := '[]'::jsonb;
+begin
+  if p_cashout is null or p_cashout <= 0 then return jsonb_build_object('jogador', 0, 'time', 0, 'faixas', det); end if;
+  for f in select x from jsonb_array_elements(p_faixas) x order by coalesce((x->>'ate')::numeric, 1e15) loop
+    fim := coalesce((f->>'ate')::numeric, 1e15);
+    a := greatest(ini, p_lifetime); b := least(fim, p_lifetime + p_cashout);
+    if b > a then
+      parte := b - a;
+      jog := jog + parte * (f->>'jogador')::numeric;
+      det := det || jsonb_build_object('de', a, 'ate', b, 'valor', parte, 'jogador_pct', (f->>'jogador')::numeric);
+    end if;
+    ini := fim;
+  end loop;
+  jog := round(jog, 2);
+  return jsonb_build_object('jogador', jog, 'time', round(p_cashout - jog, 2), 'faixas', det);
 end $$;
 
 
@@ -663,6 +793,27 @@ end $_$;
 
 
 --
+-- Name: registrar_aporte(uuid, numeric, date, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.registrar_aporte(p_pessoa uuid, p_valor numeric, p_data date DEFAULT CURRENT_DATE, p_obs text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare u uuid; ws uuid; novo uuid;
+begin
+  select v.unidade_id, p.workspace_id into u, ws from public.vinculo v join public.pessoa p on p.id = v.pessoa_id
+   where v.pessoa_id = p_pessoa and v.fim is null;
+  if u is null or not public.pode('aprovar_saques', u) then
+    raise exception 'precisa de "aprovar_saques" na unidade do jogador' using errcode = 'insufficient_privilege'; end if;
+  if p_valor is null or p_valor = 0 then raise exception 'valor do aporte'; end if;
+  insert into public.aporte(workspace_id, pessoa_id, unidade_id, valor, data, observacao)
+  values (ws, p_pessoa, u, round(p_valor, 2), coalesce(p_data, current_date), p_obs) returning id into novo;
+  return novo;
+end $$;
+
+
+--
 -- Name: registrar_erro(text, text, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -734,6 +885,86 @@ CREATE FUNCTION public.set_workspace_id() RETURNS trigger
     select workspace_id into new.workspace_id from public.workspace_members where user_id=auth.uid() order by created_at limit 1;
   end if;
   return new;
+end $$;
+
+
+--
+-- Name: simular_saque(uuid, numeric, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.simular_saque(p_pessoa uuid, p_banca numeric, p_devolucao numeric, p_cashout numeric) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare s jsonb; mu numeric; lt numeric; lucro numeric; d jsonb;
+begin
+  s := public.situacao_jogador(p_pessoa);
+  if s->'contrato' is null or s->'contrato' = 'null'::jsonb then raise exception 'jogador sem contrato definido'; end if;
+  mu := (s->>'mu')::numeric; lt := (s->>'lifetime')::numeric;
+  p_devolucao := coalesce(p_devolucao, 0); p_cashout := coalesce(p_cashout, 0);
+  if p_banca is null or p_banca < 0 then raise exception 'informe a banca atual'; end if;
+  if p_devolucao < 0 or p_cashout < 0 or p_devolucao + p_cashout <= 0 then raise exception 'informe a devolução e/ou o cashout'; end if;
+  lucro := p_banca - mu;
+  if p_devolucao > mu then raise exception 'devolução (%) maior que o MU (%)', p_devolucao, mu; end if;
+  if p_cashout > greatest(lucro, 0) then raise exception 'cashout (%) maior que o lucro (%): banca % − MU %', p_cashout, greatest(lucro, 0), p_banca, mu; end if;
+  if p_devolucao + p_cashout > p_banca then raise exception 'saque maior que a banca'; end if;
+  d := public.dividir_cashout(s->'contrato', lt, p_cashout);
+  return jsonb_build_object(
+    'banca', p_banca, 'mu_antes', mu, 'lucro_antes', lucro, 'lifetime_antes', lt,
+    'devolucao', p_devolucao, 'cashout', p_cashout,
+    'parte_jogador', (d->>'jogador')::numeric, 'parte_time', (d->>'time')::numeric,
+    'total_time', p_devolucao + (d->>'time')::numeric,
+    'banca_depois', p_banca - p_devolucao - p_cashout, 'mu_depois', mu - p_devolucao,
+    'divisao', d);
+end $$;
+
+
+--
+-- Name: situacao_jogador(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.situacao_jogador(p_pessoa uuid) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare pes record; u uuid; mu numeric; lt numeric;
+begin
+  select * into pes from public.pessoa where id = p_pessoa;
+  if pes.id is null then raise exception 'pessoa não existe'; end if;
+  select unidade_id into u from public.vinculo where pessoa_id = p_pessoa and fim is null;
+  if not (pes.user_id = auth.uid() or (u is not null and public.pode('ver_financeiro', u))) then
+    raise exception 'sem permissão' using errcode = 'insufficient_privilege'; end if;
+  select coalesce(sum(valor), 0) into mu from public.aporte where pessoa_id = p_pessoa;
+  select mu - coalesce(sum(devolucao), 0), coalesce(sum(cashout), 0) into mu, lt from public.saque where pessoa_id = p_pessoa and status = 'pago';
+  return jsonb_build_object('mu', mu, 'lifetime', lt, 'contrato', public.contrato_de(p_pessoa), 'unidade_id', u);
+end $$;
+
+
+--
+-- Name: solicitar_saque(numeric, numeric, numeric, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.solicitar_saque(p_banca numeric, p_devolucao numeric, p_cashout numeric, p_carteiras jsonb DEFAULT NULL::jsonb, p_obs text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare p uuid; ws uuid; u uuid; sim jsonb; novo uuid;
+begin
+  select pe.id, pe.workspace_id into p, ws from public.pessoa pe
+   where pe.user_id = auth.uid() and pe.status = 'ativo'
+     and exists (select 1 from public.vinculo v where v.pessoa_id = pe.id and v.fim is null) limit 1;
+  if p is null then raise exception 'só quem joga no time pede saque' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.saque where pessoa_id = p and status in ('solicitado','aprovado')) then
+    raise exception 'já existe um saque em aberto'; end if;
+  select unidade_id into u from public.vinculo where pessoa_id = p and fim is null;
+  sim := public.simular_saque(p, p_banca, p_devolucao, p_cashout);
+  insert into public.saque(workspace_id, pessoa_id, unidade_id, banca, carteiras, mu_antes, lifetime_antes, devolucao, cashout,
+                           parte_jogador, parte_time, total_time, divisao, banca_depois, observacao)
+  values (ws, p, u, p_banca, p_carteiras, (sim->>'mu_antes')::numeric, (sim->>'lifetime_antes')::numeric,
+          (sim->>'devolucao')::numeric, (sim->>'cashout')::numeric, (sim->>'parte_jogador')::numeric, (sim->>'parte_time')::numeric,
+          (sim->>'total_time')::numeric, sim->'divisao', (sim->>'banca_depois')::numeric, p_obs)
+  returning id into novo;
+  return novo;
 end $$;
 
 
@@ -812,6 +1043,29 @@ CREATE FUNCTION public.unidades_com(cap text) RETURNS SETOF uuid
    where p.user_id = auth.uid() and p.status = 'ativo'
      and (cap = any(a.capacidades) or 'administrar' = any(a.capacidades));
 $$;
+
+
+--
+-- Name: validar_faixas(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validar_faixas(p_faixas jsonb) RETURNS void
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO ''
+    AS $$
+declare f jsonb; n int := 0; abertas int := 0; ant numeric := 0;
+begin
+  if jsonb_typeof(p_faixas) <> 'array' or jsonb_array_length(p_faixas) = 0 then raise exception 'contrato sem faixas'; end if;
+  for f in select x from jsonb_array_elements(p_faixas) x order by coalesce((x->>'ate')::numeric, 1e15) loop
+    n := n + 1;
+    if (f->>'jogador') is null or (f->>'jogador')::numeric < 0 or (f->>'jogador')::numeric > 1 then
+      raise exception 'percentual do jogador tem que estar entre 0 e 1 (ex.: 0.35)'; end if;
+    if f->>'ate' is null then abertas := abertas + 1;
+    elsif (f->>'ate')::numeric <= ant then raise exception 'faixas com limite repetido ou fora de ordem';
+    else ant := (f->>'ate')::numeric; end if;
+  end loop;
+  if abertas <> 1 then raise exception 'a última faixa precisa ser sem limite ("ate": null)'; end if;
+end $$;
 
 
 --
@@ -975,6 +1229,24 @@ CREATE TABLE public.acesso (
 
 
 --
+-- Name: aporte; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aporte (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    pessoa_id uuid NOT NULL,
+    unidade_id uuid,
+    valor numeric(12,2) NOT NULL,
+    data date DEFAULT CURRENT_DATE NOT NULL,
+    observacao text,
+    criado_por uuid DEFAULT auth.uid(),
+    criado_em timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT aporte_valor_check CHECK ((valor <> (0)::numeric))
+);
+
+
+--
 -- Name: app_erros; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1051,6 +1323,23 @@ CREATE TABLE public.config_changes (
     created_by uuid DEFAULT auth.uid(),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     workspace_id uuid NOT NULL
+);
+
+
+--
+-- Name: contrato; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.contrato (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    unidade_id uuid,
+    pessoa_id uuid,
+    faixas jsonb NOT NULL,
+    inicio date DEFAULT CURRENT_DATE NOT NULL,
+    criado_por uuid DEFAULT auth.uid(),
+    criado_em timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT contrato_check CHECK (((unidade_id IS NOT NULL) OR (pessoa_id IS NOT NULL)))
 );
 
 
@@ -1287,6 +1576,44 @@ CREATE TABLE public.pool_config (
 
 
 --
+-- Name: saque; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.saque (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    pessoa_id uuid NOT NULL,
+    unidade_id uuid,
+    status text DEFAULT 'solicitado'::text NOT NULL,
+    banca numeric(12,2) NOT NULL,
+    carteiras jsonb,
+    mu_antes numeric(12,2) NOT NULL,
+    lifetime_antes numeric(12,2) NOT NULL,
+    devolucao numeric(12,2) DEFAULT 0 NOT NULL,
+    cashout numeric(12,2) DEFAULT 0 NOT NULL,
+    parte_jogador numeric(12,2) NOT NULL,
+    parte_time numeric(12,2) NOT NULL,
+    total_time numeric(12,2) NOT NULL,
+    divisao jsonb NOT NULL,
+    banca_depois numeric(12,2) NOT NULL,
+    observacao text,
+    solicitado_por uuid DEFAULT auth.uid(),
+    solicitado_em timestamp with time zone DEFAULT now() NOT NULL,
+    decidido_por uuid,
+    decidido_em timestamp with time zone,
+    motivo text,
+    recebido numeric(12,2),
+    diferenca numeric(12,2),
+    pago_em timestamp with time zone,
+    CONSTRAINT saque_banca_check CHECK ((banca >= (0)::numeric)),
+    CONSTRAINT saque_cashout_check CHECK ((cashout >= (0)::numeric)),
+    CONSTRAINT saque_check CHECK (((devolucao + cashout) > (0)::numeric)),
+    CONSTRAINT saque_devolucao_check CHECK ((devolucao >= (0)::numeric)),
+    CONSTRAINT saque_status_check CHECK ((status = ANY (ARRAY['solicitado'::text, 'aprovado'::text, 'recusado'::text, 'cancelado'::text, 'pago'::text])))
+);
+
+
+--
 -- Name: tournaments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1477,6 +1804,14 @@ ALTER TABLE ONLY public.acesso
 
 
 --
+-- Name: aporte aporte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aporte
+    ADD CONSTRAINT aporte_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_erros app_erros_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1506,6 +1841,14 @@ ALTER TABLE ONLY public.bankroll_ledger
 
 ALTER TABLE ONLY public.config_changes
     ADD CONSTRAINT config_changes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: contrato contrato_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contrato
+    ADD CONSTRAINT contrato_pkey PRIMARY KEY (id);
 
 
 --
@@ -1597,6 +1940,14 @@ ALTER TABLE ONLY public.pool_config
 
 
 --
+-- Name: saque saque_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.saque
+    ADD CONSTRAINT saque_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: tournaments tournaments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1668,6 +2019,27 @@ CREATE INDEX acesso_unidade ON public.acesso USING btree (unidade_id);
 
 
 --
+-- Name: aporte_pessoa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aporte_pessoa ON public.aporte USING btree (pessoa_id);
+
+
+--
+-- Name: aporte_unidade; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aporte_unidade ON public.aporte USING btree (unidade_id);
+
+
+--
+-- Name: aporte_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aporte_workspace ON public.aporte USING btree (workspace_id);
+
+
+--
 -- Name: app_erros_pendentes; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1693,6 +2065,27 @@ CREATE INDEX bankroll_ledger_pessoa ON public.bankroll_ledger USING btree (pesso
 --
 
 CREATE INDEX bankroll_ledger_unidade ON public.bankroll_ledger USING btree (unidade_id) WHERE (unidade_id IS NOT NULL);
+
+
+--
+-- Name: contrato_pessoa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contrato_pessoa ON public.contrato USING btree (pessoa_id);
+
+
+--
+-- Name: contrato_unidade; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contrato_unidade ON public.contrato USING btree (unidade_id);
+
+
+--
+-- Name: contrato_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contrato_workspace ON public.contrato USING btree (workspace_id);
 
 
 --
@@ -1983,6 +2376,34 @@ CREATE UNIQUE INDEX pool_config_one_per_ws ON public.pool_config USING btree (wo
 
 
 --
+-- Name: saque_pessoa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX saque_pessoa ON public.saque USING btree (pessoa_id);
+
+
+--
+-- Name: saque_um_aberto; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX saque_um_aberto ON public.saque USING btree (pessoa_id) WHERE (status = ANY (ARRAY['solicitado'::text, 'aprovado'::text]));
+
+
+--
+-- Name: saque_unidade; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX saque_unidade ON public.saque USING btree (unidade_id);
+
+
+--
+-- Name: saque_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX saque_workspace ON public.saque USING btree (workspace_id);
+
+
+--
 -- Name: tournaments_pessoa; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2230,6 +2651,30 @@ ALTER TABLE ONLY public.acesso
 
 
 --
+-- Name: aporte aporte_pessoa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aporte
+    ADD CONSTRAINT aporte_pessoa_id_fkey FOREIGN KEY (pessoa_id) REFERENCES public.pessoa(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aporte aporte_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aporte
+    ADD CONSTRAINT aporte_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id);
+
+
+--
+-- Name: aporte aporte_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aporte
+    ADD CONSTRAINT aporte_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: bankroll_ledger bankroll_ledger_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2275,6 +2720,30 @@ ALTER TABLE ONLY public.config_changes
 
 ALTER TABLE ONLY public.config_changes
     ADD CONSTRAINT config_changes_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: contrato contrato_pessoa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contrato
+    ADD CONSTRAINT contrato_pessoa_id_fkey FOREIGN KEY (pessoa_id) REFERENCES public.pessoa(id) ON DELETE CASCADE;
+
+
+--
+-- Name: contrato contrato_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contrato
+    ADD CONSTRAINT contrato_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id) ON DELETE CASCADE;
+
+
+--
+-- Name: contrato contrato_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.contrato
+    ADD CONSTRAINT contrato_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -2478,6 +2947,30 @@ ALTER TABLE ONLY public.pool_config
 
 
 --
+-- Name: saque saque_pessoa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.saque
+    ADD CONSTRAINT saque_pessoa_id_fkey FOREIGN KEY (pessoa_id) REFERENCES public.pessoa(id) ON DELETE CASCADE;
+
+
+--
+-- Name: saque saque_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.saque
+    ADD CONSTRAINT saque_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id);
+
+
+--
+-- Name: saque saque_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.saque
+    ADD CONSTRAINT saque_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: tournaments tournaments_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2605,6 +3098,19 @@ CREATE POLICY acesso_ler ON public.acesso FOR SELECT TO authenticated USING (((E
 
 
 --
+-- Name: aporte; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.aporte ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: aporte aporte_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY aporte_ler ON public.aporte FOR SELECT TO authenticated USING (((pessoa_id IN ( SELECT public.minhas_pessoas() AS minhas_pessoas)) OR (unidade_id IN ( SELECT public.unidades_com('ver_financeiro'::text) AS unidades_com))));
+
+
+--
 -- Name: app_erros; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -2682,6 +3188,25 @@ CREATE POLICY config_ler ON public.config_changes FOR SELECT TO authenticated US
 --
 
 CREATE POLICY config_ler ON public.pool_config FOR SELECT TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+
+--
+-- Name: contrato; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.contrato ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: contrato contrato_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY contrato_ler ON public.contrato FOR SELECT TO authenticated USING (((pessoa_id IN ( SELECT public.minhas_pessoas() AS minhas_pessoas)) OR (unidade_id IN ( SELECT public.unidades_com('ver_financeiro'::text) AS unidades_com)) OR (unidade_id IN ( SELECT public.unidades_com('configurar_regras'::text) AS unidades_com)) OR ((pessoa_id IS NOT NULL) AND (EXISTS ( SELECT 1
+   FROM public.vinculo v
+  WHERE ((v.pessoa_id = contrato.pessoa_id) AND (v.fim IS NULL) AND (v.unidade_id IN ( SELECT public.unidades_com('ver_financeiro'::text) AS unidades_com)))))) OR (EXISTS ( SELECT 1
+   FROM ((public.vinculo v
+     JOIN public.unidade u ON ((u.id = v.unidade_id)))
+     JOIN public.unidade c ON ((c.id = contrato.unidade_id)))
+  WHERE ((v.fim IS NULL) AND (v.pessoa_id IN ( SELECT public.minhas_pessoas() AS minhas_pessoas)) AND (u.caminho ~~ (c.caminho || '%'::text)))))));
 
 
 --
@@ -2955,6 +3480,19 @@ ALTER TABLE public.pool_config ENABLE ROW LEVEL SECURITY;
 CREATE POLICY profile_self_or_teammates ON public.player_profiles USING (((user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
    FROM public.workspace_members m
   WHERE ((m.user_id = player_profiles.user_id) AND (m.workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))))))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: saque; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.saque ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: saque saque_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY saque_ler ON public.saque FOR SELECT TO authenticated USING (((pessoa_id IN ( SELECT public.minhas_pessoas() AS minhas_pessoas)) OR (unidade_id IN ( SELECT public.unidades_com('ver_financeiro'::text) AS unidades_com))));
 
 
 --
@@ -3272,6 +3810,32 @@ GRANT ALL ON FUNCTION public.avisar_erros() TO service_role;
 
 
 --
+-- Name: FUNCTION cancelar_saque(p_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.cancelar_saque(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.cancelar_saque(p_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.cancelar_saque(p_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION confirmar_recebimento(p_id uuid, p_recebido numeric); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.confirmar_recebimento(p_id uuid, p_recebido numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.confirmar_recebimento(p_id uuid, p_recebido numeric) TO authenticated;
+GRANT ALL ON FUNCTION public.confirmar_recebimento(p_id uuid, p_recebido numeric) TO service_role;
+
+
+--
+-- Name: FUNCTION contrato_de(p uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.contrato_de(p uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.contrato_de(p uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION convidar_gestor(p_unidade uuid, p_nome text, p_caps text[]); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3325,12 +3889,39 @@ GRANT ALL ON FUNCTION public.criar_unidade(p_mae uuid, p_nome text, p_rotulo tex
 
 
 --
+-- Name: FUNCTION decidir_saque(p_id uuid, p_aprovar boolean, p_motivo text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.decidir_saque(p_id uuid, p_aprovar boolean, p_motivo text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.decidir_saque(p_id uuid, p_aprovar boolean, p_motivo text) TO authenticated;
+GRANT ALL ON FUNCTION public.decidir_saque(p_id uuid, p_aprovar boolean, p_motivo text) TO service_role;
+
+
+--
 -- Name: FUNCTION definir_acesso(p_alvo uuid, p_unidade uuid, p_caps text[]); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.definir_acesso(p_alvo uuid, p_unidade uuid, p_caps text[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.definir_acesso(p_alvo uuid, p_unidade uuid, p_caps text[]) TO authenticated;
 GRANT ALL ON FUNCTION public.definir_acesso(p_alvo uuid, p_unidade uuid, p_caps text[]) TO service_role;
+
+
+--
+-- Name: FUNCTION definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) TO authenticated;
+GRANT ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) TO service_role;
+
+
+--
+-- Name: FUNCTION dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric) TO authenticated;
+GRANT ALL ON FUNCTION public.dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric) TO service_role;
 
 
 --
@@ -3498,6 +4089,15 @@ GRANT ALL ON FUNCTION public.recalcular_fatos(p uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION registrar_aporte(p_pessoa uuid, p_valor numeric, p_data date, p_obs text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.registrar_aporte(p_pessoa uuid, p_valor numeric, p_data date, p_obs text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.registrar_aporte(p_pessoa uuid, p_valor numeric, p_data date, p_obs text) TO authenticated;
+GRANT ALL ON FUNCTION public.registrar_aporte(p_pessoa uuid, p_valor numeric, p_data date, p_obs text) TO service_role;
+
+
+--
 -- Name: FUNCTION registrar_erro(p_origem text, p_mensagem text, p_detalhe jsonb, p_build text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3533,6 +4133,33 @@ GRANT ALL ON FUNCTION public.set_workspace_id() TO service_role;
 
 
 --
+-- Name: FUNCTION simular_saque(p_pessoa uuid, p_banca numeric, p_devolucao numeric, p_cashout numeric); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.simular_saque(p_pessoa uuid, p_banca numeric, p_devolucao numeric, p_cashout numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.simular_saque(p_pessoa uuid, p_banca numeric, p_devolucao numeric, p_cashout numeric) TO authenticated;
+GRANT ALL ON FUNCTION public.simular_saque(p_pessoa uuid, p_banca numeric, p_devolucao numeric, p_cashout numeric) TO service_role;
+
+
+--
+-- Name: FUNCTION situacao_jogador(p_pessoa uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.situacao_jogador(p_pessoa uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.situacao_jogador(p_pessoa uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.situacao_jogador(p_pessoa uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION solicitar_saque(p_banca numeric, p_devolucao numeric, p_cashout numeric, p_carteiras jsonb, p_obs text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.solicitar_saque(p_banca numeric, p_devolucao numeric, p_cashout numeric, p_carteiras jsonb, p_obs text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.solicitar_saque(p_banca numeric, p_devolucao numeric, p_cashout numeric, p_carteiras jsonb, p_obs text) TO authenticated;
+GRANT ALL ON FUNCTION public.solicitar_saque(p_banca numeric, p_devolucao numeric, p_cashout numeric, p_carteiras jsonb, p_obs text) TO service_role;
+
+
+--
 -- Name: FUNCTION unidade_caminho(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3563,6 +4190,15 @@ GRANT ALL ON FUNCTION public.unidade_na_data(p uuid, d date, ws uuid) TO service
 REVOKE ALL ON FUNCTION public.unidades_com(cap text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.unidades_com(cap text) TO authenticated;
 GRANT ALL ON FUNCTION public.unidades_com(cap text) TO service_role;
+
+
+--
+-- Name: FUNCTION validar_faixas(p_faixas jsonb); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.validar_faixas(p_faixas jsonb) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.validar_faixas(p_faixas jsonb) TO authenticated;
+GRANT ALL ON FUNCTION public.validar_faixas(p_faixas jsonb) TO service_role;
 
 
 --
@@ -3645,6 +4281,14 @@ GRANT ALL ON TABLE public.acesso TO service_role;
 
 
 --
+-- Name: TABLE aporte; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.aporte TO service_role;
+GRANT SELECT ON TABLE public.aporte TO authenticated;
+
+
+--
 -- Name: TABLE app_erros; Type: ACL; Schema: public; Owner: -
 --
 
@@ -3683,6 +4327,14 @@ GRANT ALL ON TABLE public.bankroll_ledger TO service_role;
 GRANT ALL ON TABLE public.config_changes TO anon;
 GRANT ALL ON TABLE public.config_changes TO authenticated;
 GRANT ALL ON TABLE public.config_changes TO service_role;
+
+
+--
+-- Name: TABLE contrato; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.contrato TO service_role;
+GRANT SELECT ON TABLE public.contrato TO authenticated;
 
 
 --
@@ -3823,6 +4475,14 @@ GRANT ALL ON TABLE public.player_wallets TO service_role;
 GRANT ALL ON TABLE public.pool_config TO anon;
 GRANT ALL ON TABLE public.pool_config TO authenticated;
 GRANT ALL ON TABLE public.pool_config TO service_role;
+
+
+--
+-- Name: TABLE saque; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.saque TO service_role;
+GRANT SELECT ON TABLE public.saque TO authenticated;
 
 
 --
