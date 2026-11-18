@@ -9,6 +9,33 @@ const {
 const CONFIGURED = window.SUPABASE_URL && !window.SUPABASE_URL.startsWith("COLE_AQUI");
 const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
 
+/* ---------- convite de time: grinderbank.com/?convite=TOKEN ----------
+   O token fica guardado no aparelho (sobrevive à criação da conta e à confirmação de e-mail) e sai da barra
+   de endereço. Com convite pendente o cadastro NÃO cria conta individual; quem aceita é o servidor. */
+const CONVITE_KEY = 'gb_convite';
+const conviteGuardado = () => {
+  try {
+    return localStorage.getItem(CONVITE_KEY) || null;
+  } catch (e) {
+    return null;
+  }
+};
+const esquecerConvite = () => {
+  try {
+    localStorage.removeItem(CONVITE_KEY);
+  } catch (e) {}
+};
+(() => {
+  try {
+    const u = new URL(window.location.href);
+    const t = (u.searchParams.get('convite') || '').trim().toLowerCase();
+    if (!u.searchParams.has('convite')) return;
+    if (/^[0-9a-f]{64}$/.test(t)) localStorage.setItem(CONVITE_KEY, t);
+    u.searchParams.delete('convite');
+    window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+  } catch (e) {}
+})();
+
 /* ---------- F0.17: erro em produção vai pro banco (app_erros) e vira aviso pro responsável ----------
    Só a mensagem e um pedaço da pilha; nada de dado digitado. Mesma mensagem 1x por carregamento. */
 const ERROS_VISTOS = new Set();
@@ -3921,8 +3948,26 @@ function Login() {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState(conviteGuardado() ? 'signup' : 'login');
   const [ok, setOk] = useState('');
+  // convite de time pendente: mostra pra onde a pessoa vai entrar (o servidor responde sem login; o token é o segredo)
+  const [conv, setConv] = useState(null);
+  useEffect(() => {
+    const tk = conviteGuardado();
+    if (!tk || !sb) return;
+    sb.rpc('ver_convite', {
+      p_token: tk
+    }).then(({
+      data
+    }) => {
+      if (data && typeof data === 'object') setConv(data);
+    }).catch(() => {});
+  }, []);
+  const comConvite = !!(conv && conv.valido);
+  const largarConvite = () => {
+    esquecerConvite();
+    setConv(null);
+  };
   const [nNome, setNNome] = useState('');
   const [nMail, setNMail] = useState('');
   const [nZap, setNZap] = useState('');
@@ -4014,7 +4059,8 @@ function Login() {
         localStorage.removeItem('gb_signup');
       } catch (e) {}
     }
-    try {
+    // com convite de time, a conta entra no time (o painel aceita o convite ao carregar); sem convite, conta individual
+    if (!conviteGuardado()) try {
       await sb.rpc('create_solo_workspace', {
         ws_name: nome,
         plan_escolhido: nPlan
@@ -4138,7 +4184,55 @@ function Login() {
       justifyContent: 'center',
       marginBottom: 18
     }
-  }, /*#__PURE__*/React.createElement(Brand, null)), mode === 'login' ? /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(Brand, null)), conv && (conv.valido ? /*#__PURE__*/React.createElement("div", {
+    "data-convite": "ok",
+    style: {
+      background: C.plumSoft,
+      borderRadius: 12,
+      padding: '12px 14px',
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 14,
+      color: P
+    }
+  }, "Convite pro time ", conv.time), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.ink,
+      lineHeight: 1.5,
+      marginTop: 3
+    }
+  }, conv.pessoa ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), "."), " Cria tua conta (ou entra, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
+    "data-convite": "ruim",
+    style: {
+      background: C.goldSoft,
+      borderRadius: 12,
+      padding: '12px 14px',
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13.5,
+      color: C.gold
+    }
+  }, conv.motivo || 'Convite inválido.'), /*#__PURE__*/React.createElement("button", {
+    onClick: largarConvite,
+    style: {
+      marginTop: 8,
+      padding: '8px 12px',
+      borderRadius: 10,
+      border: 'none',
+      background: C.gold,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 12.5,
+      cursor: 'pointer'
+    }
+  }, "Seguir sem convite"))), mode === 'login' ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -4258,7 +4352,7 @@ function Login() {
       flexDirection: 'column',
       gap: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !comConvite && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
@@ -4303,7 +4397,7 @@ function Login() {
     value: nP2,
     onChange: e => setNP2(e.target.value),
     onEnter: criar
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  })), !comConvite && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
   }, "Escolha seu plano \xB7 15 dias gr\xE1tis"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6212,6 +6306,7 @@ function Dashboard({
   const [ws, setWs] = useState(null); // workspace da conta (team = pool · solo = cliente)
   const [srvStatus, setSrvStatus] = useState(null); // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup, setNeedsSetup] = useState(false); // solo sem config ainda -> onboarding de 3 passos
+  const [conviteErro, setConviteErro] = useState(null); // convite de time recusado pelo servidor (vencido, conta em outro lugar…)
   const [askTour, setAskTour] = useState(false); // convite pro tour guiado (1º acesso)
   const [tour, setTour] = useState(0); // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
@@ -6372,6 +6467,20 @@ function Dashboard({
   };
   const loadAll = async () => {
     try {
+      // convite de time pendente: aceita ANTES de carregar (a conta passa a ver o time)
+      const tk = conviteGuardado();
+      if (tk) {
+        const {
+          error: ce
+        } = await sb.rpc('aceitar_convite', {
+          p_token: tk
+        });
+        if (ce) {
+          setConviteErro(ce.message || 'Não consegui aceitar o convite.');
+          return;
+        }
+        esquecerConvite();
+      }
       // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
       try {
         await sb.rpc('aplicar_ativacao');
@@ -7334,6 +7443,79 @@ function Dashboard({
   // Diário derivado dos torneios (fonte da verdade = torneios)
   const daily = useMemo(() => deriveDaily(tours), [tours]);
   const weeksByPlayer = useMemo(() => config ? computeWeeks(daily, config) : {}, [daily, config]);
+  if (conviteErro) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center',
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 30,
+      width: '100%',
+      maxWidth: 400
+    },
+    className: "ftfade"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement(Brand, null)), /*#__PURE__*/React.createElement("div", {
+    "data-convite": "erro",
+    style: {
+      fontWeight: 800,
+      fontSize: 16,
+      color: C.ink,
+      marginBottom: 6
+    }
+  }, "N\xE3o deu pra entrar no time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.inkSoft,
+      lineHeight: 1.55
+    }
+  }, conviteErro), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      marginTop: 18
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      sb.auth.signOut();
+    },
+    style: {
+      padding: '13px 0',
+      borderRadius: 13,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 14.5,
+      cursor: 'pointer'
+    }
+  }, "Sair e entrar com outra conta"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      esquecerConvite();
+      setConviteErro(null);
+      setLoading(true);
+      loadAll().then(() => setLoading(false));
+    },
+    style: {
+      padding: '12px 0',
+      borderRadius: 13,
+      border: `1.5px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 13.5,
+      cursor: 'pointer'
+    }
+  }, "Seguir sem aceitar o convite"))));
   if (needsSetup && !config) return /*#__PURE__*/React.createElement(SetupSolo, {
     profile: profile,
     ws: ws,
@@ -13467,7 +13649,7 @@ function App() {
             try {
               localStorage.removeItem('gb_signup');
             } catch (e) {}
-            try {
+            if (!conviteGuardado()) try {
               await sb.rpc('create_solo_workspace', {
                 ws_name: pend.nickname,
                 plan_escolhido: pend.plan || 'gestao'

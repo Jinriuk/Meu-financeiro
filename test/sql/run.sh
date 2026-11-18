@@ -9,14 +9,24 @@ if [ "$(id -u)" = "0" ]; then RUN="runuser -u postgres --"; chown -R postgres "$
 $RUN initdb -D "$TMP/db" -A trust -U postgres >/dev/null
 $RUN pg_ctl -D "$TMP/db" -o "-k $TMP -p 55432 -c listen_addresses=''" -l "$TMP/log" start -w >/dev/null
 P="psql -h $TMP -p 55432 -U postgres -d postgres -q -v ON_ERROR_STOP=1"
-$P -f "$DIR/base_producao.sql" >/dev/null
-$P -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servidor.sql" >/dev/null
-$P -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servidor.sql" >/dev/null   # idempotente
-$P -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1
-$P -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1   # idempotente
-$P -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null
-$P -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null   # idempotente
-OUT="$( { $P -f "$DIR/f05_f06.sql"; $P -f "$DIR/f17.sql"; $P -f "$DIR/fase1.sql"; } 2>&1 | sed -n 's/.*NOTICE:  //p' | grep -E '^(OK|FALHA)')"
+M="env PGOPTIONS=-cclient_min_messages=warning $P"   # migrations: sem os avisos de "já existe"
+$M -f "$DIR/base_producao.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servidor.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servidor.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1
+$M -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118110000_fase1_fatos_por_pessoa.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118110000_fase1_fatos_por_pessoa.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118120000_fase1_convites.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118120000_fase1_convites.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118130000_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118130000_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
+for f in f05_f06 f17 fase1 fase1_fatos fase1_convites webhook; do
+  $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
+done
+OUT="$(cat "$TMP"/*.out | sed -E 's/.*NOTICE:  //' | grep -E '^(OK|FALHA)' || true)"
 echo "$OUT"
 FAL=$(echo "$OUT" | grep -c '^FALHA' || true); OKQ=$(echo "$OUT" | grep -c '^OK?' || true)
 echo "---"; echo "$(echo "$OUT" | grep -c '^OK ') ok · $OKQ barrado com outro erro · $FAL falha(s)"

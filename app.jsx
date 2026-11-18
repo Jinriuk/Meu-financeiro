@@ -4,6 +4,20 @@ const { useState, useMemo, useEffect } = React;
 const CONFIGURED = window.SUPABASE_URL && !window.SUPABASE_URL.startsWith("COLE_AQUI");
 const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY) : null;
 
+/* ---------- convite de time: grinderbank.com/?convite=TOKEN ----------
+   O token fica guardado no aparelho (sobrevive à criação da conta e à confirmação de e-mail) e sai da barra
+   de endereço. Com convite pendente o cadastro NÃO cria conta individual; quem aceita é o servidor. */
+const CONVITE_KEY='gb_convite';
+const conviteGuardado=()=>{ try{ return localStorage.getItem(CONVITE_KEY)||null; }catch(e){ return null; } };
+const esquecerConvite=()=>{ try{ localStorage.removeItem(CONVITE_KEY); }catch(e){} };
+(()=>{ try{
+  const u=new URL(window.location.href); const t=(u.searchParams.get('convite')||'').trim().toLowerCase();
+  if(!u.searchParams.has('convite')) return;
+  if(/^[0-9a-f]{64}$/.test(t)) localStorage.setItem(CONVITE_KEY,t);
+  u.searchParams.delete('convite');
+  window.history.replaceState(null,'',u.pathname+u.search+u.hash);
+}catch(e){} })();
+
 /* ---------- F0.17: erro em produção vai pro banco (app_erros) e vira aviso pro responsável ----------
    Só a mensagem e um pedaço da pilha; nada de dado digitado. Mesma mensagem 1x por carregamento. */
 const ERROS_VISTOS=new Set();
@@ -1374,7 +1388,14 @@ function Login(){
   const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
-  const [mode,setMode]=useState('login'); const [ok,setOk]=useState('');
+  const [mode,setMode]=useState(conviteGuardado()?'signup':'login'); const [ok,setOk]=useState('');
+  // convite de time pendente: mostra pra onde a pessoa vai entrar (o servidor responde sem login; o token é o segredo)
+  const [conv,setConv]=useState(null);
+  useEffect(()=>{ const tk=conviteGuardado(); if(!tk||!sb) return;
+    sb.rpc('ver_convite',{p_token:tk}).then(({data})=>{ if(data&&typeof data==='object') setConv(data); }).catch(()=>{});
+  },[]);
+  const comConvite=!!(conv&&conv.valido);
+  const largarConvite=()=>{ esquecerConvite(); setConv(null); };
   const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nZap,setNZap]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
   const [nPlan,setNPlan]=useState('pro');   // plano escolhido pro teste grátis de 15 dias
   const criar=async()=>{
@@ -1411,7 +1432,8 @@ function Login(){
     const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
     if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
     if(!pe){ try{ localStorage.removeItem('gb_signup'); }catch(e){} }
-    try{ await sb.rpc('create_solo_workspace',{ws_name:nome,plan_escolhido:nPlan}); }catch(e){ console.error(e); }
+    // com convite de time, a conta entra no time (o painel aceita o convite ao carregar); sem convite, conta individual
+    if(!conviteGuardado()) try{ await sb.rpc('create_solo_workspace',{ws_name:nome,plan_escolhido:nPlan}); }catch(e){ console.error(e); }
     window.location.reload();
   };
   // reenviar o e-mail de confirmação (caso do login antes de confirmar)
@@ -1464,6 +1486,15 @@ function Login(){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
+      {conv&&(conv.valido
+        ?<div data-convite="ok" style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+          <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.time}</div>
+          <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
+        </div>
+        :<div data-convite="ruim" style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+          <div style={{fontWeight:700,fontSize:13.5,color:C.gold}}>{conv.motivo||'Convite inválido.'}</div>
+          <button onClick={largarConvite} style={{marginTop:8,padding:'8px 12px',borderRadius:10,border:'none',background:C.gold,color:'#fff',fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Seguir sem convite</button>
+        </div>)}
       {mode==='login'?<div style={{display:'flex',flexDirection:'column',gap:14}}>
         {ok&&<div style={{color:C.greenMid,fontSize:13.5,fontWeight:600,background:C.greenSoft,padding:'10px 12px',borderRadius:11}}>{ok}</div>}
         <div><label style={labelStyle}>E-mail, apelido ou CPF</label><input style={inputStyle} type="text" autoCapitalize="none" autoComplete="username" value={ident} onChange={e=>setIdent(e.target.value)} onKeyDown={e=>e.key==='Enter'&&entrar()}/></div>
@@ -1479,14 +1510,14 @@ function Login(){
         <button onClick={()=>{setMode('signup');setErr('');setOk('');}} style={{padding:'12px 0',borderRadius:14,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Criar conta grátis</button>
       </div>
       :<div style={{display:'flex',flexDirection:'column',gap:14}}>
-        <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5,textAlign:'center'}}>Sua conta individual: banca, torneios e estatísticas — só seus, ninguém mais vê.</div>
+        {!comConvite&&<div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5,textAlign:'center'}}>Sua conta individual: banca, torneios e estatísticas — só seus, ninguém mais vê.</div>}
         <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nNome} autoCapitalize="none" placeholder="Ex: rafa_grinder" onChange={e=>setNNome(e.target.value)}/></div>
         <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" autoCapitalize="none" autoComplete="email" value={nMail} onChange={e=>setNMail(e.target.value)}/></div>
         <div><label style={labelStyle}>WhatsApp (opcional)</label><input style={inputStyle} inputMode="tel" placeholder="DDD + número" value={nZap} onChange={e=>setNZap(e.target.value)}/></div>
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
-        {/* escolha de plano: o teste grátis de 15 dias é do plano escolhido */}
-        <div>
+        {/* escolha de plano: o teste grátis de 15 dias é do plano escolhido (quem entra por convite usa o plano do time) */}
+        {!comConvite&&<div>
           <label style={labelStyle}>Escolha seu plano · 15 dias grátis</label>
           <div style={{display:'flex',gap:8}}>
             {[['gestao','Gestão','R$ 19,90/mês','banca, torneios e relatórios'],['pro','Pro','R$ 49,90/mês','tudo + stats das mãos e leituras']].map(([v,nm,pr,desc])=>
@@ -1497,7 +1528,7 @@ function Login(){
               </button>)}
           </div>
           <div style={{fontSize:11,color:C.inkSoft,marginTop:7,lineHeight:1.45}}>Você testa <b>15 dias grátis</b>. Pra continuar depois disso, é só assinar — a gente te avisa antes de acabar. Sem assinar, o acesso é bloqueado ao fim do teste.</div>
-        </div>
+        </div>}
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         <div style={{fontSize:11.5,color:C.inkSoft,lineHeight:1.5}}>Ao criar a conta você concorda com os <a href="termos.html" target="_blank" style={{color:P}}>Termos de Uso</a> e a <a href="privacidade.html" target="_blank" style={{color:P}}>Política de Privacidade</a>.</div>
         <button onClick={criar} disabled={busy} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.7:1}}>{busy?'Criando…':'Criar minha conta'}</button>
@@ -1895,6 +1926,7 @@ function Dashboard({session,profile}){
   const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
   const [srvStatus,setSrvStatus]=useState(null);   // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
+  const [conviteErro,setConviteErro]=useState(null);// convite de time recusado pelo servidor (vencido, conta em outro lugar…)
   const [askTour,setAskTour]=useState(false);      // convite pro tour guiado (1º acesso)
   const [tour,setTour]=useState(0);                // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
@@ -1983,6 +2015,13 @@ function Dashboard({session,profile}){
 
   const loadAll=async()=>{
     try{
+      // convite de time pendente: aceita ANTES de carregar (a conta passa a ver o time)
+      const tk=conviteGuardado();
+      if(tk){
+        const {error:ce}=await sb.rpc('aceitar_convite',{p_token:tk});
+        if(ce){ setConviteErro(ce.message||'Não consegui aceitar o convite.'); return; }
+        esquecerConvite();
+      }
       // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
       try{ await sb.rpc('aplicar_ativacao'); }catch(e){}
       // status calculado com o relógio do servidor; sem a função (banco antigo) cai na conta local
@@ -2419,6 +2458,17 @@ function Dashboard({session,profile}){
   const daily = useMemo(()=>deriveDaily(tours),[tours]);
   const weeksByPlayer = useMemo(()=>config?computeWeeks(daily,config):{},[daily,config]);
 
+  if(conviteErro) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card style={{padding:30,width:'100%',maxWidth:400}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:14}}><Brand/></div>
+      <div data-convite="erro" style={{fontWeight:800,fontSize:16,color:C.ink,marginBottom:6}}>Não deu pra entrar no time</div>
+      <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>{conviteErro}</div>
+      <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:18}}>
+        <button onClick={()=>{ sb.auth.signOut(); }} style={{padding:'13px 0',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Sair e entrar com outra conta</button>
+        <button onClick={()=>{ esquecerConvite(); setConviteErro(null); setLoading(true); loadAll().then(()=>setLoading(false)); }} style={{padding:'12px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:13.5,cursor:'pointer'}}>Seguir sem aceitar o convite</button>
+      </div>
+    </Card>
+  </div>;
   if(needsSetup&&!config) return <SetupSolo profile={profile} ws={ws} onDone={()=>{setNeedsSetup(false); if(!localStorage.getItem('gb_tour')) setAskTour(true); loadAll();}}/>;
   if(loading||!config) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
 
@@ -3925,7 +3975,7 @@ function App(){
           const {data:novo,error:pe}=await sb.from('player_profiles').insert({user_id:session.user.id,email:session.user.email,nickname:pend.nickname,whatsapp:pend.whatsapp||null,password_changed:true,role:'solo'}).select().single();
           if(!pe&&novo){
             try{ localStorage.removeItem('gb_signup'); }catch(e){}
-            try{ await sb.rpc('create_solo_workspace',{ws_name:pend.nickname,plan_escolhido:pend.plan||'gestao'}); }catch(e){ console.error(e); }
+            if(!conviteGuardado()) try{ await sb.rpc('create_solo_workspace',{ws_name:pend.nickname,plan_escolhido:pend.plan||'gestao'}); }catch(e){ console.error(e); }
             if(on) setProfile(novo);
             return;
           }
