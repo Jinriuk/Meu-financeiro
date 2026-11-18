@@ -14,7 +14,9 @@ $P -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servi
 $P -f "$ROOT/supabase/migrations/20261118030000_seguranca_webhook_e_status_servidor.sql" >/dev/null   # idempotente
 $P -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1
 $P -f "$ROOT/supabase/migrations/20261118030100_monitoramento_erros.sql" >/dev/null 2>&1   # idempotente
-OUT="$( { $P -f "$DIR/f05_f06.sql"; $P -f "$DIR/f17.sql"; } 2>&1 | sed -n 's/.*NOTICE:  //p' | grep -E '^(OK|FALHA)')"
+$P -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null
+$P -f "$ROOT/supabase/migrations/20261118100000_fase1_estrutura_times.sql" >/dev/null   # idempotente
+OUT="$( { $P -f "$DIR/f05_f06.sql"; $P -f "$DIR/f17.sql"; $P -f "$DIR/fase1.sql"; } 2>&1 | sed -n 's/.*NOTICE:  //p' | grep -E '^(OK|FALHA)')"
 echo "$OUT"
 FAL=$(echo "$OUT" | grep -c '^FALHA' || true); OKQ=$(echo "$OUT" | grep -c '^OK?' || true)
 echo "---"; echo "$(echo "$OUT" | grep -c '^OK ') ok · $OKQ barrado com outro erro · $FAL falha(s)"

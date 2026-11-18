@@ -16,7 +16,7 @@ grant usage on schema auth to anon, authenticated, service_role;
 grant execute on all functions in schema auth to anon, authenticated, service_role;
 
 create table public.workspaces (id uuid primary key default gen_random_uuid(), name text, kind text default 'solo', plan text default 'free', created_at timestamptz default now(), trial_ends_at timestamptz);
-create table public.workspace_members (workspace_id uuid references public.workspaces(id), user_id uuid references auth.users(id), created_at timestamptz default now(), primary key (workspace_id,user_id));
+create table public.workspace_members (workspace_id uuid references public.workspaces(id), user_id uuid references auth.users(id), created_at timestamptz default now(), role text not null default 'owner', primary key (workspace_id,user_id));
 create table public.player_profiles (user_id uuid primary key references auth.users(id) on delete cascade, email text not null, nickname text, cpf text, whatsapp text,
   password_changed boolean not null default false, role text, created_at timestamptz not null default now());
 create table public.tournaments (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), entry_date date not null, player text not null, buyin numeric not null default 0, prize numeric not null default 0);
