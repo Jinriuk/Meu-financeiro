@@ -21,8 +21,8 @@ $M -f "$ROOT/supabase/migrations/20261118110000_fase1_fatos_por_pessoa.sql" >/de
 $M -f "$ROOT/supabase/migrations/20261118110000_fase1_fatos_por_pessoa.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118120000_fase1_convites.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118120000_fase1_convites.sql" >/dev/null   # idempotente
-$M -f "$ROOT/supabase/migrations/20261118130000_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
-$M -f "$ROOT/supabase/migrations/20261118130000_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
 for f in f05_f06 f17 fase1 fase1_fatos fase1_convites webhook; do
   $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
 done
