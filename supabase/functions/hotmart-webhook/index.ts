@@ -18,9 +18,13 @@ const PLAN_MAP: Record<string, string> = {
 };
 
 // eventos que ATIVAM vs REVOGAM (nomes do webhook 2.0.0)
-const ATIVA = ['PURCHASE_APPROVED', 'PURCHASE_COMPLETE', 'SWITCH_PLAN'];
+// SWITCH_PLAN fica de fora: Gestão e Pro são PRODUTOS separados, então trocar de plano (oferta) dentro do
+// produto não muda o nível. E o payload dele não traz produto nem comprador (vinha 400 e a Hotmart retentava).
+const ATIVA = ['PURCHASE_APPROVED', 'PURCHASE_COMPLETE'];
+// PURCHASE_CANCELED também fica de fora: compra cancelada nunca foi aprovada, não há o que tirar; e uma
+// segunda tentativa cancelada derrubaria o plano de quem já paga.
 const REVOGA = ['PURCHASE_REFUNDED', 'PURCHASE_CHARGEBACK', 'PURCHASE_PROTEST',
-  'PURCHASE_CANCELED', 'PURCHASE_DELAYED', 'SUBSCRIPTION_CANCELLATION'];
+  'PURCHASE_DELAYED', 'SUBSCRIPTION_CANCELLATION'];
 
 // F0.17: falha que precisa de gente olhando vai pro app_erros (o banco avisa o responsável em minutos).
 // Só o essencial: provedor, pedido e motivo — nunca o e-mail do comprador.
@@ -53,17 +57,19 @@ Deno.serve(async (req) => {
   try { ev = await req.json(); } catch { return json({ error: 'json' }, 400); }
 
   const event = String(ev?.event || '').toUpperCase();
+  if (!event) return json({ error: 'payload sem event' }, 400);
+  // evento que não mexe em acesso: confirma (200) sem exigir e-mail, senão a Hotmart retenta pra sempre
+  if (!ATIVA.includes(event) && !REVOGA.includes(event)) return json({ ok: true, ignored: event });
   const d = ev?.data || {};
   // extração defensiva: compra e assinatura têm shapes diferentes no 2.0.0
   const email = String(
-    d?.buyer?.email || d?.subscriber?.email || d?.purchase?.buyer?.email || '',
+    d?.buyer?.email || d?.subscriber?.email || d?.purchase?.buyer?.email || d?.subscription?.user?.email || '',
   ).toLowerCase().trim();
   const orderId = String(
-    d?.purchase?.transaction || d?.subscription?.subscriber?.code || d?.subscriber?.code || ev?.id || '',
+    d?.purchase?.transaction || d?.subscription?.subscriber?.code || d?.subscriber?.code || d?.subscription?.subscriber_code || ev?.id || '',
   );
   const productId = String(d?.product?.id ?? d?.subscription?.product?.id ?? '');
 
-  if (!event) return json({ error: 'payload sem event' }, 400);
   if (!email || !orderId) return json({ error: 'payload sem email/transação', event }, 400);
 
   // idempotência: (transação|evento) processa uma vez
@@ -80,9 +86,10 @@ Deno.serve(async (req) => {
     return json({ ok: true, action: 'ativado', plan });
   }
   if (REVOGA.includes(event)) {
-    const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
+    // só derruba se o pedido for do plano atual (reembolso do Gestão de quem já subiu pro Pro não derruba o Pro)
+    const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId, p_plan: PLAN_MAP[productId] ?? null });
     if (error) { await alertar(admin, 'revogação falhou: ' + error.message, { orderId }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'revogado' });
   }
-  return json({ ok: true, ignored: event });
+  return json({ ok: true, ignored: event });   // inalcançável: filtrado acima
 });

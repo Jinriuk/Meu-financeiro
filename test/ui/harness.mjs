@@ -11,7 +11,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; manifest-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'";
 const MIME = { '.html': 'text/html', '.js': 'application/javascript', '.json': 'application/json', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.css': 'text/css' };
 
-export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
+export async function abrirApp(db, { largura = 1280, altura = 900, semSessao = false, caminho = '/' } = {}) {
   const srv = http.createServer((req, res) => {
     let u = decodeURIComponent(req.url.split('?')[0]); if (u === '/') u = '/index.html';
     const fp = path.join(ROOT, u);
@@ -44,8 +44,13 @@ export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
       if (db.__senha != null && corpo.password !== db.__senha) return route.fulfill({ status: 400, json: { error: 'invalid_grant', error_description: 'Invalid login credentials' } });
       return route.fulfill({ json: { ...sessao, user } });
     }
+    // cadastro: com db.__signupSessao a conta já volta logada (projeto sem confirmação de e-mail)
+    if (url.pathname.startsWith('/auth/v1/signup')) { escritas.push({ tabela: 'auth.signup', metodo: 'POST', corpo: req.postData() });
+      return route.fulfill({ json: db.__signupSessao ? { ...sessao, user } : { user: { ...user, identities: [{}] }, session: null } }); }
     if (url.pathname.startsWith('/auth/v1/')) return route.fulfill({ json: {} });
-    if (url.pathname.startsWith('/rest/v1/rpc/')) { const nome = url.pathname.split('/').pop(); escritas.push({ tabela: 'rpc.' + nome, metodo: req.method(), corpo: req.postData() }); return route.fulfill({ json: (db.__rpc || {})[nome] ?? null }); }
+    if (url.pathname.startsWith('/rest/v1/rpc/')) { const nome = url.pathname.split('/').pop(); escritas.push({ tabela: 'rpc.' + nome, metodo: req.method(), corpo: req.postData() });
+      const falha = (db.__rpcErro || {})[nome]; if (falha) return route.fulfill({ status: 400, json: { code: 'P0001', message: falha } });
+      return route.fulfill({ json: (db.__rpc || {})[nome] ?? null }); }
     if (url.pathname.startsWith('/functions/v1/')) return route.fulfill({ json: {} });
     const tabela = url.pathname.replace('/rest/v1/', '');
     if (req.method() !== 'GET') {
@@ -60,8 +65,8 @@ export async function abrirApp(db, { largura = 1280, altura = 900 } = {}) {
     const umSo = /vnd\.pgrst\.object/.test(req.headers()['accept'] || '');
     return route.fulfill({ json: umSo ? (linhas[0] || null) : linhas, headers: { 'content-range': `0-${Math.max(0, linhas.length - 1)}/${linhas.length}` } });
   });
-  await page.addInitScript(([k, v]) => { localStorage.setItem(k, v); localStorage.setItem('gb_install', '1'); }, [`sb-${ref}-auth-token`, JSON.stringify(sessao)]);
-  await page.goto(`http://localhost:${srv.address().port}/`);
+  await page.addInitScript(([k, v, sem]) => { if (!sem) localStorage.setItem(k, v); localStorage.setItem('gb_install', '1'); }, [`sb-${ref}-auth-token`, JSON.stringify(sessao), semSessao]);
+  await page.goto(`http://localhost:${srv.address().port}${caminho}`);
   return { page, erros, escritas, user, fechar: async () => { await b.close(); srv.close(); } };
 }
 
