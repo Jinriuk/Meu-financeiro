@@ -993,6 +993,12 @@ function lerXlsxSamba(entradas,decod){
   return lerPlanilhaSamba(xlsxCelulas(txt(aba),xlsxShared(txt('xl/sharedStrings.xml'))));
 }
 
+// nome de jogador igual ao do banco (o gatilho liga fato à pessoa ignorando caixa e espaço nas pontas)
+const nomeIgual=(a,b)=>String(a??'').trim().toLowerCase()===String(b??'').trim().toLowerCase();
+// config padrão de um time de staking sem config gravada (só em memória; quem configura salva nos Ajustes)
+const configPadraoTime=ws=>({id:null,workspace_id:ws,player1_name:'',player2_name:'',player_pct:1,abi_max:2,abi_max_player1:2,abi_max_player2:0,
+  piso_minimo:0,makeup_max_recomendado:0,makeup_inicial_player1:0,makeup_inicial_player2:0,stoploss_daily_buyins:10,stoploss_weekly_pct:0.15,
+  banca_inicial:0,week_start_date:todayISO(),sites_permitidos:['GG Poker','PokerStars'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
 const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
@@ -2291,12 +2297,16 @@ function Dashboard({session,profile}){
   const [askTour,setAskTour]=useState(false);      // convite pro tour guiado (1º acesso)
   const [tour,setTour]=useState(0);                // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
-  const solo = ws ? ws.kind==='solo' : !!(profile&&(profile.role==='guest'||profile.role==='solo'));
-  const [config,setConfig]=useState(null);
-  const [tours,setTours]=useState([]);
-  const [ledger,setLedger]=useState([]);
-  const [wallets,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
-  const [wds,setWds]=useState([]);
+  const soloConta = ws ? ws.kind==='solo' : !!(profile&&(profile.role==='guest'||profile.role==='solo'));
+  // time de staking com N jogadores (fase 1): cada aluno vê só os próprios dados, com o layout de um jogador;
+  // gestor escolhe o aluno. O pool de 2 (kind 'team') continua igual.
+  const modoTime = !!ws&&ws.kind==='time';
+  const solo = soloConta||modoTime;                // layout de UM jogador (conta individual ou aluno do time)
+  const [configRaw,setConfig]=useState(null);
+  const [toursRaw,setTours]=useState([]);
+  const [ledgerRaw,setLedger]=useState([]);
+  const [walletsRaw,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
+  const [wdsRaw,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
   const [viewSel,setView]=useState('painel');
   const view=viewSel;
@@ -2314,8 +2324,22 @@ function Dashboard({session,profile}){
   const [mensalWho,setMensalWho]=useState('Geral'); // filtro do "Onde vocês lucram"
   const [pastN,setPastN]=useState(10);            // Torneios: quantos dias antigos mostrar (dez em dez)
   const [diaryN,setDiaryN]=useState(12);          // Diário: quantos cards mostrar (doze em doze)
-  const [hh,setHh]=useState([]);                  // agregados de hand history por torneio
+  const [hhRaw,setHh]=useState([]);               // agregados de hand history por torneio
   const [chgs,setChgs]=useState([]);              // histórico de alterações dos Ajustes
+  // modo time: quem o usuário pode ver e de quem são os dados na tela
+  const [timeGente,setTimeGente]=useState({jogadores:[],eu:null,podeConfigurar:false,saquesPagos:[]});
+  const [jogadorSel,setJogadorSel]=useState(null);
+  const doJogador=arr=>modoTime?(arr||[]).filter(r=>nomeIgual(r.player,jogadorSel)):arr;
+  const tours=useMemo(()=>doJogador(toursRaw),[toursRaw,modoTime,jogadorSel]);
+  const ledger=useMemo(()=>doJogador(ledgerRaw),[ledgerRaw,modoTime,jogadorSel]);
+  const wallets=useMemo(()=>doJogador(walletsRaw),[walletsRaw,modoTime,jogadorSel]);
+  // no time, os saques pagos (devolução + cashout saem das salas) entram como saque na banca do aluno
+  const wds=useMemo(()=>modoTime?doJogador(timeGente.saquesPagos):wdsRaw,[wdsRaw,modoTime,jogadorSel,timeGente]);
+  const hh=useMemo(()=>doJogador(hhRaw),[hhRaw,modoTime,jogadorSel]);
+  // no time, a config é a do time e o "jogador 1" é o aluno na tela (nunca gravado: Ajustes não edita nome no time)
+  // banca inicial e make-up inicial da config são coisa do pool de 2: no time a banca do aluno começa pelas salas dele
+  const config=useMemo(()=>modoTime&&configRaw?{...configRaw,player1_name:jogadorSel||'',player2_name:'',
+    banca_inicial:Math.round(wallets.reduce((a,w)=>a+num(w.saldo_inicial),0)*100)/100,makeup_inicial_player1:0,makeup_inicial_player2:0}:configRaw,[configRaw,modoTime,jogadorSel,wallets]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
@@ -2374,6 +2398,24 @@ function Dashboard({session,profile}){
   };
   const dispensarInstall=()=>{ setInstallCard(false); marcarInstall(); };
 
+  // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
+  const carregarGenteTime=async()=>{
+    try{
+      const [pe,vi,ac,un,sq]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id'),
+        sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago')]);
+      const pessoas=(pe.data||[]).filter(x=>x.status!=='saiu'); const ativos=new Set((vi.data||[]).filter(v=>!v.fim).map(v=>v.pessoa_id));
+      const eu=pessoas.find(x=>x.user_id===session.user.id)||null;
+      const jogadores=pessoas.filter(x=>ativos.has(x.id)).map(x=>x.nome).sort((a,b)=>a.localeCompare(b));
+      const raiz=(un.data||[]).find(u=>!u.mae_id);
+      const podeConfigurar=!!(eu&&raiz&&(ac.data||[]).some(a=>a.pessoa_id===eu.id&&a.unidade_id===raiz.id&&(a.capacidades||[]).some(c=>c==='administrar'||c==='configurar_regras')));
+      const nomePorId=Object.fromEntries((pe.data||[]).map(x=>[x.id,x.nome]));
+      const saquesPagos=(sq.data||[]).map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
+        week_ending_date:weekEnding(String(x.pago_em||'').slice(0,10)),wallet:null,observacoes:'saque do time'}));
+      setTimeGente({jogadores,eu,podeConfigurar,saquesPagos});
+      setJogadorSel(sel=>sel&&jogadores.some(n=>nomeIgual(n,sel))?sel:(eu&&jogadores.some(n=>nomeIgual(n,eu.nome))?eu.nome:(jogadores[0]||null)));
+    }catch(e){ console.error(e); }
+  };
   const loadAll=async()=>{
     try{
       // convite de time pendente: aceita ANTES de carregar (a conta passa a ver o time)
@@ -2402,6 +2444,7 @@ function Dashboard({session,profile}){
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
       try{ const {data:un}=await sb.from('unidade').select('id').limit(1); setTemTime(!!(un&&un.length)); }catch(e){}
       const ehSolo=myWs?myWs.kind==='solo':!!(profile&&(profile.role==='guest'||profile.role==='solo'));
+      if(myWs&&myWs.kind==='time') await carregarGenteTime();
       // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
       // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
       // "cria outra config" (isso já duplicou a tabela e bagunçou a banca uma vez).
@@ -2412,6 +2455,8 @@ function Dashboard({session,profile}){
         setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
         return;
       }
+      // time sem config gravada: usa a padrão em memória (aluno não grava config; quem configura salva nos Ajustes)
+      if(!c&&!cfg.error&&myWs&&myWs.kind==='time') c=configPadraoTime(myWs.id);
       if(!c&&!cfg.error){
         const r=await sb.from('pool_config').insert({}).select().single();
         c=r.data||null;
@@ -3123,6 +3168,16 @@ function Dashboard({session,profile}){
         <div className="bottomnav"><Brand small team={!solo}/></div>
         <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
       </div>
+      {/* time: o gestor escolhe de qual aluno são os dados na tela (o aluno só vê os dele) */}
+      {modoTime&&view!=='time'&&(timeGente.jogadores.length>1||(timeGente.jogadores.length===1&&!(timeGente.eu&&nomeIgual(timeGente.eu.nome,timeGente.jogadores[0]))))&&
+        <div data-seletor-jogador style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
+          <span style={{fontSize:13,fontWeight:700,color:P}}>Vendo os dados de</span>
+          <select value={jogadorSel||''} onChange={e=>setJogadorSel(e.target.value)} style={{...inputStyle,width:'auto',minWidth:160,padding:'8px 12px',fontSize:14,background:C.surface}}>
+            {timeGente.jogadores.map(n=><option key={n} value={n}>{n}{timeGente.eu&&nomeIgual(n,timeGente.eu.nome)?' (você)':''}</option>)}
+          </select>
+        </div>}
+      {modoTime&&view!=='time'&&!jogadorSel&&<Card style={{padding:20,marginBottom:16}}><div style={{fontWeight:700}}>Nenhum jogador no time ainda.</div>
+        <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Convide os jogadores pela aba Time. Quando eles entrarem, os dados de cada um aparecem aqui.</div></Card>}
 
       {/* ---------------- PAINEL ---------------- */}
       {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
@@ -3841,10 +3896,11 @@ function Dashboard({session,profile}){
       {view==='time'&&temTime&&<TimeTela session={session}/>}
       {view==='config'&&<div className="ftfade">
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>Configurações da pool</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{modoTime?'Configurações do time':'Configurações da pool'}</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
+          {modoTime&&<div data-ajustes-time style={{fontSize:12.5,color:C.inkSoft,marginTop:-6,marginBottom:8}}>{timeGente.podeConfigurar?'Regras do time inteiro: valem pra todos os jogadores.':'Regras do time: só quem configura o time altera.'}</div>}
           {(solo?[
-            {label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'},
+            ...(modoTime?[]:[{label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'}]),
             {label:'ABI máximo',val:config.abi_max_player1,kind:'money',key:'abi_max_player1',show:fmt(config.abi_max_player1)},
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
@@ -3870,7 +3926,7 @@ function Dashboard({session,profile}){
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
           ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
-            <button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>
+            {(!modoTime||timeGente.podeConfigurar)&&<button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
@@ -3882,7 +3938,7 @@ function Dashboard({session,profile}){
             <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>{c.changed_by_name||'—'} · {dLabel(String(c.created_at).slice(0,10))}</div>
           </div>)}
         </Card>
-        {solo&&<Card style={{padding:20,marginTop:16}}>
+        {soloConta&&<Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Seu plano</h3>
           <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b>{trialDaysLeft!=null&&<span style={{marginLeft:8,padding:'3px 9px',borderRadius:99,fontSize:11.5,fontWeight:800,color:trialDaysLeft<=3?C.gold:P,background:trialDaysLeft<=3?C.goldSoft:C.plumSoft}}>teste grátis · {trialDaysLeft===0?'último dia':`${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</span>}</div>
           {trialDaysLeft!=null&&<div style={{fontSize:12.5,color:C.inkSoft,marginBottom:8,lineHeight:1.5}}>Seu teste grátis dura <b>15 dias</b>. Quando acabar, o acesso é bloqueado até você assinar — seus dados ficam guardados.</div>}
@@ -3901,7 +3957,7 @@ function Dashboard({session,profile}){
             <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
             {!isStandalone()&&<button onClick={instalar} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoChip s={18}/>Instalar na tela inicial</button>}
           </div>
-          {solo&&<div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+          {soloConta&&<div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
             <div style={{fontSize:13,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Quer sair de vez? Você pode <b>excluir sua conta</b> e apagar todos os seus dados definitivamente (direito garantido pela LGPD).</div>
             <button onClick={()=>setDelAcc(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.redSoft}`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5,cursor:'pointer'}}><IcoTrash s={17}/>Excluir minha conta</button>
           </div>}

@@ -1966,6 +1966,30 @@ function lerXlsxSamba(entradas, decod) {
   };
   return lerPlanilhaSamba(xlsxCelulas(txt(aba), xlsxShared(txt('xl/sharedStrings.xml'))));
 }
+
+// nome de jogador igual ao do banco (o gatilho liga fato à pessoa ignorando caixa e espaço nas pontas)
+const nomeIgual = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+// config padrão de um time de staking sem config gravada (só em memória; quem configura salva nos Ajustes)
+const configPadraoTime = ws => ({
+  id: null,
+  workspace_id: ws,
+  player1_name: '',
+  player2_name: '',
+  player_pct: 1,
+  abi_max: 2,
+  abi_max_player1: 2,
+  abi_max_player2: 0,
+  piso_minimo: 0,
+  makeup_max_recomendado: 0,
+  makeup_inicial_player1: 0,
+  makeup_inicial_player2: 0,
+  stoploss_daily_buyins: 10,
+  stoploss_weekly_pct: 0.15,
+  banca_inicial: 0,
+  week_start_date: todayISO(),
+  sites_permitidos: ['GG Poker', 'PokerStars'],
+  modalidades_permitidas: ['MTT', 'Spin', 'Cash', 'Sit & Go']
+});
 const Svg = p => /*#__PURE__*/React.createElement("svg", {
   width: p.s || 20,
   height: p.s || 20,
@@ -7645,12 +7669,16 @@ function Dashboard({
   const [askTour, setAskTour] = useState(false); // convite pro tour guiado (1º acesso)
   const [tour, setTour] = useState(0); // 0 = desligado · n = passo atual do tour
   // solo = conta individual (GrinderBank). Fallback pro papel do perfil quando o workspace ainda não carregou.
-  const solo = ws ? ws.kind === 'solo' : !!(profile && (profile.role === 'guest' || profile.role === 'solo'));
-  const [config, setConfig] = useState(null);
-  const [tours, setTours] = useState([]);
-  const [ledger, setLedger] = useState([]);
-  const [wallets, setWallets] = useState([]); // saldo inicial por jogador+plataforma
-  const [wds, setWds] = useState([]);
+  const soloConta = ws ? ws.kind === 'solo' : !!(profile && (profile.role === 'guest' || profile.role === 'solo'));
+  // time de staking com N jogadores (fase 1): cada aluno vê só os próprios dados, com o layout de um jogador;
+  // gestor escolhe o aluno. O pool de 2 (kind 'team') continua igual.
+  const modoTime = !!ws && ws.kind === 'time';
+  const solo = soloConta || modoTime; // layout de UM jogador (conta individual ou aluno do time)
+  const [configRaw, setConfig] = useState(null);
+  const [toursRaw, setTours] = useState([]);
+  const [ledgerRaw, setLedger] = useState([]);
+  const [walletsRaw, setWallets] = useState([]); // saldo inicial por jogador+plataforma
+  const [wdsRaw, setWds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewSel, setView] = useState('painel');
   const view = viewSel;
@@ -7675,8 +7703,33 @@ function Dashboard({
   const [mensalWho, setMensalWho] = useState('Geral'); // filtro do "Onde vocês lucram"
   const [pastN, setPastN] = useState(10); // Torneios: quantos dias antigos mostrar (dez em dez)
   const [diaryN, setDiaryN] = useState(12); // Diário: quantos cards mostrar (doze em doze)
-  const [hh, setHh] = useState([]); // agregados de hand history por torneio
+  const [hhRaw, setHh] = useState([]); // agregados de hand history por torneio
   const [chgs, setChgs] = useState([]); // histórico de alterações dos Ajustes
+  // modo time: quem o usuário pode ver e de quem são os dados na tela
+  const [timeGente, setTimeGente] = useState({
+    jogadores: [],
+    eu: null,
+    podeConfigurar: false,
+    saquesPagos: []
+  });
+  const [jogadorSel, setJogadorSel] = useState(null);
+  const doJogador = arr => modoTime ? (arr || []).filter(r => nomeIgual(r.player, jogadorSel)) : arr;
+  const tours = useMemo(() => doJogador(toursRaw), [toursRaw, modoTime, jogadorSel]);
+  const ledger = useMemo(() => doJogador(ledgerRaw), [ledgerRaw, modoTime, jogadorSel]);
+  const wallets = useMemo(() => doJogador(walletsRaw), [walletsRaw, modoTime, jogadorSel]);
+  // no time, os saques pagos (devolução + cashout saem das salas) entram como saque na banca do aluno
+  const wds = useMemo(() => modoTime ? doJogador(timeGente.saquesPagos) : wdsRaw, [wdsRaw, modoTime, jogadorSel, timeGente]);
+  const hh = useMemo(() => doJogador(hhRaw), [hhRaw, modoTime, jogadorSel]);
+  // no time, a config é a do time e o "jogador 1" é o aluno na tela (nunca gravado: Ajustes não edita nome no time)
+  // banca inicial e make-up inicial da config são coisa do pool de 2: no time a banca do aluno começa pelas salas dele
+  const config = useMemo(() => modoTime && configRaw ? {
+    ...configRaw,
+    player1_name: jogadorSel || '',
+    player2_name: '',
+    banca_inicial: Math.round(wallets.reduce((a, w) => a + num(w.saldo_inicial), 0) * 100) / 100,
+    makeup_inicial_player1: 0,
+    makeup_inicial_player2: 0
+  } : configRaw, [configRaw, modoTime, jogadorSel, wallets]);
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
   const [imp, setImp] = useState({
     busy: false,
@@ -7800,6 +7853,37 @@ function Dashboard({
     setInstallCard(false);
     marcarInstall();
   };
+
+  // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
+  const carregarGenteTime = async () => {
+    try {
+      const [pe, vi, ac, un, sq] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id'), sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status', 'pago')]);
+      const pessoas = (pe.data || []).filter(x => x.status !== 'saiu');
+      const ativos = new Set((vi.data || []).filter(v => !v.fim).map(v => v.pessoa_id));
+      const eu = pessoas.find(x => x.user_id === session.user.id) || null;
+      const jogadores = pessoas.filter(x => ativos.has(x.id)).map(x => x.nome).sort((a, b) => a.localeCompare(b));
+      const raiz = (un.data || []).find(u => !u.mae_id);
+      const podeConfigurar = !!(eu && raiz && (ac.data || []).some(a => a.pessoa_id === eu.id && a.unidade_id === raiz.id && (a.capacidades || []).some(c => c === 'administrar' || c === 'configurar_regras')));
+      const nomePorId = Object.fromEntries((pe.data || []).map(x => [x.id, x.nome]));
+      const saquesPagos = (sq.data || []).map(x => ({
+        id: 'saque-' + x.id,
+        player: nomePorId[x.pessoa_id] || '',
+        valor_sacado: num(x.devolucao) + num(x.cashout),
+        week_ending_date: weekEnding(String(x.pago_em || '').slice(0, 10)),
+        wallet: null,
+        observacoes: 'saque do time'
+      }));
+      setTimeGente({
+        jogadores,
+        eu,
+        podeConfigurar,
+        saquesPagos
+      });
+      setJogadorSel(sel => sel && jogadores.some(n => nomeIgual(n, sel)) ? sel : eu && jogadores.some(n => nomeIgual(n, eu.nome)) ? eu.nome : jogadores[0] || null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const loadAll = async () => {
     try {
       // convite de time pendente: aceita ANTES de carregar (a conta passa a ver o time)
@@ -7850,6 +7934,7 @@ function Dashboard({
         setTemTime(!!(un && un.length));
       } catch (e) {}
       const ehSolo = myWs ? myWs.kind === 'solo' : !!(profile && (profile.role === 'guest' || profile.role === 'solo'));
+      if (myWs && myWs.kind === 'time') await carregarGenteTime();
       // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
       // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
       // "cria outra config" (isso já duplicou a tabela e bagunçou a banca uma vez).
@@ -7865,6 +7950,8 @@ function Dashboard({
         setChgs(cc.data || []);
         return;
       }
+      // time sem config gravada: usa a padrão em memória (aluno não grava config; quem configura salva nos Ajustes)
+      if (!c && !cfg.error && myWs && myWs.kind === 'time') c = configPadraoTime(myWs.id);
       if (!c && !cfg.error) {
         const r = await sb.from('pool_config').insert({}).select().single();
         c = r.data || null;
@@ -9577,7 +9664,54 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement(IcoLogout, {
     s: 16
-  }), "Sair")), view === 'painel' && /*#__PURE__*/React.createElement("div", {
+  }), "Sair")), modoTime && view !== 'time' && (timeGente.jogadores.length > 1 || timeGente.jogadores.length === 1 && !(timeGente.eu && nomeIgual(timeGente.eu.nome, timeGente.jogadores[0]))) && /*#__PURE__*/React.createElement("div", {
+    "data-seletor-jogador": true,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+      background: C.plumSoft,
+      borderRadius: 14,
+      padding: '10px 14px',
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: P
+    }
+  }, "Vendo os dados de"), /*#__PURE__*/React.createElement("select", {
+    value: jogadorSel || '',
+    onChange: e => setJogadorSel(e.target.value),
+    style: {
+      ...inputStyle,
+      width: 'auto',
+      minWidth: 160,
+      padding: '8px 12px',
+      fontSize: 14,
+      background: C.surface
+    }
+  }, timeGente.jogadores.map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }, n, timeGente.eu && nomeIgual(n, timeGente.eu.nome) ? ' (você)' : '')))), modoTime && view !== 'time' && !jogadorSel && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700
+    }
+  }, "Nenhum jogador no time ainda."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "Convide os jogadores pela aba Time. Quando eles entrarem, os dados de cada um aparecem aqui.")), view === 'painel' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: {
       display: 'flex',
@@ -12766,18 +12900,26 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Configura\xE7\xF5es da pool"), /*#__PURE__*/React.createElement("div", {
+  }, modoTime ? 'Configurações do time' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginBottom: 12
     }
-  }, "Toque no l\xE1pis pra ajustar. Todos veem a mesma configura\xE7\xE3o."), (solo ? [{
+  }, "Toque no l\xE1pis pra ajustar. Todos veem a mesma configura\xE7\xE3o."), modoTime && /*#__PURE__*/React.createElement("div", {
+    "data-ajustes-time": true,
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: -6,
+      marginBottom: 8
+    }
+  }, timeGente.podeConfigurar ? 'Regras do time inteiro: valem pra todos os jogadores.' : 'Regras do time: só quem configura o time altera.'), (solo ? [...(modoTime ? [] : [{
     label: 'Seu nome',
     val: config.player1_name,
     kind: 'text',
     key: 'player1_name'
-  }, {
+  }]), {
     label: 'ABI máximo',
     val: config.abi_max_player1,
     kind: 'money',
@@ -12934,7 +13076,7 @@ function Dashboard({
       overflow: 'hidden',
       textOverflow: 'ellipsis'
     }
-  }, row.show != null ? row.show : String(row.val))), /*#__PURE__*/React.createElement("button", {
+  }, row.show != null ? row.show : String(row.val))), (!modoTime || timeGente.podeConfigurar) && /*#__PURE__*/React.createElement("button", {
     onClick: () => setQuickEdit({
       label: row.label,
       kind: row.kind,
@@ -12990,7 +13132,7 @@ function Dashboard({
       color: C.inkSoft,
       marginTop: 1
     }
-  }, c.changed_by_name || '—', " \xB7 ", dLabel(String(c.created_at).slice(0, 10)))))), solo && /*#__PURE__*/React.createElement(Card, {
+  }, c.changed_by_name || '—', " \xB7 ", dLabel(String(c.created_at).slice(0, 10)))))), soloConta && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20,
       marginTop: 16
@@ -13136,7 +13278,7 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement(IcoChip, {
     s: 18
-  }), "Instalar na tela inicial")), solo && /*#__PURE__*/React.createElement("div", {
+  }), "Instalar na tela inicial")), soloConta && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 16,
       paddingTop: 16,

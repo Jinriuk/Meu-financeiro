@@ -1,0 +1,71 @@
+// Modo time (workspace 'time'): cada aluno vê só os próprios dados com o layout de um jogador; o gestor escolhe o aluno.
+// O pool de 2 ('team') não muda.
+import { abrirApp, dbBase } from './harness.mjs';
+const falhas = []; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ ') + m); if (!c) falhas.push(m); };
+const EU = '00000000-0000-0000-0000-00000000aaaa';
+async function cenario(nome, db, fn) {
+  const { page, erros, escritas, fechar } = await abrirApp(db);
+  try { await fn(page, escritas); } catch (e) { falhas.push(nome + ': ' + e.message); console.log('✗', nome, e.message); }
+  ok(erros.length === 0, nome + ': sem erro de página/console' + (erros.length ? ': ' + erros.join(' | ') : ''));
+  await fechar();
+}
+const corpo = page => page.locator('body').innerText();
+const tour = (id, player, nome, buyin, prize, d) => ({ id, workspace_id: 'w1', entry_date: d, player, site: 'GG Poker', tournament_name: nome, modality: 'MTT', buyin, prize, reentries: 0, field_size: 100, bounty: 0, currency: 'USD', created_at: d + 'T10:00:00Z' });
+const time = (extra = {}) => dbBase({
+  workspaces: [{ id: 'w1', name: 'Samba', kind: 'time', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
+  pool_config: [{ id: 'c1', workspace_id: 'w1', player1_name: '', player2_name: '', player_pct: 1, abi_max: 3, abi_max_player1: 3, abi_max_player2: 0, piso_minimo: 0, makeup_max_recomendado: 0, makeup_inicial_player1: 0, makeup_inicial_player2: 0, stoploss_daily_buyins: 10, stoploss_weekly_pct: 0.15, banca_inicial: 999, week_start_date: '2026-11-02', sites_permitidos: ['GG Poker', 'PokerStars'], modalidades_permitidas: ['MTT'], created_at: '2026-01-01T00:00:00Z' }],
+  unidade: [{ id: 'u1', workspace_id: 'w1', mae_id: null, nome: 'Samba', caminho: '/u1/', arquivada: false }],
+  pessoa: [{ id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' }, { id: 'p3', workspace_id: 'w1', user_id: 'x3', nome: 'Maria', status: 'ativo' }],
+  vinculo: [{ pessoa_id: 'p1', unidade_id: 'u1', fim: null }, { pessoa_id: 'p3', unidade_id: 'u1', fim: null }],
+  acesso: [{ pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
+  tournaments: [tour('t1', 'Hero', 'Torneio do Hero', 10, 30, '2026-11-16'), tour('t2', 'hero ', 'Outro do Hero', 5, 0, '2026-11-17'), tour('t3', 'Maria', 'Torneio da Maria', 20, 0, '2026-11-17')],
+  player_wallets: [{ id: 'w-1', player: 'Hero', wallet: 'PS', saldo_inicial: 75 }, { id: 'w-2', player: 'Hero', wallet: 'GG Poker', saldo_inicial: 80 }, { id: 'w-3', player: 'Maria', wallet: 'GG Poker', saldo_inicial: 500 }],
+  saque: [{ id: 's1', pessoa_id: 'p1', devolucao: 50, cashout: 20, pago_em: '2026-11-17T12:00:00Z', status: 'pago' }],
+  ...extra,
+});
+const irPara = async (page, nome) => { await page.getByRole('button', { name: new RegExp('^' + nome + '$') }).first().click({ timeout: 15000 }); await page.waitForTimeout(300); };
+
+// 1) gestor que também joga: seletor, padrão = ele mesmo, troca pra Maria
+await cenario('gestor', time(), async (page) => {
+  await irPara(page, 'Torneios');
+  ok(await page.locator('[data-seletor-jogador]').count() === 1, 'seletor de jogador aparece');
+  let t = await page.locator('main').innerText();
+  ok(/TORNEIOS JOGADOS\s*2\s*em 2 dias/i.test(t), 'começa nos próprios torneios: 2 (inclui "hero " com espaço/caixa diferentes), sem o da Maria');
+  await page.locator('[data-seletor-jogador] select').selectOption('Maria');
+  await page.waitForTimeout(300);
+  t = await page.locator('main').innerText();
+  ok(/TORNEIOS JOGADOS\s*1\s*em 1 dia/i.test(t) && /1 torneio · Maria/.test(t) && /−US\$\s20,00/.test(t), 'ao escolher a Maria, só o dela (1 torneio, −20)');
+  await irPara(page, 'Ajustes');
+  t = await corpo(page);
+  ok(/Configurações do time/.test(t) && !/Seu nome/.test(t) && !/Seu plano/.test(t), 'Ajustes do time: sem nome, sem plano');
+  ok(await page.getByRole('button', { name: /^Saques$/ }).count() === 0, 'sem a aba Saques do pool');
+  for (const aba of ['Diário', 'Semanal', 'Mensal', 'Stats', 'Banca', 'Painel']) await irPara(page, aba);
+  ok(/Maria/.test(await page.locator('[data-seletor-jogador]').innerText()), 'passou por todas as abas com a Maria escolhida');
+});
+
+// 2) só jogador: sem seletor, sem lápis nos Ajustes; banca = salas + resultados − saques pagos do time
+await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' }], vinculo: [{ pessoa_id: 'p1', unidade_id: 'u1', fim: null }],
+  tournaments: [tour('t1', 'Hero', 'Torneio do Hero', 10, 30, '2026-11-16'), tour('t2', 'Hero', 'Outro do Hero', 5, 0, '2026-11-17')] }), async (page) => {
+  await irPara(page, 'Painel');
+  ok(await page.locator('[data-seletor-jogador]').count() === 0, 'sem seletor (só ele)');
+  const t = await corpo(page);
+  ok(/Minha banca/.test(t), 'layout de um jogador');
+  ok(/100,00/.test(t) && !/999/.test(t), 'banca = 75 + 80 (salas) + 15 (torneios) − 70 (saque do time) = 100; a banca inicial do time não entra');
+  await irPara(page, 'Ajustes');
+  ok(await page.locator('[data-ajustes-time]').count() === 1 && /só quem configura o time altera/.test(await corpo(page)), 'aluno vê as regras do time sem poder editar');
+});
+
+// 3) pool de 2 ('team'): nada muda
+await cenario('pool de 2', dbBase({
+  workspaces: [{ id: 'w1', name: 'Pool', kind: 'team', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
+  pool_config: [{ ...dbBase().pool_config[0], player1_name: 'Ana', player2_name: 'Beto' }],
+  tournaments: [tour('t1', 'Ana', 'Torneio da Ana', 10, 30, '2026-11-16'), tour('t2', 'Beto', 'Torneio do Beto', 5, 0, '2026-11-17')] }), async (page) => {
+  await irPara(page, 'Torneios');
+  const t = await page.locator('main').innerText();
+  ok(/1 torneio · Ana/.test(t) && /1 torneio · Beto/.test(t) && /DE QUEM/i.test(t), 'pool vê os torneios dos dois e escolhe "de quem" no import');
+  ok(await page.locator('[data-seletor-jogador]').count() === 0, 'sem seletor no pool');
+  ok(await page.getByRole('button', { name: /^Saques$/ }).count() > 0, 'aba Saques do pool continua');
+});
+
+console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
+process.exit(falhas.length ? 1 : 0);

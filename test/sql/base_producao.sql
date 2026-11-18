@@ -25,10 +25,18 @@ create table public.hh_tournament_stats (id uuid primary key default gen_random_
   unique (workspace_id, player, site, site_tournament_id));
 create table public.bankroll_ledger (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), entry_date date not null, wallet text not null, entrada numeric not null default 0, saida numeric not null default 0, player text);
 create table public.withdrawals (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), week_ending_date date not null, player text not null, valor_sacado numeric not null default 0, wallet text);
-create table public.player_wallets (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), player text not null, wallet text not null, saldo_inicial numeric not null default 0);
+create table public.player_wallets (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), player text not null, wallet text not null, saldo_inicial numeric not null default 0,
+  unique (workspace_id, player, wallet));
 create table public.daily_entries (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), entry_date date not null, player text not null, saldo_final numeric not null default 0);
 create table public.hh_import_log (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), player text, saved int not null default 0, created_at timestamptz not null default now());
-create table public.pool_config (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), player1_name text not null default 'Gabriel', abi_max numeric not null default 2, created_at timestamptz not null default now());
+create table public.pool_config (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id),
+  player1_name text not null default 'Gabriel', player2_name text not null default 'Guedes', player_pct numeric not null default 0.5,
+  abi_max numeric not null default 2, piso_minimo numeric not null default 300, makeup_max_recomendado numeric not null default 100,
+  makeup_inicial_player1 numeric not null default 0, makeup_inicial_player2 numeric not null default 0,
+  stoploss_daily_buyins numeric not null default 10, stoploss_weekly_pct numeric not null default 0.15, banca_inicial numeric not null default 400,
+  week_start_date date not null default current_date, sites_permitidos text[] not null default '{PokerStars,"GG Poker"}',
+  modalidades_permitidas text[] not null default '{MTT,Spin,Cash,"Sit & Go"}', created_by uuid default auth.uid(),
+  created_at timestamptz not null default now(), abi_max_player1 numeric not null default 2, abi_max_player2 numeric not null default 2);
 create table public.config_changes (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), field text not null, resumo text not null default '', created_at timestamptz not null default now());
 create table public.plan_activations (id uuid primary key default gen_random_uuid(), email text, plan text, status text, source text, order_id text, created_at timestamptz default now(), used_at timestamptz, used_by uuid);
 

@@ -2,7 +2,7 @@
 -- GrinderBank · schema public GERADO (não edite à mão)
 -- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
 -- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
--- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118140000.
+-- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118150000.
 -- ============================================================
 --
 -- PostgreSQL database dump
@@ -161,7 +161,7 @@ CREATE FUNCTION public.conferir_abertura(p_pessoa uuid, p_mu numeric, p_cashout 
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare a record;
+declare a record; nome text; s jsonb;
 begin
   select * into a from public.abertura where pessoa_id = p_pessoa for update;
   if a.id is null then raise exception 'esse jogador não enviou planilha'; end if;
@@ -172,6 +172,18 @@ begin
   if p_mu is null or p_cashout is null or p_mu < 0 or p_cashout < 0 then raise exception 'MU e cashout precisam ser de 0 pra cima'; end if;
   update public.abertura set status = 'confirmada', mu = round(p_mu, 2), cashout = round(p_cashout, 2),
          confirmado_por = auth.uid(), confirmado_em = now() where id = a.id;
+  -- salas do aluno com o saldo da planilha (só as que ele ainda não tem)
+  select pe.nome into nome from public.pessoa pe where pe.id = p_pessoa;
+  if jsonb_typeof(a.planilha->'saldos') = 'array' then
+    for s in select x from jsonb_array_elements(a.planilha->'saldos') x loop
+      continue when coalesce((s->>'saldo')::numeric, 0) <= 0 or coalesce(btrim(s->>'sala'), '') = '';
+      if not exists (select 1 from public.player_wallets w where w.workspace_id = a.workspace_id
+                       and lower(btrim(w.player)) = lower(btrim(nome)) and lower(w.wallet) = lower(btrim(s->>'sala'))) then
+        insert into public.player_wallets(workspace_id, player, wallet, saldo_inicial)
+        values (a.workspace_id, nome, btrim(s->>'sala'), round((s->>'saldo')::numeric, 2));
+      end if;
+    end loop;
+  end if;
 end $$;
 
 
@@ -321,6 +333,34 @@ begin
   insert into public.convite(workspace_id, unidade_id, pessoa_id, token_hash, expira_em, usos_max)
   values (ws, p_unidade, p_pessoa, public.convite_hash(tok), now() + make_interval(days => p_dias), p_usos);
   return tok;
+end $$;
+
+
+--
+-- Name: criar_time(text, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.criar_time(p_nome text, p_dono uuid, p_nome_dono text DEFAULT NULL::text, p_assentos integer DEFAULT NULL::integer) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare ws uuid; raiz uuid; p uuid; nick text;
+begin
+  if coalesce(btrim(p_nome), '') = '' then raise exception 'nome do time'; end if;
+  if not exists (select 1 from auth.users where id = p_dono) then raise exception 'conta do dono não existe'; end if;
+  if exists (select 1 from public.workspace_members where user_id = p_dono) then
+    raise exception 'essa conta já está em outro workspace (uma conta, um lugar até a fase 2): use outra conta pro dono do time'; end if;
+  insert into public.workspaces(name, kind, plan, trial_ends_at, assentos) values (btrim(p_nome), 'time', 'team', null, p_assentos) returning id into ws;
+  insert into public.workspace_members(workspace_id, user_id, role) values (ws, p_dono, 'owner');
+  insert into public.unidade(workspace_id, nome, rotulo) values (ws, btrim(p_nome), 'Time') returning id into raiz;
+  select nickname into nick from public.player_profiles where user_id = p_dono;
+  insert into public.pessoa(workspace_id, user_id, nome, status)
+  values (ws, p_dono, left(coalesce(nullif(btrim(p_nome_dono), ''), nullif(btrim(nick), ''), 'Gestor'), 60), 'ativo') returning id into p;
+  insert into public.acesso(pessoa_id, unidade_id, capacidades) values (p, raiz, array['administrar']);
+  insert into public.pool_config(workspace_id, player1_name, player2_name, player_pct, banca_inicial, piso_minimo, makeup_max_recomendado,
+                                 abi_max, abi_max_player1, abi_max_player2, week_start_date)
+  values (ws, '', '', 1, 0, 0, 0, 2, 2, 0, current_date);
+  return ws;
 end $$;
 
 
@@ -1862,7 +1902,7 @@ CREATE TABLE public.workspaces (
     assentos integer,
     contrato_fim date,
     CONSTRAINT workspaces_assentos_check CHECK (((assentos IS NULL) OR (assentos > 0))),
-    CONSTRAINT workspaces_kind_check CHECK ((kind = ANY (ARRAY['team'::text, 'solo'::text]))),
+    CONSTRAINT workspaces_kind_check CHECK ((kind = ANY (ARRAY['team'::text, 'solo'::text, 'time'::text]))),
     CONSTRAINT workspaces_plan_check CHECK ((plan = ANY (ARRAY['free'::text, 'gestao'::text, 'pro'::text, 'founder'::text, 'team'::text])))
 );
 
@@ -4033,6 +4073,14 @@ GRANT ALL ON FUNCTION public.create_solo_workspace(ws_name text, plan_escolhido 
 REVOKE ALL ON FUNCTION public.criar_convite(p_unidade uuid, p_pessoa uuid, p_dias integer, p_usos integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.criar_convite(p_unidade uuid, p_pessoa uuid, p_dias integer, p_usos integer) TO authenticated;
 GRANT ALL ON FUNCTION public.criar_convite(p_unidade uuid, p_pessoa uuid, p_dias integer, p_usos integer) TO service_role;
+
+
+--
+-- Name: FUNCTION criar_time(p_nome text, p_dono uuid, p_nome_dono text, p_assentos integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.criar_time(p_nome text, p_dono uuid, p_nome_dono text, p_assentos integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.criar_time(p_nome text, p_dono uuid, p_nome_dono text, p_assentos integer) TO service_role;
 
 
 --

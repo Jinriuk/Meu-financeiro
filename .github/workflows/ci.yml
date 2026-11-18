@@ -53,6 +53,7 @@ jobs:
           node test/ui/convite.mjs
           node test/ui/link_email.mjs
           node test/ui/time.mjs
+          node test/ui/modo_time.mjs
 
       - name: Segurança no banco (F0.5/F0.6) num Postgres local com o recorte de produção
         run: bash test/sql/run.sh
