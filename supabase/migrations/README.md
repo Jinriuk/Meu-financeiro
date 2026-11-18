@@ -31,6 +31,8 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
   (o histórico de produção gravou outra versão e foi corrigido pra esta, que vem depois das tabelas).
 - `20261118130000_fase1_dinheiro_time.sql` — contrato por faixas (lifetime realizado, divisão marginal), capital
   (MU), saque com divisão no servidor, aprovação e confirmação do recebido com a diferença. Aplicada pelo SQL Editor.
+- `20261118140000_fase1_abertura_planilha.sql` — abertura do jogador pela planilha pessoal do Samba: o jogador envia,
+  quem aprova saques confere (pode corrigir MU e cashout); a abertura conferida vira o ponto de partida do MU e do lifetime.
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.
