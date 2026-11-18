@@ -22,9 +22,9 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
 Conferidas pelo md5 contra `supabase_migrations.schema_migrations`.
 
 ## Pendentes de aplicar — nesta ordem
-1. `20261117140000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
+1. `20261118030000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
    do auth, contrato checado no servidor. Cenários de ataque: `bash test/sql/run.sh`.
-2. `20261118090000_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
+2. `20261118030100_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
    (`avisar_erros()` via pg_cron + pg_net) pro endereço em `app_secrets.alerta_webhook_url`.
 Ao aplicar, o Supabase grava uma versão nova: renomeie o arquivo pra ela (e confira o md5).
 
