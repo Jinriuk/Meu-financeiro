@@ -44,6 +44,10 @@ export async function abrirApp(db, { largura = 1280, altura = 900, semSessao = f
       if (db.__senha != null && corpo.password !== db.__senha) return route.fulfill({ status: 400, json: { error: 'invalid_grant', error_description: 'Invalid login credentials' } });
       return route.fulfill({ json: { ...sessao, user } });
     }
+    // link do e-mail (verifyOtp com token_hash): db.__verify = 'erro' simula link vencido
+    if (url.pathname.startsWith('/auth/v1/verify')) { escritas.push({ tabela: 'auth.verify', metodo: req.method(), corpo: req.postData() });
+      if (db.__verify === 'erro') return route.fulfill({ status: 403, json: { code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' } });
+      return route.fulfill({ json: { ...sessao, user } }); }
     // cadastro: com db.__signupSessao a conta já volta logada (projeto sem confirmação de e-mail)
     if (url.pathname.startsWith('/auth/v1/signup')) { escritas.push({ tabela: 'auth.signup', metodo: 'POST', corpo: req.postData() });
       return route.fulfill({ json: db.__signupSessao ? { ...sessao, user } : { user: { ...user, identities: [{}] }, session: null } }); }

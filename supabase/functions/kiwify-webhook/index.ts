@@ -191,7 +191,10 @@ Deno.serve(async (req) => {
     return json({ ok: true, action: 'ativado', plan, chave });
   }
   if (revoga) {
-    const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
+    // só derruba se o pedido for do plano atual: reembolso/boleto vencido de um pedido do Gestão de quem já
+    // está no Pro não derruba o Pro. Plano desconhecido (sem 'default' aqui, de propósito) = regra antiga.
+    const chaveR = chaves.find((k) => PLAN_MAP[k]);
+    const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId, p_plan: chaveR ? PLAN_MAP[chaveR] : null });
     if (error) { await alertar(admin, 'revogação falhou: ' + error.message, { orderId }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'revogado' });
   }

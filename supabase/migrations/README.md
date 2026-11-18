@@ -27,6 +27,8 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
 - `20261118110000_fase1_fatos_por_pessoa.sql` — fatos com pessoa e unidade na data; escopo de leitura
   (`ver_desempenho` x `ver_financeiro`); `estruturar_workspace()` pra migrar times existentes.
 - `20261118120000_fase1_convites.sql` — convite por link (token só no link, hash no banco).
+- `20261118120100_fase1_indices.sql` — índices das chaves novas e `acesso_ler` sem `auth.uid()` por linha
+  (o histórico de produção gravou outra versão e foi corrigido pra esta, que vem depois das tabelas).
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.
@@ -41,4 +43,4 @@ continua lendo os próprios dados; e-mail e papel do perfil não mudam pelo clie
 
 ## Edge Functions (`../functions/`)
 Iguais ao que está publicado (conferido em 18/11/2026): `auth-alias` (v3), `hotmart-webhook` (v4),
-`kiwify-webhook` (v7). Deploy: `supabase functions deploy <nome> --no-verify-jwt`.
+`kiwify-webhook` (v8). Deploy: `supabase functions deploy <nome> --no-verify-jwt`.

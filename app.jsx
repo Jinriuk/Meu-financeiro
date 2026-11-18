@@ -7,6 +7,17 @@ const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window
 /* ---------- convite de time: grinderbank.com/?convite=TOKEN ----------
    O token fica guardado no aparelho (sobrevive à criação da conta e à confirmação de e-mail) e sai da barra
    de endereço. Com convite pendente o cadastro NÃO cria conta individual; quem aceita é o servidor. */
+/* ---------- link dos e-mails (confirmar cadastro / redefinir senha) no PRÓPRIO domínio ----------
+   grinderbank.com/?token_hash=…&type=… : o app confirma o código com o Supabase e limpa a barra. Link apontando
+   pro mesmo domínio do remetente (e não pra supabase.co) é um dos sinais que tira o e-mail do spam. */
+const LINK_EMAIL=(()=>{ try{
+  const u=new URL(window.location.href); const th=u.searchParams.get('token_hash'); const tp=u.searchParams.get('type');
+  if(!u.searchParams.has('token_hash')) return null;
+  u.searchParams.delete('token_hash'); u.searchParams.delete('type');
+  window.history.replaceState(null,'',u.pathname+u.search+u.hash);
+  const tipos=['email','signup','recovery','invite','magiclink','email_change'];
+  return th&&/^[A-Za-z0-9_-]{6,200}$/.test(th)&&tipos.includes(tp)?{token_hash:th,type:tp}:{invalido:true};
+}catch(e){ return null; } })();
 const CONVITE_KEY='gb_convite';
 const conviteGuardado=()=>{ try{ return localStorage.getItem(CONVITE_KEY)||null; }catch(e){ return null; } };
 const esquecerConvite=()=>{ try{ localStorage.removeItem(CONVITE_KEY); }catch(e){} };
@@ -1384,7 +1395,7 @@ function DeleteAccountModal({nickname,onClose}){
 }
 
 /* ---------- login / não configurado ---------- */
-function Login(){
+function Login({aviso}){
   const [ident,setIdent]=useState(''); const [pass,setPass]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   // criar conta (self-service do GrinderBank): nome + e-mail + senha -> workspace solo
@@ -1486,6 +1497,7 @@ function Login(){
   return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
     <Card style={{padding:30,width:'100%',maxWidth:380}} className="ftfade">
       <div style={{display:'flex',justifyContent:'center',marginBottom:18}}><Brand/></div>
+      {aviso&&<div data-link-aviso style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14,fontSize:13,color:C.ink,lineHeight:1.5}}>{aviso}</div>}
       {conv&&(conv.valido
         ?<div data-convite="ok" style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
           <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.time}</div>
@@ -3953,10 +3965,17 @@ function App(){
   const [session,setSession]=useState(undefined);
   const [profile,setProfile]=useState(undefined);
   const [recovery,setRecovery]=useState(false);   // veio pelo link "esqueci minha senha"
+  const [linkAviso,setLinkAviso]=useState('');     // link do e-mail vencido/usado
   useEffect(()=>{
     if(!sb) return;
     sb.auth.getSession().then(({data})=>setSession(data.session));
     const {data:sub}=sb.auth.onAuthStateChange((e,s)=>{ setSession(s); if(e==='PASSWORD_RECOVERY') setRecovery(true); });
+    // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
+    if(LINK_EMAIL){
+      const aviso='Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      if(LINK_EMAIL.invalido) setLinkAviso(aviso);
+      else sb.auth.verifyOtp(LINK_EMAIL).then(({error})=>{ if(error) setLinkAviso(aviso); }).catch(()=>setLinkAviso(aviso));
+    }
     return ()=>sub.subscription.unsubscribe();
   },[]);
   // primeiro acesso: carrega o perfil do jogador; sem senha trocada, cai no cadastro
@@ -3991,7 +4010,7 @@ function App(){
   // veio do link "esqueci minha senha": trava TUDO até criar a senha nova (sem fechar, sem pular)
   if(recovery) return <RecoveryReset/>;
   if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
-  if(!session) return <Login/>;
+  if(!session) return <Login aviso={linkAviso}/>;
   if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
   return <Dashboard session={session} profile={profile}/>;

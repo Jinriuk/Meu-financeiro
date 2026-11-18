@@ -12,6 +12,29 @@ const sb = CONFIGURED ? window.supabase.createClient(window.SUPABASE_URL, window
 /* ---------- convite de time: grinderbank.com/?convite=TOKEN ----------
    O token fica guardado no aparelho (sobrevive à criação da conta e à confirmação de e-mail) e sai da barra
    de endereço. Com convite pendente o cadastro NÃO cria conta individual; quem aceita é o servidor. */
+/* ---------- link dos e-mails (confirmar cadastro / redefinir senha) no PRÓPRIO domínio ----------
+   grinderbank.com/?token_hash=…&type=… : o app confirma o código com o Supabase e limpa a barra. Link apontando
+   pro mesmo domínio do remetente (e não pra supabase.co) é um dos sinais que tira o e-mail do spam. */
+const LINK_EMAIL = (() => {
+  try {
+    const u = new URL(window.location.href);
+    const th = u.searchParams.get('token_hash');
+    const tp = u.searchParams.get('type');
+    if (!u.searchParams.has('token_hash')) return null;
+    u.searchParams.delete('token_hash');
+    u.searchParams.delete('type');
+    window.history.replaceState(null, '', u.pathname + u.search + u.hash);
+    const tipos = ['email', 'signup', 'recovery', 'invite', 'magiclink', 'email_change'];
+    return th && /^[A-Za-z0-9_-]{6,200}$/.test(th) && tipos.includes(tp) ? {
+      token_hash: th,
+      type: tp
+    } : {
+      invalido: true
+    };
+  } catch (e) {
+    return null;
+  }
+})();
 const CONVITE_KEY = 'gb_convite';
 const conviteGuardado = () => {
   try {
@@ -3942,7 +3965,9 @@ function DeleteAccountModal({
 }
 
 /* ---------- login / não configurado ---------- */
-function Login() {
+function Login({
+  aviso
+}) {
   const [ident, setIdent] = useState('');
   const [pass, setPass] = useState('');
   const [err, setErr] = useState('');
@@ -4184,7 +4209,18 @@ function Login() {
       justifyContent: 'center',
       marginBottom: 18
     }
-  }, /*#__PURE__*/React.createElement(Brand, null)), conv && (conv.valido ? /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(Brand, null)), aviso && /*#__PURE__*/React.createElement("div", {
+    "data-link-aviso": true,
+    style: {
+      background: C.goldSoft,
+      borderRadius: 12,
+      padding: '12px 14px',
+      marginBottom: 14,
+      fontSize: 13,
+      color: C.ink,
+      lineHeight: 1.5
+    }
+  }, aviso), conv && (conv.valido ? /*#__PURE__*/React.createElement("div", {
     "data-convite": "ok",
     style: {
       background: C.plumSoft,
@@ -13600,6 +13636,7 @@ function App() {
   const [session, setSession] = useState(undefined);
   const [profile, setProfile] = useState(undefined);
   const [recovery, setRecovery] = useState(false); // veio pelo link "esqueci minha senha"
+  const [linkAviso, setLinkAviso] = useState(''); // link do e-mail vencido/usado
   useEffect(() => {
     if (!sb) return;
     sb.auth.getSession().then(({
@@ -13611,6 +13648,15 @@ function App() {
       setSession(s);
       if (e === 'PASSWORD_RECOVERY') setRecovery(true);
     });
+    // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
+    if (LINK_EMAIL) {
+      const aviso = 'Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      if (LINK_EMAIL.invalido) setLinkAviso(aviso);else sb.auth.verifyOtp(LINK_EMAIL).then(({
+        error
+      }) => {
+        if (error) setLinkAviso(aviso);
+      }).catch(() => setLinkAviso(aviso));
+    }
     return () => sub.subscription.unsubscribe();
   }, []);
   // primeiro acesso: carrega o perfil do jogador; sem senha trocada, cai no cadastro
@@ -13686,7 +13732,9 @@ function App() {
   }, /*#__PURE__*/React.createElement("div", {
     className: "spin"
   }));
-  if (!session) return /*#__PURE__*/React.createElement(Login, null);
+  if (!session) return /*#__PURE__*/React.createElement(Login, {
+    aviso: linkAviso
+  });
   if (profile === undefined) return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
