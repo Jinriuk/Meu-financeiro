@@ -15,20 +15,19 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
   código, triggers, grants, RLS, realtime, comentários) sai **idêntico** ao de produção.
 - `schema.sql` na raiz é gerado a partir dessas migrations (`DUMP=schema.sql bash tools/regua/banco/recriar.sh`).
 
-## Aplicadas em produção depois do versionamento
-- `20261118020330_motor_stats_v2.sql` — contadores do motor de stats calibrado com o PT4 e `engine_version`
-  (as 2.448 linhas antigas ficaram com versão 1).
+## Aplicadas em produção em 18/11/2026 (depois do versionamento)
+- `20261118020330_motor_stats_v2.sql` — contadores do motor calibrado com o PT4 e `engine_version`.
 - `20261118020341_dinheiro_bounty_moeda.sql` — `tournaments.bounty` e `tournaments.currency`.
-Conferidas pelo md5 contra `supabase_migrations.schema_migrations`.
+- `20261118030000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
+  confirmado, contrato checado no servidor.
+- `20261118030100_monitoramento_erros.sql` — `app_erros`, `registrar_erro()`, `avisar_erros()` a cada 5 min.
 
-## Pendentes de aplicar — nesta ordem
-1. `20261118030000_seguranca_webhook_e_status_servidor.sql` — e-mail do perfil travado, webhook pelo e-mail
-   do auth, contrato checado no servidor. Cenários de ataque: `bash test/sql/run.sh`.
-2. `20261118030100_monitoramento_erros.sql` — `app_erros`, `registrar_erro()` e aviso a cada 5 min
-   (`avisar_erros()` via pg_cron + pg_net) pro endereço em `app_secrets.alerta_webhook_url`.
-Ao aplicar, o Supabase grava uma versão nova: renomeie o arquivo pra ela (e confira o md5).
+Conferência depois de aplicar: `CATALOGO=catalogo_md5.sql bash tools/regua/banco/recriar.sh` dá as 11 seções
+idênticas ao catálogo de produção. As duas últimas foram coladas no SQL Editor pelo Windows: o código das
+funções em produção tem `\r` nas quebras de linha (inofensivo); a régua ignora o `\r`.
 
-Todas são compatíveis com o app que está no ar hoje (só acrescentam colunas, travas e funções).
+Teste das travas no banco real (numa transação desfeita): conta com teste vencido recebe 403 ao gravar e
+continua lendo os próprios dados; e-mail e papel do perfil não mudam pelo cliente; time grava normal.
 
 ## Edge Functions (`../functions/`)
 Iguais ao que está publicado (conferido em 18/11/2026): `auth-alias` (v3), `hotmart-webhook` (v2),

@@ -5,7 +5,7 @@ select jsonb_build_object(
    from information_schema.columns where table_schema='public') s),
  'indices', (select jsonb_agg(indexdef order by indexdef) from pg_indexes where schemaname='public'),
  'policies', (select jsonb_agg(x order by x) from (select tablename||'.'||policyname||' '||permissive||' '||cmd||' '||array_to_string(roles,',')||' using='||coalesce(qual,'')||' check='||coalesce(with_check,'') x from pg_policies where schemaname='public') s),
- 'funcoes', (select jsonb_agg(x order by x) from (select p.proname||'('||pg_get_function_identity_arguments(p.oid)||') secdef='||p.prosecdef||' cfg='||coalesce(array_to_string(p.proconfig,','),'')||' src='||md5(p.prosrc) x
+ 'funcoes', (select jsonb_agg(x order by x) from (select p.proname||'('||pg_get_function_identity_arguments(p.oid)||') secdef='||p.prosecdef||' cfg='||coalesce(array_to_string(p.proconfig,','),'')||' src='||md5(replace(p.prosrc, E'\r', '')) x
    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public') s),
  'triggers', (select jsonb_agg(x order by x) from (select pg_get_triggerdef(t.oid) x from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and not t.tgisinternal) s),
  'rls', (select jsonb_agg(relname||' rls='||relrowsecurity order by relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and relkind='r'),
