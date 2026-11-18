@@ -21,6 +21,8 @@ const time = (extra = {}) => dbBase({
   tournaments: [tour('t1', 'Hero', 'Torneio do Hero', 10, 30, '2026-11-16'), tour('t2', 'hero ', 'Outro do Hero', 5, 0, '2026-11-17'), tour('t3', 'Maria', 'Torneio da Maria', 20, 0, '2026-11-17')],
   player_wallets: [{ id: 'w-1', player: 'Hero', wallet: 'PS', saldo_inicial: 75 }, { id: 'w-2', player: 'Hero', wallet: 'GG Poker', saldo_inicial: 80 }, { id: 'w-3', player: 'Maria', wallet: 'GG Poker', saldo_inicial: 500 }],
   saque: [{ id: 's1', pessoa_id: 'p1', devolucao: 50, cashout: 20, pago_em: '2026-11-17T12:00:00Z', status: 'pago' }],
+  __rpc: { resumo_time: [{ pessoa_id: 'p1', nome: 'Hero', unidade_id: 'u1', caminho: '/u1/', status: 'ativo', torneios: 2, investido: 15, lucro: 15, roi: 100, abi: 7.5, ultimo_lancamento: '2026-11-17', banca: 100, mu: 0, lucro_sacado: 0 },
+                                 { pessoa_id: 'p3', nome: 'Maria', unidade_id: 'u1', caminho: '/u1/', status: 'ativo', torneios: 1, investido: 20, lucro: -20, roi: -100, abi: 20, ultimo_lancamento: '2026-11-17', banca: 480, mu: 0, lucro_sacado: 0 }] },
   ...extra,
 });
 const irPara = async (page, nome) => { await page.getByRole('button', { name: new RegExp('^' + nome + '$') }).first().click({ timeout: 15000 }); await page.waitForTimeout(300); };
@@ -40,6 +42,10 @@ await cenario('gestor', time(), async (page) => {
   ok(/Configurações do time/.test(t) && !/Seu nome/.test(t) && !/Seu plano/.test(t), 'Ajustes do time: sem nome, sem plano');
   ok(await page.getByRole('button', { name: /^Saques$/ }).count() === 0, 'sem a aba Saques do pool');
   for (const aba of ['Diário', 'Semanal', 'Mensal', 'Stats', 'Banca', 'Painel']) await irPara(page, aba);
+  await irPara(page, 'Time');
+  await page.locator('[data-aluno="Hero"]').getByRole('button', { name: 'Hero' }).click({ timeout: 8000 });
+  await page.waitForTimeout(300);
+  ok((await page.locator('[data-seletor-jogador] select').inputValue()) === 'Hero' && /Minha banca/.test(await corpo(page)), 'clicar no aluno na visão do time abre o painel dele');
   ok(/Maria/.test(await page.locator('[data-seletor-jogador]').innerText()), 'passou por todas as abas com a Maria escolhida');
 });
 

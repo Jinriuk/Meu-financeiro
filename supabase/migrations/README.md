@@ -35,6 +35,9 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
   quem aprova saques confere (pode corrigir MU e cashout); a abertura conferida vira o ponto de partida do MU e do lifetime.
 - `20261118150000_fase1_modo_time.sql` — workspace tipo `time` (staking com N jogadores; o pool de 2 segue `team`),
   `criar_time()` (só servidor) e a conferência da planilha criando as salas do aluno com os saldos.
+- `20261118160000_fase1_visao_reload_avisos.sql` — `resumo_time()` (visão do time por aluno, cada coluna só pra quem
+  pode ver), pedido de reload (aluno pede → aprova → confirma o envio, que vira aporte) e avisos do sininho gerados
+  no servidor (saque, reload, planilha, entrada no time).
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.

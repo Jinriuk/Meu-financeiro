@@ -2,7 +2,7 @@
 -- GrinderBank · schema public GERADO (não edite à mão)
 -- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
 -- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
--- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118150000.
+-- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118160000.
 -- ============================================================
 --
 -- PostgreSQL database dump
@@ -77,6 +77,30 @@ end $$;
 
 
 --
+-- Name: apagar_aviso(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apagar_aviso(p_id uuid) RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  delete from public.aviso where id = p_id and user_id = auth.uid();
+$$;
+
+
+--
+-- Name: apagar_avisos(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apagar_avisos() RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  delete from public.aviso where user_id = auth.uid();
+$$;
+
+
+--
 -- Name: aplicar_ativacao(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -138,6 +162,142 @@ end $_$;
 
 
 --
+-- Name: avisar_gestores(uuid, uuid, text, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.avisar_gestores(p_ws uuid, p_unidade uuid, p_cap text, p_tipo text, p_titulo text, p_texto text, p_ref uuid) RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  insert into public.aviso(workspace_id, user_id, tipo, titulo, texto, ref_id)
+  select distinct p_ws, p.user_id, p_tipo, p_titulo, p_texto, p_ref
+    from public.acesso a
+    join public.pessoa p on p.id = a.pessoa_id
+    join public.unidade u on u.id = a.unidade_id
+    join public.unidade t on t.id = p_unidade
+   where p.user_id is not null and p.status = 'ativo' and p.workspace_id = p_ws
+     and t.caminho like u.caminho || '%'
+     and (p_cap = any(a.capacidades) or 'administrar' = any(a.capacidades))
+     and p.user_id is distinct from auth.uid();
+$$;
+
+
+--
+-- Name: avisar_pessoa(uuid, text, text, text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.avisar_pessoa(p_pessoa uuid, p_tipo text, p_titulo text, p_texto text, p_ref uuid) RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  insert into public.aviso(workspace_id, user_id, tipo, titulo, texto, ref_id)
+  select p.workspace_id, p.user_id, p_tipo, p_titulo, p_texto, p_ref from public.pessoa p
+   where p.id = p_pessoa and p.user_id is not null and p.user_id is distinct from auth.uid();
+$$;
+
+
+--
+-- Name: aviso_abertura(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.aviso_abertura() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare nome text;
+begin
+  select pe.nome into nome from public.pessoa pe where pe.id = new.pessoa_id;
+  if new.status = 'enviada' and (tg_op = 'INSERT' or new.enviado_em is distinct from old.enviado_em) then
+    perform public.avisar_gestores(new.workspace_id, new.unidade_id, 'aprovar_saques', 'planilha', nome || ' enviou a planilha pra conferir',
+      'MakeUp ' || public.fmt_usd(new.mu) || ' · cashout ' || public.fmt_usd(new.cashout), new.id);
+  elsif tg_op = 'UPDATE' and new.status = 'confirmada' and old.status <> 'confirmada' then
+    perform public.avisar_pessoa(new.pessoa_id, 'planilha', 'Planilha conferida pelo time', null, new.id);
+  end if;
+  return null;
+end $$;
+
+
+--
+-- Name: aviso_entrada(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.aviso_entrada() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare u uuid;
+begin
+  if new.user_id is not null and new.status = 'ativo' and old.user_id is null then
+    select v.unidade_id into u from public.vinculo v where v.pessoa_id = new.id and v.fim is null;
+    if u is null then select a.unidade_id into u from public.acesso a where a.pessoa_id = new.id limit 1; end if;
+    if u is not null then
+      perform public.avisar_gestores(new.workspace_id, u, 'gerir_pessoas', 'entrada', new.nome || ' entrou no time', null, new.id);
+    end if;
+  end if;
+  return null;
+end $$;
+
+
+--
+-- Name: aviso_entrada_vinculo(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.aviso_entrada_vinculo() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare pe record;
+begin
+  select * into pe from public.pessoa where id = new.pessoa_id;
+  if new.motivo = 'entrada' and pe.user_id is not null and pe.status = 'ativo' then
+    perform public.avisar_gestores(pe.workspace_id, new.unidade_id, 'gerir_pessoas', 'entrada', pe.nome || ' entrou no time', null, pe.id);
+  end if;
+  return null;
+end $$;
+
+
+--
+-- Name: aviso_saque(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.aviso_saque() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare nome text;
+begin
+  select pe.nome into nome from public.pessoa pe where pe.id = new.pessoa_id;
+  if tg_op = 'INSERT' then
+    perform public.avisar_gestores(new.workspace_id, new.unidade_id, 'aprovar_saques', 'saque', nome || ' pediu saque',
+      'Time recebe ' || public.fmt_usd(new.total_time) || ' (MU ' || public.fmt_usd(new.devolucao) || ' + cashout ' || public.fmt_usd(new.cashout) || ')', new.id);
+  elsif new.status is distinct from old.status and new.status in ('aprovado','recusado','pago') then
+    perform public.avisar_pessoa(new.pessoa_id, 'saque',
+      case new.status when 'aprovado' then 'Saque aprovado' when 'recusado' then 'Saque recusado' else 'Saque confirmado pelo time' end,
+      case new.status when 'aprovado' then 'Pode mandar ' || public.fmt_usd(new.total_time) || ' pro time.'
+                      when 'recusado' then new.motivo
+                      else case when coalesce(new.diferenca, 0) = 0 then 'Recebido certinho.' else 'Recebido com diferença de ' || public.fmt_usd(new.diferenca) || '.' end end,
+      new.id);
+  end if;
+  return null;
+end $$;
+
+
+--
+-- Name: cancelar_reload(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cancelar_reload(p_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  update public.reload r set status = 'cancelado', decidido_em = now(), decidido_por = auth.uid()
+   where r.id = p_id and r.status = 'solicitado' and r.pessoa_id in (select x.id from public.pessoa x where x.user_id = auth.uid());
+  if not found then raise exception 'só o próprio jogador cancela, e só enquanto está solicitado'; end if;
+end $$;
+
+
+--
 -- Name: cancelar_saque(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -184,6 +344,31 @@ begin
       end if;
     end loop;
   end if;
+end $$;
+
+
+--
+-- Name: confirmar_envio_reload(uuid, numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.confirmar_envio_reload(p_id uuid, p_valor numeric) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare r record; ap uuid;
+begin
+  select * into r from public.reload where id = p_id for update;
+  if r.id is null or not public.pode('aprovar_saques', r.unidade_id) then
+    raise exception 'precisa de "aprovar_saques" na unidade do jogador' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.pessoa where id = r.pessoa_id and user_id = auth.uid()) then
+    raise exception 'ninguém confirma o próprio reload' using errcode = 'insufficient_privilege'; end if;
+  if r.status <> 'aprovado' then raise exception 'só reload aprovado é enviado (está %)', r.status; end if;
+  if p_valor is null or p_valor <= 0 then raise exception 'informe quanto foi enviado'; end if;
+  insert into public.aporte(workspace_id, pessoa_id, unidade_id, valor, data, observacao)
+  values (r.workspace_id, r.pessoa_id, r.unidade_id, round(p_valor, 2), current_date, 'reload' || coalesce(' · ' || r.sala, '')) returning id into ap;
+  update public.reload set status = 'enviado', enviado_valor = round(p_valor, 2), enviado_em = now(), aporte_id = ap where id = p_id;
+  perform public.avisar_pessoa(r.pessoa_id, 'reload', 'Reload enviado', public.fmt_usd(round(p_valor, 2)) || ' entrou no seu MU.', p_id);
+  return ap;
 end $$;
 
 
@@ -378,6 +563,30 @@ begin
   select workspace_id into ws from public.unidade where id = p_mae;
   insert into public.unidade(workspace_id, mae_id, nome, rotulo, ordem) values (ws, p_mae, p_nome, p_rotulo, p_ordem) returning id into nova;
   return nova;
+end $$;
+
+
+--
+-- Name: decidir_reload(uuid, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.decidir_reload(p_id uuid, p_aprovar boolean, p_motivo text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare r record;
+begin
+  select * into r from public.reload where id = p_id for update;
+  if r.id is null or not public.pode('aprovar_saques', r.unidade_id) then
+    raise exception 'precisa de "aprovar_saques" na unidade do jogador' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.pessoa where id = r.pessoa_id and user_id = auth.uid()) then
+    raise exception 'ninguém aprova o próprio reload' using errcode = 'insufficient_privilege'; end if;
+  if r.status <> 'solicitado' then raise exception 'reload não está aguardando decisão (está %)', r.status; end if;
+  if not p_aprovar and coalesce(btrim(p_motivo), '') = '' then raise exception 'diga o motivo da recusa'; end if;
+  update public.reload set status = case when p_aprovar then 'aprovado' else 'recusado' end,
+         decidido_por = auth.uid(), decidido_em = now(), motivo_recusa = case when p_aprovar then null else p_motivo end where id = p_id;
+  perform public.avisar_pessoa(r.pessoa_id, 'reload', case when p_aprovar then 'Reload aprovado' else 'Reload recusado' end,
+                               case when p_aprovar then 'O time vai mandar ' || public.fmt_usd(r.valor) || '.' else p_motivo end, p_id);
 end $$;
 
 
@@ -644,6 +853,18 @@ end $$;
 
 
 --
+-- Name: fmt_usd(numeric); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fmt_usd(v numeric) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO ''
+    AS $_$
+  select 'US$ ' || translate(to_char(round(coalesce(v, 0), 2), 'FM999,999,999,990.00'), ',.', '.,');
+$_$;
+
+
+--
 -- Name: iniciar_time(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -663,6 +884,18 @@ begin
   insert into public.acesso(pessoa_id, unidade_id, capacidades) values (p, raiz, array['administrar']);
   return raiz;
 end $$;
+
+
+--
+-- Name: marcar_avisos_lidos(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.marcar_avisos_lidos() RETURNS void
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  update public.aviso set lido_em = now() where user_id = auth.uid() and lido_em is null;
+$$;
 
 
 --
@@ -772,6 +1005,32 @@ CREATE FUNCTION public.nickname_disponivel(nick text) RETURNS boolean
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO ''
     AS $$ select not exists (select 1 from public.player_profiles p where lower(p.nickname)=lower(trim(nick))) $$;
+
+
+--
+-- Name: pedir_reload(numeric, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.pedir_reload(p_valor numeric, p_sala text DEFAULT NULL::text, p_motivo text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare p uuid; ws uuid; u uuid; nome text; novo uuid;
+begin
+  select pe.id, pe.workspace_id, pe.nome into p, ws, nome from public.pessoa pe
+   where pe.user_id = auth.uid() and pe.status = 'ativo'
+     and exists (select 1 from public.vinculo v where v.pessoa_id = pe.id and v.fim is null) limit 1;
+  if p is null then raise exception 'só quem joga no time pede reload' using errcode = 'insufficient_privilege'; end if;
+  if p_valor is null or p_valor <= 0 or p_valor > 1000000 then raise exception 'valor do reload'; end if;
+  if exists (select 1 from public.reload where pessoa_id = p and status in ('solicitado','aprovado')) then
+    raise exception 'já existe um reload em aberto'; end if;
+  select unidade_id into u from public.vinculo where pessoa_id = p and fim is null;
+  insert into public.reload(workspace_id, pessoa_id, unidade_id, valor, sala, motivo)
+  values (ws, p, u, round(p_valor, 2), nullif(btrim(p_sala), ''), nullif(btrim(p_motivo), '')) returning id into novo;
+  perform public.avisar_gestores(ws, u, 'aprovar_saques', 'reload', nome || ' pediu reload de ' || public.fmt_usd(round(p_valor, 2)),
+                                 concat_ws(' · ', nullif(btrim(p_sala), ''), nullif(btrim(p_motivo), '')), novo);
+  return novo;
+end $$;
 
 
 --
@@ -946,6 +1205,57 @@ begin
   if quem.user_id is not null then
     delete from public.workspace_members where workspace_id = quem.workspace_id and user_id = quem.user_id and role <> 'owner';
   end if;
+end $$;
+
+
+--
+-- Name: resumo_time(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.resumo_time(p_desde date DEFAULT NULL::date) RETURNS TABLE(pessoa_id uuid, nome text, unidade_id uuid, unidade text, caminho text, status text, torneios integer, investido numeric, lucro numeric, roi numeric, abi numeric, ultimo_lancamento date, banca numeric, mu numeric, lucro_sacado numeric, planilha text)
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare r record; perf boolean; din boolean; s jsonb;
+begin
+  for r in
+    select p.id, p.nome, p.status, p.user_id, v.unidade_id, u.nome as unome, u.caminho
+      from public.pessoa p
+      join public.vinculo v on v.pessoa_id = p.id and v.fim is null
+      join public.unidade u on u.id = v.unidade_id
+     where p.status <> 'saiu' and p.workspace_id in (select public.my_workspaces())
+  loop
+    perf := r.user_id = auth.uid() or public.pode('ver_desempenho', r.unidade_id);
+    din  := r.user_id = auth.uid() or public.pode('ver_financeiro', r.unidade_id);
+    continue when not (perf or din);
+    pessoa_id := r.id; nome := r.nome; unidade_id := r.unidade_id; unidade := r.unome; caminho := r.caminho; status := r.status;
+    torneios := null; investido := null; lucro := null; roi := null; abi := null; ultimo_lancamento := null;
+    banca := null; mu := null; lucro_sacado := null; planilha := null;
+    if perf then
+      select count(*)::int,
+             round(coalesce(sum(case when t.ticket then 0 else t.buyin * (1 + coalesce(t.reentries, 0)) end), 0), 2),
+             round(coalesce(sum(t.prize + coalesce(t.bounty, 0) - case when t.ticket then 0 else t.buyin * (1 + coalesce(t.reentries, 0)) end), 0), 2),
+             round(avg(t.buyin), 2), max(t.entry_date)
+        into torneios, investido, lucro, abi, ultimo_lancamento
+        from public.tournaments t where t.pessoa_id = r.id and (p_desde is null or t.entry_date >= p_desde);
+      roi := case when investido > 0 then round(lucro / investido * 100, 1) end;
+      if p_desde is not null then
+        select max(t.entry_date) into ultimo_lancamento from public.tournaments t where t.pessoa_id = r.id;
+      end if;
+    end if;
+    if din then
+      s := public.situacao_jogador(r.id);
+      mu := (s->>'mu')::numeric; lucro_sacado := (s->>'lifetime')::numeric; planilha := s->>'abertura';
+      select round(
+          coalesce((select sum(w.saldo_inicial) from public.player_wallets w where w.pessoa_id = r.id), 0)
+        + coalesce((select sum(t.prize + coalesce(t.bounty, 0) - case when t.ticket then 0 else t.buyin * (1 + coalesce(t.reentries, 0)) end)
+                      from public.tournaments t where t.pessoa_id = r.id), 0)
+        + coalesce((select sum(l.entrada - l.saida) from public.bankroll_ledger l where l.pessoa_id = r.id), 0)
+        - coalesce((select sum(q.devolucao + q.cashout) from public.saque q where q.pessoa_id = r.id and q.status = 'pago'), 0), 2)
+        into banca;
+    end if;
+    return next;
+  end loop;
 end $$;
 
 
@@ -1410,6 +1720,23 @@ CREATE TABLE public.app_secrets (
 
 
 --
+-- Name: aviso; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.aviso (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    tipo text NOT NULL,
+    titulo text NOT NULL,
+    texto text,
+    ref_id uuid,
+    criado_em timestamp with time zone DEFAULT now() NOT NULL,
+    lido_em timestamp with time zone
+);
+
+
+--
 -- Name: bankroll_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1696,6 +2023,31 @@ CREATE TABLE public.pool_config (
 
 
 --
+-- Name: reload; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reload (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    pessoa_id uuid NOT NULL,
+    unidade_id uuid,
+    valor numeric(12,2) NOT NULL,
+    sala text,
+    motivo text,
+    status text DEFAULT 'solicitado'::text NOT NULL,
+    solicitado_em timestamp with time zone DEFAULT now() NOT NULL,
+    decidido_por uuid,
+    decidido_em timestamp with time zone,
+    motivo_recusa text,
+    enviado_valor numeric(12,2),
+    enviado_em timestamp with time zone,
+    aporte_id uuid,
+    CONSTRAINT reload_status_check CHECK ((status = ANY (ARRAY['solicitado'::text, 'aprovado'::text, 'recusado'::text, 'cancelado'::text, 'enviado'::text]))),
+    CONSTRAINT reload_valor_check CHECK ((valor > (0)::numeric))
+);
+
+
+--
 -- Name: saque; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1964,6 +2316,14 @@ ALTER TABLE ONLY public.app_secrets
 
 
 --
+-- Name: aviso aviso_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aviso
+    ADD CONSTRAINT aviso_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bankroll_ledger bankroll_ledger_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2073,6 +2433,14 @@ ALTER TABLE ONLY public.player_wallets
 
 ALTER TABLE ONLY public.pool_config
     ADD CONSTRAINT pool_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reload reload_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reload
+    ADD CONSTRAINT reload_pkey PRIMARY KEY (id);
 
 
 --
@@ -2201,6 +2569,20 @@ CREATE INDEX app_erros_pendentes ON public.app_erros USING btree (created_at) WH
 --
 
 CREATE INDEX app_erros_user ON public.app_erros USING btree (user_id, created_at);
+
+
+--
+-- Name: aviso_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aviso_user ON public.aviso USING btree (user_id, criado_em DESC);
+
+
+--
+-- Name: aviso_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aviso_workspace ON public.aviso USING btree (workspace_id);
 
 
 --
@@ -2526,6 +2908,41 @@ CREATE UNIQUE INDEX pool_config_one_per_ws ON public.pool_config USING btree (wo
 
 
 --
+-- Name: reload_aporte; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reload_aporte ON public.reload USING btree (aporte_id);
+
+
+--
+-- Name: reload_pessoa; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reload_pessoa ON public.reload USING btree (pessoa_id);
+
+
+--
+-- Name: reload_um_aberto; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX reload_um_aberto ON public.reload USING btree (pessoa_id) WHERE (status = ANY (ARRAY['solicitado'::text, 'aprovado'::text]));
+
+
+--
+-- Name: reload_unidade; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reload_unidade ON public.reload USING btree (unidade_id);
+
+
+--
+-- Name: reload_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reload_workspace ON public.reload USING btree (workspace_id);
+
+
+--
 -- Name: saque_pessoa; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2635,6 +3052,34 @@ CREATE INDEX withdrawals_unidade ON public.withdrawals USING btree (unidade_id) 
 --
 
 CREATE TRIGGER acesso_mesma_org BEFORE INSERT OR UPDATE ON public.acesso FOR EACH ROW EXECUTE FUNCTION public.mesma_organizacao();
+
+
+--
+-- Name: abertura aviso_abertura; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER aviso_abertura AFTER INSERT OR UPDATE ON public.abertura FOR EACH ROW EXECUTE FUNCTION public.aviso_abertura();
+
+
+--
+-- Name: pessoa aviso_entrada; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER aviso_entrada AFTER UPDATE OF user_id ON public.pessoa FOR EACH ROW EXECUTE FUNCTION public.aviso_entrada();
+
+
+--
+-- Name: vinculo aviso_entrada_vinculo; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER aviso_entrada_vinculo AFTER INSERT ON public.vinculo FOR EACH ROW EXECUTE FUNCTION public.aviso_entrada_vinculo();
+
+
+--
+-- Name: saque aviso_saque; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER aviso_saque AFTER INSERT OR UPDATE OF status ON public.saque FOR EACH ROW EXECUTE FUNCTION public.aviso_saque();
 
 
 --
@@ -2846,6 +3291,22 @@ ALTER TABLE ONLY public.aporte
 
 ALTER TABLE ONLY public.aporte
     ADD CONSTRAINT aporte_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aviso aviso_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aviso
+    ADD CONSTRAINT aviso_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: aviso aviso_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.aviso
+    ADD CONSTRAINT aviso_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -3121,6 +3582,38 @@ ALTER TABLE ONLY public.pool_config
 
 
 --
+-- Name: reload reload_aporte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reload
+    ADD CONSTRAINT reload_aporte_id_fkey FOREIGN KEY (aporte_id) REFERENCES public.aporte(id);
+
+
+--
+-- Name: reload reload_pessoa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reload
+    ADD CONSTRAINT reload_pessoa_id_fkey FOREIGN KEY (pessoa_id) REFERENCES public.pessoa(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reload reload_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reload
+    ADD CONSTRAINT reload_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id);
+
+
+--
+-- Name: reload reload_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reload
+    ADD CONSTRAINT reload_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: saque saque_pessoa_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3308,6 +3801,19 @@ ALTER TABLE public.app_erros ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.app_secrets ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: aviso; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.aviso ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: aviso aviso_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY aviso_ler ON public.aviso FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
 
 --
 -- Name: bankroll_ledger; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3670,6 +4176,19 @@ CREATE POLICY profile_self_or_teammates ON public.player_profiles USING (((user_
 
 
 --
+-- Name: reload; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.reload ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: reload reload_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY reload_ler ON public.reload FOR SELECT TO authenticated USING (((pessoa_id IN ( SELECT public.minhas_pessoas() AS minhas_pessoas)) OR (unidade_id IN ( SELECT public.unidades_com('ver_financeiro'::text) AS unidades_com))));
+
+
+--
 -- Name: saque; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3980,6 +4499,24 @@ GRANT ALL ON FUNCTION public.aceitar_convite(p_token text) TO service_role;
 
 
 --
+-- Name: FUNCTION apagar_aviso(p_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apagar_aviso(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apagar_aviso(p_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.apagar_aviso(p_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION apagar_avisos(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apagar_avisos() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apagar_avisos() TO authenticated;
+GRANT ALL ON FUNCTION public.apagar_avisos() TO service_role;
+
+
+--
 -- Name: FUNCTION aplicar_ativacao(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3994,6 +4531,63 @@ GRANT ALL ON FUNCTION public.aplicar_ativacao() TO service_role;
 
 REVOKE ALL ON FUNCTION public.avisar_erros() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.avisar_erros() TO service_role;
+
+
+--
+-- Name: FUNCTION avisar_gestores(p_ws uuid, p_unidade uuid, p_cap text, p_tipo text, p_titulo text, p_texto text, p_ref uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.avisar_gestores(p_ws uuid, p_unidade uuid, p_cap text, p_tipo text, p_titulo text, p_texto text, p_ref uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.avisar_gestores(p_ws uuid, p_unidade uuid, p_cap text, p_tipo text, p_titulo text, p_texto text, p_ref uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION avisar_pessoa(p_pessoa uuid, p_tipo text, p_titulo text, p_texto text, p_ref uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.avisar_pessoa(p_pessoa uuid, p_tipo text, p_titulo text, p_texto text, p_ref uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.avisar_pessoa(p_pessoa uuid, p_tipo text, p_titulo text, p_texto text, p_ref uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION aviso_abertura(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.aviso_abertura() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.aviso_abertura() TO service_role;
+
+
+--
+-- Name: FUNCTION aviso_entrada(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.aviso_entrada() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.aviso_entrada() TO service_role;
+
+
+--
+-- Name: FUNCTION aviso_entrada_vinculo(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.aviso_entrada_vinculo() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.aviso_entrada_vinculo() TO service_role;
+
+
+--
+-- Name: FUNCTION aviso_saque(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.aviso_saque() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.aviso_saque() TO service_role;
+
+
+--
+-- Name: FUNCTION cancelar_reload(p_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.cancelar_reload(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.cancelar_reload(p_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.cancelar_reload(p_id uuid) TO service_role;
 
 
 --
@@ -4012,6 +4606,15 @@ GRANT ALL ON FUNCTION public.cancelar_saque(p_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.conferir_abertura(p_pessoa uuid, p_mu numeric, p_cashout numeric) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.conferir_abertura(p_pessoa uuid, p_mu numeric, p_cashout numeric) TO authenticated;
 GRANT ALL ON FUNCTION public.conferir_abertura(p_pessoa uuid, p_mu numeric, p_cashout numeric) TO service_role;
+
+
+--
+-- Name: FUNCTION confirmar_envio_reload(p_id uuid, p_valor numeric); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.confirmar_envio_reload(p_id uuid, p_valor numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.confirmar_envio_reload(p_id uuid, p_valor numeric) TO authenticated;
+GRANT ALL ON FUNCTION public.confirmar_envio_reload(p_id uuid, p_valor numeric) TO service_role;
 
 
 --
@@ -4090,6 +4693,15 @@ GRANT ALL ON FUNCTION public.criar_time(p_nome text, p_dono uuid, p_nome_dono te
 REVOKE ALL ON FUNCTION public.criar_unidade(p_mae uuid, p_nome text, p_rotulo text, p_ordem integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.criar_unidade(p_mae uuid, p_nome text, p_rotulo text, p_ordem integer) TO authenticated;
 GRANT ALL ON FUNCTION public.criar_unidade(p_mae uuid, p_nome text, p_rotulo text, p_ordem integer) TO service_role;
+
+
+--
+-- Name: FUNCTION decidir_reload(p_id uuid, p_aprovar boolean, p_motivo text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.decidir_reload(p_id uuid, p_aprovar boolean, p_motivo text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.decidir_reload(p_id uuid, p_aprovar boolean, p_motivo text) TO authenticated;
+GRANT ALL ON FUNCTION public.decidir_reload(p_id uuid, p_aprovar boolean, p_motivo text) TO service_role;
 
 
 --
@@ -4180,12 +4792,30 @@ GRANT ALL ON FUNCTION public.fato_pessoa_unidade() TO service_role;
 
 
 --
+-- Name: FUNCTION fmt_usd(v numeric); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.fmt_usd(v numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.fmt_usd(v numeric) TO authenticated;
+GRANT ALL ON FUNCTION public.fmt_usd(v numeric) TO service_role;
+
+
+--
 -- Name: FUNCTION iniciar_time(p_nome_raiz text, p_nome_admin text); Type: ACL; Schema: public; Owner: -
 --
 
 REVOKE ALL ON FUNCTION public.iniciar_time(p_nome_raiz text, p_nome_admin text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.iniciar_time(p_nome_raiz text, p_nome_admin text) TO authenticated;
 GRANT ALL ON FUNCTION public.iniciar_time(p_nome_raiz text, p_nome_admin text) TO service_role;
+
+
+--
+-- Name: FUNCTION marcar_avisos_lidos(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.marcar_avisos_lidos() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.marcar_avisos_lidos() TO authenticated;
+GRANT ALL ON FUNCTION public.marcar_avisos_lidos() TO service_role;
 
 
 --
@@ -4249,6 +4879,15 @@ REVOKE ALL ON FUNCTION public.nickname_disponivel(nick text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO anon;
 GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO authenticated;
 GRANT ALL ON FUNCTION public.nickname_disponivel(nick text) TO service_role;
+
+
+--
+-- Name: FUNCTION pedir_reload(p_valor numeric, p_sala text, p_motivo text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.pedir_reload(p_valor numeric, p_sala text, p_motivo text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.pedir_reload(p_valor numeric, p_sala text, p_motivo text) TO authenticated;
+GRANT ALL ON FUNCTION public.pedir_reload(p_valor numeric, p_sala text, p_motivo text) TO service_role;
 
 
 --
@@ -4326,6 +4965,15 @@ GRANT ALL ON FUNCTION public.registrar_erro(p_origem text, p_mensagem text, p_de
 REVOKE ALL ON FUNCTION public.registrar_saida(p_alvo uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.registrar_saida(p_alvo uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.registrar_saida(p_alvo uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION resumo_time(p_desde date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.resumo_time(p_desde date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.resumo_time(p_desde date) TO authenticated;
+GRANT ALL ON FUNCTION public.resumo_time(p_desde date) TO service_role;
 
 
 --
@@ -4533,6 +5181,14 @@ GRANT ALL ON TABLE public.app_secrets TO service_role;
 
 
 --
+-- Name: TABLE aviso; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.aviso TO service_role;
+GRANT SELECT ON TABLE public.aviso TO authenticated;
+
+
+--
 -- Name: TABLE bankroll_ledger; Type: ACL; Schema: public; Owner: -
 --
 
@@ -4696,6 +5352,14 @@ GRANT ALL ON TABLE public.player_wallets TO service_role;
 GRANT ALL ON TABLE public.pool_config TO anon;
 GRANT ALL ON TABLE public.pool_config TO authenticated;
 GRANT ALL ON TABLE public.pool_config TO service_role;
+
+
+--
+-- Name: TABLE reload; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.reload TO service_role;
+GRANT SELECT ON TABLE public.reload TO authenticated;
 
 
 --
