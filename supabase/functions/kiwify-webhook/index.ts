@@ -7,20 +7,25 @@
 //   kiwify_plan_map      = JSON {"<id do plano>":"gestao","<outro>":"pro"}
 // Sem token configurado -> 503 e nada acontece (fail-closed).
 //
-// Verificação: preferimos a ASSINATURA HMAC-SHA1 do corpo (?signature=, chave = o token)
-// — mais segura que token na URL, que vaza em log/referer. Se a Kiwify mandar só ?token=, cai nele.
+// Verificação: aceita o segredo em três lugares — ?signature= (HMAC-SHA1 do corpo, o mais seguro),
+// ?token= na URL, ou o campo "secret" DENTRO DO CORPO, que é onde a Kiwify de fato manda.
+// ATENÇÃO: o token é gerado pela Kiwify e não pode ser escolhido — o campo do painel é readonly.
+// Quem manda é o painel; aqui a gente só copia o valor pra kiwify_webhook_token.
 // Idempotência: cada order_id+status entra uma vez em webhook_events.
 // Deploy: supabase functions deploy kiwify-webhook --no-verify-jwt
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const URL = Deno.env.get('SUPABASE_URL')!;
+// URL_SB, não URL: `const URL = ...` no escopo do módulo SOMBREIA o construtor global `URL`,
+// e o `new URL(req.url)` lá embaixo virava `TypeError: URL is not a constructor` — 500 em todo
+// POST, antes até de conferir o token. Foi assim desde a primeira versão. Não renomeie de volta.
+const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Token e mapa de planos vivem na tabela app_secrets (mesmo lugar do hottok da Hotmart), não em
 // variável de ambiente. Motivo prático: o mapa muda quando um plano novo entra, e por SQL isso é
 // um UPDATE — por env exigiria mexer no painel e refazer o deploy da função a cada ajuste.
 // O env continua valendo como fallback pra quem preferir configurar por lá.
 const ENV_TOKEN = Deno.env.get('KIWIFY_WEBHOOK_TOKEN') || '';
-const ENV_MAP = Deno.env.get('kiwify_plan_map') || '';
+const ENV_MAP = Deno.env.get('KIWIFY_PLAN_MAP') || '';
 async function segredos(admin: any): Promise<{ token: string; map: Record<string, string> }> {
   const { data } = await admin.from('app_secrets').select('name,value')
     .in('name', ['kiwify_webhook_token', 'kiwify_plan_map']);
@@ -29,6 +34,12 @@ async function segredos(admin: any): Promise<{ token: string; map: Record<string
   let map: Record<string, string> = {};
   try { map = JSON.parse(get('kiwify_plan_map') || ENV_MAP || '{}'); } catch { map = {}; }
   return { token, map };
+}
+
+// F0.17: falha que precisa de gente olhando vai pro app_erros (o banco avisa o responsável em minutos).
+// Só o essencial: provedor, pedido e motivo — nunca o e-mail do comprador.
+async function alertar(admin: any, mensagem: string, detalhe: Record<string, unknown> = {}) {
+  try { await admin.from('app_erros').insert({ origem: 'webhook', mensagem: ('kiwify: ' + mensagem).slice(0, 500), detalhe }); } catch (_) {}
 }
 
 const json = (b: unknown, s = 200) =>
@@ -74,26 +85,35 @@ function idsCandidatos(obj: unknown, caminho = '', out: Record<string, string> =
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method' }, 405);
-  const admin = createClient(URL, SERVICE);
+  const admin = createClient(URL_SB, SERVICE);
   const { token: TOKEN, map: PLAN_MAP } = await segredos(admin);
   // fail-closed: sem token configurado, não processa nada
   if (!TOKEN) return json({ error: 'webhook não configurado (falta kiwify_webhook_token)' }, 503);
   const url = new URL(req.url);
   const raw = await req.text();
 
-  // Preferência: HMAC do CORPO (assinatura da Kiwify em ?signature=) — não vaza em log/referer
-  // como o token na URL. Se não vier assinatura, cai no token (?token=) como MVP.
-  const signature = url.searchParams.get('signature') || req.headers.get('x-kiwify-signature') || '';
-  if (signature) {
-    const expected = await hmacSha1Hex(TOKEN, raw);
-    if (!safeEqual(signature.toLowerCase(), expected)) return json({ error: 'assinatura inválida' }, 401);
-  } else {
-    const token = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
-    if (!safeEqual(token, TOKEN)) return json({ error: 'unauthorized' }, 401);
-  }
-
   let ev: any;
   try { ev = JSON.parse(raw); } catch { return json({ error: 'json' }, 400); }
+
+  // Onde a Kiwify põe o segredo, em ordem de preferência:
+  //   1. ?signature= — HMAC-SHA1 do corpo com o token como chave. Melhor: não vaza em log/referer.
+  //   2. ?token= / header — token cru na URL.
+  //   3. corpo, campo "secret" — é ONDE A KIWIFY REALMENTE MANDA no evento de teste (confirmado
+  //      capturando a requisição). Sem este terceiro caso a verificação nunca encontra o token
+  //      e todo evento legítimo cai em 401.
+  // Qualquer um que bata autoriza; nenhum bate, 401.
+  const signature = url.searchParams.get('signature') || req.headers.get('x-kiwify-signature') || '';
+  const tokenUrl = url.searchParams.get('token') || req.headers.get('x-kiwify-token') || '';
+  const tokenCorpo = String(ev?.secret || ev?.token || '');
+  let autorizado = false;
+  if (signature) autorizado = safeEqual(signature.toLowerCase(), await hmacSha1Hex(TOKEN, raw));
+  if (!autorizado && tokenUrl) autorizado = safeEqual(tokenUrl, TOKEN);
+  if (!autorizado && tokenCorpo) autorizado = safeEqual(tokenCorpo, TOKEN);
+  if (!autorizado) return json({
+    error: 'unauthorized',
+    // onde o segredo veio (sem revelar o valor) — diferencia "token diferente" de "não mandou token"
+    recebeu: { assinatura: !!signature, tokenNaUrl: !!tokenUrl, secretNoCorpo: !!tokenCorpo },
+  }, 401);
 
   // extração defensiva (a Kiwify varia o shape entre produtos; ajuste os caminhos se preciso)
   const status = String(ev?.order_status || ev?.webhook_event_type || ev?.event || ev?.status || '').toLowerCase();
@@ -110,10 +130,27 @@ Deno.serve(async (req) => {
     ev?.Commissions?.product_base_price_offer?.id ?? ev?.offer_id ??
     ev?.Product?.offer_id ?? ev?.checkout_link ?? '');
   const productId = String(ev?.Product?.product_id || ev?.product_id || '');
+  // VALOR COBRADO, em centavos. Último recurso, e o único que a gente consegue mapear ANTES da
+  // primeira venda: o painel da Kiwify não mostra o plan_id, e o evento de teste manda um plano
+  // fictício. Como os quatro preços são distintos (1990 / 14900 / 4990 / 39900), o valor separa
+  // Gestão de Pro sem ambiguidade. Fica por último de propósito: se um dia rolar cupom ou
+  // mudança de preço, o valor não bate — e aí é melhor cair no 202 registrado do que liberar
+  // o plano errado. Prefixo "valor:" pra nunca colidir com um id.
+  const valor = String(ev?.Commissions?.charge_amount ?? ev?.charge_amount ?? '');
+  const valorBase = String(ev?.Commissions?.product_base_price ?? '');
   // tenta cada chave na ordem; a primeira que estiver no mapa vence
-  const chaves = [planoId, ofertaId, productId].filter(Boolean);
+  const chaves = [planoId, ofertaId, productId,
+    valor && 'valor:' + valor, valorBase && 'valor:' + valorBase].filter(Boolean) as string[];
 
-  if (!email || !orderId) return json({ error: 'payload sem email/order_id' }, 400);
+  // O evento de TESTE da Kiwify costuma vir sem comprador. Antes isso devolvia 400 seco e a
+  // gente perdia a única chance de ver os ids — que é exatamente o que o teste serve pra revelar.
+  if (!email || !orderId) return json({
+    error: 'payload sem email/order_id (normal num evento de teste)',
+    status,
+    candidatos: { planoId, ofertaId, productId },
+    todosOsIds: idsCandidatos(ev),
+    comoUsar: 'compare o teste de um plano Gestão com o de um Pro: o campo que MUDA é a chave do kiwify_plan_map',
+  }, 200);
 
   // idempotência: order+status só processa uma vez
   const eid = orderId + '|' + status;
@@ -126,24 +163,36 @@ Deno.serve(async (req) => {
   if (ativa) {
     const chave = chaves.find((k) => PLAN_MAP[k]);
     const plan = chave ? PLAN_MAP[chave] : PLAN_MAP['default'];
+    // Registra TODA cobrança aprovada, liberando ou não. Sem isso, um cliente que paga e cai no
+    // 202 some em silêncio — a Kiwify recebe "ok" e ninguém fica sabendo. E é daqui que saem os
+    // plan_id reais: o primeiro Gestão e o primeiro Pro de verdade escrevem os ids nesta tabela.
+    // Falha de registro nunca pode impedir a liberação, então o erro é ignorado de propósito.
+    await admin.from('webhook_cobrancas').insert({
+      provider: 'kiwify', order_id: orderId, status, email,
+      plano_id: planoId || null, produto_id: productId || null,
+      valor_centavos: valor || valorBase || null,
+      plano_liberado: plan || null, chave_usada: chave || null,
+    });
     // 202 (não 500) de propósito: a Kiwify não fica reenviando, e a resposta mostra QUAIS ids
     // chegaram — é assim que se descobre o identificador do plano quando o painel não exibe.
     // Junto vai um mapa de TODOS os campos com cara de id, com o caminho de cada um: sem isso,
     // um painel que esconde o plan_id deixaria a integração emperrada sem pista nenhuma.
+    if (!plan) await alertar(admin, 'PAGOU E NÃO LIBEROU: plano fora do kiwify_plan_map', { orderId, planoId, ofertaId, productId, valor: valor || valorBase });
     if (!plan) return json({
       error: 'plano não está no kiwify_plan_map',
-      candidatos: { planoId, ofertaId, productId },
+      candidatos: { planoId, ofertaId, productId, valor: valor || valorBase },
       // varre o payload e devolve tudo que PARECE identificador, sem dado pessoal
       todosOsIds: idsCandidatos(ev),
-      comoUsar: 'escolha o campo que MUDA entre Gestão e Pro e use como chave do kiwify_plan_map',
+      comoUsar: 'cadastre planoId no kiwify_plan_map, ou "valor:<centavos>" enquanto o id real não aparece',
+      registrado: 'a cobrança ficou em webhook_cobrancas com plano_liberado null — liberação manual pendente',
     }, 202);
     const { error } = await admin.rpc('webhook_ativar_plano', { p_email: email, p_plan: plan, p_source: 'kiwify', p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'ativação falhou: ' + error.message, { orderId, plan }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'ativado', plan, chave });
   }
   if (revoga) {
     const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'revogação falhou: ' + error.message, { orderId }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'revogado' });
   }
   return json({ ok: true, ignored: status });

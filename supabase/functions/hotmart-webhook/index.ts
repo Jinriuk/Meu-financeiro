@@ -22,6 +22,12 @@ const ATIVA = ['PURCHASE_APPROVED', 'PURCHASE_COMPLETE', 'SWITCH_PLAN'];
 const REVOGA = ['PURCHASE_REFUNDED', 'PURCHASE_CHARGEBACK', 'PURCHASE_PROTEST',
   'PURCHASE_CANCELED', 'PURCHASE_DELAYED', 'SUBSCRIPTION_CANCELLATION'];
 
+// F0.17: falha que precisa de gente olhando vai pro app_erros (o banco avisa o responsável em minutos).
+// Só o essencial: provedor, pedido e motivo — nunca o e-mail do comprador.
+async function alertar(admin: any, mensagem: string, detalhe: Record<string, unknown> = {}) {
+  try { await admin.from('app_erros').insert({ origem: 'webhook', mensagem: ('hotmart: ' + mensagem).slice(0, 500), detalhe }); } catch (_) {}
+}
+
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
 
@@ -67,15 +73,15 @@ Deno.serve(async (req) => {
 
   if (ATIVA.includes(event)) {
     const plan = PLAN_MAP[productId];
-    if (!plan) return json({ error: 'produto fora do PLAN_MAP', productId }, 202);
+    if (!plan) { await alertar(admin, 'PAGOU E NÃO LIBEROU: produto fora do PLAN_MAP', { orderId, productId }); return json({ error: 'produto fora do PLAN_MAP', productId }, 202); }
     const { error } = await admin.rpc('webhook_ativar_plano',
       { p_email: email, p_plan: plan, p_source: 'hotmart', p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'ativação falhou: ' + error.message, { orderId, plan }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'ativado', plan });
   }
   if (REVOGA.includes(event)) {
     const { error } = await admin.rpc('webhook_revogar_plano', { p_email: email, p_order_id: orderId });
-    if (error) return json({ error: error.message }, 500);
+    if (error) { await alertar(admin, 'revogação falhou: ' + error.message, { orderId }); return json({ error: error.message }, 500); }
     return json({ ok: true, action: 'revogado' });
   }
   return json({ ok: true, ignored: event });
