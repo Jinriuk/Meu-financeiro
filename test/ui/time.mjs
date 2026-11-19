@@ -111,6 +111,59 @@ await cenario('conferir planilha', estrutura({
   ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida');
 });
 
+// 5) gestor: visão do time por bloco (ROI ponderado, aluno parado), reloads e sininho
+const RESUMO = [
+  { pessoa_id: 'p3', nome: 'Maria', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'ativo', torneios: 40, investido: 100, lucro: 20, roi: 20, abi: 2.5, ultimo_lancamento: '2026-11-17', banca: 300, mu: 100, lucro_sacado: 50, planilha: 'confirmada' },
+  { pessoa_id: 'p2', nome: 'João', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'convidado', torneios: 2, investido: 10, lucro: -10, roi: -100, abi: 5, ultimo_lancamento: '2026-11-01', banca: 50, mu: 0, lucro_sacado: 0, planilha: 'sem' },
+];
+await cenario('visão, reload e sininho', estrutura({
+  acesso: [{ id: 'a1', pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
+  reload: [{ id: 'r1', pessoa_id: 'p3', unidade_id: 'u3', valor: 100, sala: 'GG', motivo: 'quebrei', status: 'solicitado', solicitado_em: '2026-11-18T10:00:00Z' },
+           { id: 'r2', pessoa_id: 'p2', unidade_id: 'u3', valor: 50, sala: null, motivo: null, status: 'aprovado', solicitado_em: '2026-11-17T10:00:00Z' }],
+  aviso: [{ id: 'av1', tipo: 'reload', titulo: 'Maria pediu reload de US$ 100,00', texto: 'GG · quebrei', criado_em: '2026-11-18T10:00:00Z', lido_em: null },
+          { id: 'av2', tipo: 'entrada', titulo: 'João entrou no time', texto: null, criado_em: '2026-11-17T10:00:00Z', lido_em: '2026-11-17T11:00:00Z' }],
+  __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'confirmada' }, resumo_time: RESUMO } }), async (page, escritas) => {
+  await page.locator('[data-sininho-novos]').waitFor({ timeout: 15000 });
+  ok((await page.locator('[data-sininho-novos]').innerText()).trim() === '1', 'sininho mostra 1 aviso novo');
+  await page.locator('[data-sininho]').click();
+  await page.waitForTimeout(400);
+  ok(await page.locator('[data-avisos] [data-aviso]').count() === 2, 'abre a lista com os 2 avisos');
+  ok(rpc(escritas, 'marcar_avisos_lidos').length === 1 && await page.locator('[data-sininho-novos]').count() === 0, 'abrir marca como lido e zera o contador');
+  await page.locator('[data-aviso="entrada"]').getByRole('button', { name: 'Apagar aviso' }).click();
+  await page.waitForTimeout(400);
+  ok(await page.locator('[data-avisos] [data-aviso]').count() === 1 && rpc(escritas, 'apagar_aviso').pop()?.p_id === 'av2', 'X apaga só aquele aviso');
+  await page.getByRole('button', { name: 'Limpar tudo' }).click();
+  await page.waitForTimeout(400);
+  ok(rpc(escritas, 'apagar_avisos').length === 1 && /Nenhum aviso/.test(await page.locator('[data-avisos]').innerText()), 'limpar tudo');
+  await page.locator('[data-sininho]').click();
+  await abrirTime(page);
+  await page.locator('[data-visao-time]').waitFor({ timeout: 5000 });
+  const bloco = await page.locator('[data-bloco="Pandeiro"]').innerText();
+  ok(/2 alunos/.test(bloco) && /350,00/.test(bloco) && /9\.1%/.test(bloco), 'bloco Pandeiro: 2 alunos, banca 350, ROI ponderado 9,1% (não a média de 20% e −100%)');
+  ok(/parado há 17 dias/.test(await page.locator('[data-aluno="João"]').innerText()), 'aluno sem lançar há mais de 7 dias aparece como parado');
+  await page.locator('[data-reload="Maria"]').getByRole('button', { name: 'Aprovar' }).click();
+  await page.waitForTimeout(300);
+  ok(rpc(escritas, 'decidir_reload').pop()?.p_id === 'r1', 'aprovar reload chama o servidor');
+  await page.locator('[data-reload="João"]').getByRole('button', { name: 'Confirmar envio' }).click();
+  await page.getByRole('button', { name: 'Salvar' }).click();
+  await page.waitForTimeout(300);
+  const env = rpc(escritas, 'confirmar_envio_reload').pop();
+  ok(env && env.p_id === 'r2' && env.p_valor === 50, 'confirmar envio com o valor pedido');
+});
+
+// 6) aluno pede reload
+await cenario('aluno pede reload', estrutura({ __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'confirmada' }, pedir_reload: 'r9' } }), async (page, escritas) => {
+  await abrirTime(page);
+  ok(await page.locator('[data-visao-time]').count() === 0, 'aluno não vê a visão do time');
+  await page.locator('[data-pedir-reload]').click();
+  const c = page.locator('input');
+  await page.getByPlaceholder('ex.: 100').fill('100'); await page.getByPlaceholder('ex.: GG').fill('GG');
+  await page.getByRole('button', { name: 'Pedir reload' }).last().click();
+  await page.waitForTimeout(400);
+  const r = rpc(escritas, 'pedir_reload').pop();
+  ok(r && r.p_valor === 100 && r.p_sala === 'GG', 'pedido de reload enviado');
+});
+
 // 3) sem estrutura (solo/pool antigo): sem aba Time
 await cenario('sem estrutura', dbBase(), async (page) => {
   await page.getByRole('button', { name: /^Ajustes$/ }).first().waitFor({ timeout: 15000 });

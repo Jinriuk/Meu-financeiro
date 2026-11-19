@@ -27,9 +27,13 @@ $M -f "$ROOT/supabase/migrations/20261118130000_fase1_dinheiro_time.sql" >/dev/n
 $M -f "$ROOT/supabase/migrations/20261118130000_fase1_dinheiro_time.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118140000_fase1_abertura_planilha.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118140000_fase1_abertura_planilha.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118150000_fase1_modo_time.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118150000_fase1_modo_time.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261118160000_fase1_visao_reload_avisos.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261118160000_fase1_visao_reload_avisos.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
-for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura webhook; do
+for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao webhook; do
   $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
 done
 OUT="$(cat "$TMP"/*.out | sed -E 's/.*NOTICE:  //' | grep -E '^(OK|FALHA)' || true)"
