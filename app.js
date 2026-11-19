@@ -6134,42 +6134,6 @@ function WeekRow({
     color: wkAbi >= pAbi * 0.9 ? C.red : wkAbi >= pAbi * 0.7 ? C.gold : C.greenMid
   })));
 }
-// Avisos do Painel viram toasts: aparecem UMA vez (por conteúdo), somem sozinhos em 8s e não
-// voltam a cada visita — o que já foi visto fica marcado no aparelho.
-function AlertToaster({
-  alerts,
-  push
-}) {
-  React.useEffect(() => {
-    if (!alerts.length) return;
-    let seen = [];
-    try {
-      seen = JSON.parse(localStorage.getItem('gb_alerts_seen') || '[]');
-    } catch (e) {}
-    const s = new Set(seen);
-    let mudou = false;
-    alerts.forEach(a => {
-      const k = a.key || a.text;
-      if (!s.has(k)) {
-        push({
-          key: k,
-          tone: a.tone,
-          title: a.tone === C.red ? 'Atenção na banca' : 'Aviso',
-          text: a.text,
-          items: a.items
-        });
-        s.add(k);
-        mudou = true;
-      }
-    });
-    if (mudou) {
-      try {
-        localStorage.setItem('gb_alerts_seen', JSON.stringify([...s].slice(-80)));
-      } catch (e) {}
-    }
-  }, [alerts.map(a => a.key || a.text).join('|')]);
-  return null;
-}
 // bloco recolhível: o padrão pra tirar texto/gráfico da frente sem apagar a informação
 function Recolhivel({
   titulo,
@@ -6669,7 +6633,8 @@ function Sininho({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
-      fontSize: 13.5
+      fontSize: 13.5,
+      color: a.tone === C.red ? C.red : C.ink
     }
   }, a.titulo), a.texto && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6684,9 +6649,9 @@ function Sininho({
       color: C.inkSoft,
       marginTop: 3
     }
-  }, quando(a.criado_em))), /*#__PURE__*/React.createElement("button", {
+  }, a.criado_em ? quando(a.criado_em) : 'situação atual da banca', a.items && a.items.length ? ' · toque pra ver' : '')), /*#__PURE__*/React.createElement("button", {
     "aria-label": "Apagar aviso",
-    onClick: () => onApagar(a.id),
+    onClick: () => onApagar(a),
     style: {
       width: 28,
       height: 28,
@@ -8431,19 +8396,56 @@ function Dashboard({
   const [sorteOpen, setSorteOpen] = useState(false); // card "Sorte nos all-ins" expandido?
   const [copied, setCopied] = useState(false); // feedback do "copiar pro Coach"
   const [report, setReport] = useState(null); // relatório aberto: {type:'mensal'} | {type:'jogador',player,days}
-  const [toasts, setToasts] = useState([]); // avisos flutuantes (ex: fora da grade do outro jogador)
+  // sininho: avisos do aparelho (persistem até apagar) + quais alertas do painel já foram lidos/apagados
+  const lerLS = (k, pad) => {
+    try {
+      const v = JSON.parse(localStorage.getItem(k) || 'null');
+      return v == null ? pad : v;
+    } catch (e) {
+      return pad;
+    }
+  };
+  const [avLocais, setAvLocais] = useState(() => lerLS('gb_avisos_locais', []));
+  const [avApagados, setAvApagados] = useState(() => lerLS('gb_avisos_apagados', []));
+  const [avLidos, setAvLidos] = useState(() => lerLS('gb_avisos_lidos', []));
+  useEffect(() => {
+    try {
+      localStorage.setItem('gb_avisos_locais', JSON.stringify(avLocais.map(({
+        items,
+        ...x
+      }) => x)));
+    } catch (e) {}
+  }, [avLocais]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('gb_avisos_apagados', JSON.stringify(avApagados.slice(-200)));
+    } catch (e) {}
+  }, [avApagados]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('gb_avisos_lidos', JSON.stringify(avLidos.slice(-200)));
+    } catch (e) {}
+  }, [avLidos]);
   const localIds = React.useRef(new Set()); // ids que EU acabei de criar (pra não me auto-avisar via realtime)
   const seq = React.useRef(0);
   // mesma chave = mesmo aviso: troca o que está na tela em vez de empilhar dois pop-ups iguais
   // mesma chave = mesmo aviso (troca em vez de empilhar) e no máximo 3 na tela: um lote de
   // lançamentos não pode cobrir o app de pop-up.
+  // avisos do aparelho (tempo real: fora da grade do outro jogador, mudança nos Ajustes) vão pro SININHO, não pra tela
   const pushToast = t => {
-    const id = ++seq.current;
-    setToasts(l => [...(t.key ? l.filter(x => x.key !== t.key) : l), {
-      ...t,
-      id
-    }].slice(-3));
-    setTimeout(() => setToasts(l => l.filter(x => x.id !== id)), 6000);
+    const k = t.key || (t.title || '') + '|' + (t.text || '');
+    setAvLocais(l => [{
+      id: 'l-' + ++seq.current + '-' + Date.now(),
+      key: k,
+      local: true,
+      tipo: 'local',
+      titulo: t.title,
+      texto: t.text,
+      tone: t.tone,
+      items: t.items,
+      criado_em: new Date().toISOString(),
+      lido_em: null
+    }, ...l.filter(x => x.key !== k)].slice(0, 40));
   };
   // sair: limpa o cadastro pendente do aparelho (device compartilhado não vaza contato)
   const sair = () => {
@@ -9805,6 +9807,25 @@ function Dashboard({
     }
   }
 
+  // sininho: alertas do painel (enquanto a situação durar e ninguém apagar) + avisos do aparelho + avisos do time
+  const alertasPainel = alerts.map(a => ({
+    key: a.key || a.text,
+    painel: true,
+    tipo: 'painel',
+    titulo: a.tone === C.red ? 'Atenção na banca' : 'Aviso',
+    texto: a.text,
+    tone: a.tone,
+    items: a.items
+  })).filter(a => !avApagados.includes(a.key)).map(a => ({
+    ...a,
+    id: 'p-' + a.key,
+    lido_em: avLidos.includes(a.key) ? 'lido' : null
+  }));
+  const todosAvisos = [...alertasPainel, ...avLocais, ...avisos.map(x => ({
+    ...x,
+    servidor: true
+  }))].sort((x, y) => String(y.criado_em || '9').localeCompare(String(x.criado_em || '9')));
+
   /* dados dos gráficos */
   const chartWeeks = allWeeks.slice(-8);
   const resChart = chartWeeks.map(wk => ({
@@ -10338,32 +10359,55 @@ function Dashboard({
       gap: 8,
       marginLeft: 'auto'
     }
-  }, temTime && /*#__PURE__*/React.createElement(Sininho, {
-    avisos: avisos,
+  }, /*#__PURE__*/React.createElement(Sininho, {
+    avisos: todosAvisos,
     onAbrir: async () => {
-      setAvisos(a => a.map(x => x.lido_em ? x : {
+      setAvLidos(l => [...new Set([...l, ...alertasPainel.map(x => x.key)])]);
+      setAvLocais(l => l.map(x => x.lido_em ? x : {
         ...x,
         lido_em: new Date().toISOString()
       }));
-      try {
-        await sb.rpc('marcar_avisos_lidos');
-      } catch (e) {}
+      if (avisos.some(x => !x.lido_em)) {
+        setAvisos(a => a.map(x => x.lido_em ? x : {
+          ...x,
+          lido_em: new Date().toISOString()
+        }));
+        try {
+          await sb.rpc('marcar_avisos_lidos');
+        } catch (e) {}
+      }
     },
-    onApagar: async id => {
-      setAvisos(a => a.filter(x => x.id !== id));
+    onApagar: async av => {
+      if (av.painel) {
+        setAvApagados(l => [...l, av.key]);
+        return;
+      }
+      if (av.local) {
+        setAvLocais(l => l.filter(x => x.id !== av.id));
+        return;
+      }
+      setAvisos(a => a.filter(x => x.id !== av.id));
       try {
         await sb.rpc('apagar_aviso', {
-          p_id: id
+          p_id: av.id
         });
       } catch (e) {}
     },
     onLimpar: async () => {
-      setAvisos([]);
-      try {
-        await sb.rpc('apagar_avisos');
-      } catch (e) {}
+      setAvApagados(l => [...l, ...alertasPainel.map(x => x.key)]);
+      setAvLocais([]);
+      if (avisos.length) {
+        setAvisos([]);
+        try {
+          await sb.rpc('apagar_avisos');
+        } catch (e) {}
+      }
     },
-    onIr: () => setView('time')
+    onIr: av => {
+      if (av.items && av.items.length) setAlertDetail({
+        items: av.items
+      });else if (!av.local && !av.painel) setView('time');
+    }
   }), /*#__PURE__*/React.createElement("button", {
     className: "mobile-only",
     onClick: sair,
@@ -10600,10 +10644,7 @@ function Dashboard({
       fontSize: 13.5,
       opacity: .92
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), /*#__PURE__*/React.createElement(AlertToaster, {
-    alerts: alerts,
-    push: pushToast
-  }), /*#__PURE__*/React.createElement(ResumoTorneios, {
+  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), /*#__PURE__*/React.createElement(ResumoTorneios, {
     tours: tours,
     players: players,
     solo: solo,
@@ -15743,69 +15784,7 @@ function Dashboard({
         cursor: 'pointer'
       }
     }, last ? 'Concluir ✓' : 'Próximo'))));
-  })(), toasts.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: 'fixed',
-      top: 'calc(12px + env(safe-area-inset-top))',
-      left: 0,
-      right: 0,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: 8,
-      zIndex: 70,
-      pointerEvents: 'none',
-      padding: '0 12px'
-    }
-  }, toasts.map(t => /*#__PURE__*/React.createElement("div", {
-    key: t.id,
-    onClick: () => {
-      setToasts(l => l.filter(x => x.id !== t.id));
-      if (t.items && t.items.length) setAlertDetail({
-        items: t.items
-      });
-    },
-    className: "ftfade",
-    style: {
-      pointerEvents: 'auto',
-      cursor: 'pointer',
-      width: '100%',
-      maxWidth: 440,
-      background: C.surface,
-      borderLeft: `4px solid ${t.tone || C.red}`,
-      borderRadius: 14,
-      boxShadow: '0 10px 30px -10px rgba(0,0,0,.35)',
-      padding: '12px 14px',
-      display: 'flex',
-      gap: 10,
-      alignItems: 'flex-start'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: t.tone || C.red,
-      flexShrink: 0,
-      marginTop: 1
-    }
-  }, /*#__PURE__*/React.createElement(IcoAlert, {
-    s: 19
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      minWidth: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 800,
-      fontSize: 13.5,
-      color: C.ink
-    }
-  }, t.title), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.inkSoft,
-      marginTop: 2,
-      lineHeight: 1.4
-    }
-  }, t.text))))));
+  })());
 }
 
 /* ---------- raiz ---------- */

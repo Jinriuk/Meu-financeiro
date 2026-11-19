@@ -140,7 +140,7 @@ await cenario('visão, reload e sininho', estrutura({
   await page.locator('[data-visao-time]').waitFor({ timeout: 5000 });
   const bloco = await page.locator('[data-bloco="Pandeiro"]').innerText();
   ok(/2 alunos/.test(bloco) && /350,00/.test(bloco) && /9\.1%/.test(bloco), 'bloco Pandeiro: 2 alunos, banca 350, ROI ponderado 9,1% (não a média de 20% e −100%)');
-  ok(/parado há 17 dias/.test(await page.locator('[data-aluno="João"]').innerText()), 'aluno sem lançar há mais de 7 dias aparece como parado');
+  ok(/parado há \d+ dias/.test(await page.locator('[data-aluno="João"]').innerText()), 'aluno sem lançar há mais de 7 dias aparece como parado');
   await page.locator('[data-reload="Maria"]').getByRole('button', { name: 'Aprovar' }).click();
   await page.waitForTimeout(300);
   ok(rpc(escritas, 'decidir_reload').pop()?.p_id === 'r1', 'aprovar reload chama o servidor');

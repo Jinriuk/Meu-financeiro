@@ -30,7 +30,22 @@ export async function abrirApp(db, { largura = 1280, altura = 900, semSessao = f
   const erros = [], escritas = [];
   page.on('pageerror', e => erros.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error' && !/WebSocket|realtime|Failed to load resource/i.test(m.text())) erros.push('console: ' + m.text()); });
-  await page.routeWebSocket(/supabase\.co/, ws => ws.close());
+  // Realtime fechado SEM page.routeWebSocket: no Playwright 1.49 o route de WebSocket chama ensureOpened() depois do
+  // handler sem await nem catch; se o navegador fecha nessa hora, a promessa rejeitada (TargetClosedError) derruba o
+  // processo do teste. Aqui o app recebe um socket falso que fecha sozinho, e nada passa pelo Playwright.
+  await page.addInitScript(() => {
+    const Nativo = window.WebSocket;
+    class SemRealtime extends EventTarget {
+      constructor(url) { super(); Object.assign(this, { url: String(url), readyState: 0, protocol: '', extensions: '', bufferedAmount: 0, binaryType: 'blob', onopen: null, onclose: null, onerror: null, onmessage: null });
+        setTimeout(() => this.close(1006), 0); }
+      send() {}
+      close(code = 1000) { if (this.readyState === 3) return; this.readyState = 3;
+        const ev = new CloseEvent('close', { code, wasClean: code === 1000 }); this.dispatchEvent(ev); if (typeof this.onclose === 'function') this.onclose(ev); }
+    }
+    const WS = function (url, prot) { return /supabase\.co/.test(String(url)) ? new SemRealtime(url) : new Nativo(url, prot); };
+    Object.assign(WS, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 }); WS.prototype = Nativo.prototype;
+    window.WebSocket = WS;
+  });
   await page.route(/supabase\.co\//, async route => {
     const req = route.request(); const url = new URL(req.url());
     if (url.pathname.startsWith('/auth/v1/user')) {
