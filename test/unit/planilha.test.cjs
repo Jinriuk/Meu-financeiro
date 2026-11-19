@@ -12,7 +12,7 @@ const CEL = {
   A4: 'nick_exemplo', A5: 46342.9, A7: 'Reload', H7: 'Reta 2', I7: 'Reta 2', J7: 'Reta 2',
   F8: 'GGpoker', G8: 'Semanal', H8: 'até $2,50', I8: 'até $2,50 + $3,20 5k+', J8: 'Até $2',
   G9: 'Reentry semanal', H9: 'até $2,50', I9: 'até $2,50', J9: 'não',
-  F10: 'PokerStars', G10: 'Sunday', H10: 'até $5,50', I10: '$1.10', J10: 3.3,
+  F10: 'PokerStars', G10: 'Sunday (não engloba turbo)', H10: 'até $5,50', I10: '$1.10', J10: 3.3,
   G11: 'SNG', H11: 1, I11: 1.5,
 };
 
@@ -38,6 +38,7 @@ test('grade: sala da célula mesclada vale pras linhas de baixo', () => {
   assert.strictEqual(r.grade.length, 4);
   assert.deepStrictEqual(r.grade[1], { site: 'GGpoker', tipo: 'Reentry semanal', regular: 'até $2,50', prog_ko: 'até $2,50', hyper: 'não' });
   assert.deepStrictEqual(r.grade[3], { site: 'PokerStars', tipo: 'SNG', regular: '1', prog_ko: '1.5', hyper: '' });
+  assert.strictEqual(r.grade[2].tipo, 'Sunday (não engloba turbo)', 'linha com comentário entre parênteses não some');
 });
 
 test('avisa quando a planilha não fecha', () => {

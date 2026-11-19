@@ -216,11 +216,6 @@ function deriveDaily(tours){
   });
   return Object.values(map).sort((a,b)=>a.entry_date<b.entry_date?1:-1);
 }
-function tourStatus(t, abiMax){
-  if(num(t.buyin) > abiMax) return 'FORA DA GRADE';
-  if(num(t.reentries)>0 || num(t.field_size)>200) return 'ATENÇÃO';
-  return 'OK';
-}
 // Processa as semanas em ordem cronológica, carregando o make-up de uma pra outra.
 function computeWeeks(daily, config){
   const players=[config.player1_name, config.player2_name];
@@ -950,6 +945,8 @@ function faixaPlanilha(txt){
   return pct>0&&pct<=1?{jogador:pct,ate}:null;
 }
 const SAMBA_TIPOS=['semanal','reentry semanal','turbo/fast','reentry turbo','sunday','reentry sunday','extra','reentry extras','sng'];
+// rótulo da linha da grade sem o comentário entre parênteses ("Sunday (não engloba turbo)" -> "sunday")
+const gradeLinha=s=>String(s??'').replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim().toLowerCase();
 function lerPlanilhaSamba(cel){
   const avisos=[]; const refs=Object.keys(cel);
   const acha=rot=>refs.filter(r=>typeof cel[r]==='string'&&cel[r].trim().toLowerCase()===rot.toLowerCase()).sort((a,b)=>xlsxLin(a)-xlsxLin(b)||xlsxColNum(xlsxCol(a))-xlsxColNum(xlsxCol(b)))[0];
@@ -977,7 +974,7 @@ function lerPlanilhaSamba(cel){
   if(primeira){ const ct=xlsxColNum(xlsxCol(primeira)); let site='', vazias=0;
     for(let l=xlsxLin(primeira);l<xlsxLin(primeira)+80&&vazias<4;l++){
       const tipo=cel[xlsxColLetra(ct)+l]; const s=cel[xlsxColLetra(ct-1)+l]; if(typeof s==='string'&&s.trim()) site=s.trim();
-      if(typeof tipo!=='string'||!SAMBA_TIPOS.includes(tipo.trim().toLowerCase())){ vazias++; continue; } vazias=0;
+      if(typeof tipo!=='string'||!SAMBA_TIPOS.includes(gradeLinha(tipo))){ vazias++; continue; } vazias=0;
       const v=k=>{ const x=cel[xlsxColLetra(ct+k)+l]; return x==null?'':String(x).trim(); };
       grade.push({site,tipo:tipo.trim(),regular:v(1),prog_ko:v(2),hyper:v(3)});
     } }
@@ -999,6 +996,159 @@ const nomeIgual=(a,b)=>String(a??'').trim().toLowerCase()===String(b??'').trim()
 const configPadraoTime=ws=>({id:null,workspace_id:ws,player1_name:'',player2_name:'',player_pct:1,abi_max:2,abi_max_player1:2,abi_max_player2:0,
   piso_minimo:0,makeup_max_recomendado:0,makeup_inicial_player1:0,makeup_inicial_player2:0,stoploss_daily_buyins:10,stoploss_weekly_pct:0.15,
   banca_inicial:0,week_start_date:todayISO(),sites_permitidos:['GG Poker','PokerStars'],modalidades_permitidas:['MTT','Spin','Cash','Sit & Go']});
+/* ---------- grade da reta (mesmo formato da planilha do Samba) ----------
+   Grade = linhas {site, tipo(linha), regular, prog_ko, hyper} com o TEXTO que o professor escreve hoje:
+   "até $2,50 + $3 2k+" · "$2,50 5k+" · "não" · "ok" · "$1.10 + Bounty Builder até $3.30" · "Até $2 (somente vanilla)".
+   lerCelulaGrade entende o texto; classificarTorneioGrade diz se um torneio está dentro, em atenção ou fora, com o motivo. */
+const gradeValor=s=>{ const v=parseFloat(String(s).replace(/[$\s]/g,'').replace(',','.')); return Number.isFinite(v)?v:null; };
+const GRADE_APELIDOS={bh:'bounty hunters',bb:'bounty builder',ko:'knockout'};
+function lerCelulaGrade(txt){
+  const t=String(txt??'').replace(/\s+/g,' ').trim();
+  const r={texto:t,vazia:false,proibido:false,livre:false,teto:null,degraus:[],liberados:[],obs:''};
+  if(!t||/^[-–—]+$/.test(t)){ r.vazia=true; return r; }
+  if(/^n[aã]o\b/i.test(t)){ r.proibido=true; return r; }
+  if(/^ok\b/i.test(t)){ r.livre=true; return r; }
+  let s=t; const mObs=s.match(/\(([^)]*)\)/); if(mObs){ r.obs=mObs[1].trim(); s=s.replace(mObs[0],' '); }
+  for(const pedaco of s.split('+')){
+    let p=' '+pedaco.trim()+' '; if(!p.trim()) continue;
+    p=p.replace(/(^|[^a-zà-ú])at[eé](?![a-zà-ú])/gi,'$1 ');   // \b não enxerga o "é"
+    let gtd=null; const mG=p.match(/(\d+(?:[.,]\d+)?)\s*k(?![a-z])/i); if(mG){ gtd=gradeValor(mG[1])*1000; p=p.replace(mG[0],' '); }
+    let val=null; const mV=p.match(/\$?\s*(\d+(?:[.,]\d+)?)/); if(mV){ val=gradeValor(mV[1]); p=p.replace(mV[0],' '); }
+    const nome=p.replace(/[^0-9a-zà-ú ]/gi,' ').replace(/\s+/g,' ').trim();
+    if(/[a-zà-ú]{2,}/i.test(nome)) r.liberados.push({nome,ate:val});
+    else if(val!=null&&gtd!=null) r.degraus.push({buyin:val,gtd});
+    else if(val!=null) r.teto=Math.max(r.teto??0,val);
+  }
+  if(r.teto==null&&!r.degraus.length&&!r.liberados.length) r.vazia=true;
+  return r;
+}
+// sala do torneio e sala da grade na mesma chave ("GG Poker" = "GGpoker"; "PS" = "PokerStars")
+const gradeSala=s=>{ const k=String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  if(/^gg/.test(k)) return 'gg'; if(k==='pses'||k==='pokerstarses') return 'pses'; if(k==='ps'||/stars/.test(k)) return 'ps';
+  if(/^acr|americas|winning/.test(k)) return 'acr'; if(/^wpn/.test(k)) return 'wpn'; if(/party/.test(k)) return 'party'; return k; };
+// garantido pelo nome: "$5K", "100k GTD", "$100,000" (número com k/m, ou 1.000+ com $)
+function gtdDoNome(nome){
+  const n=String(nome||''); let m=n.match(/\$?\s?(\d+(?:[.,]\d+)?)\s?([km])\b/i);
+  if(m){ return gradeValor(m[1])*(m[2].toLowerCase()==='m'?1e6:1e3); }
+  m=n.match(/\$\s?(\d{1,3}(?:[.,]\d{3})+)/); if(m) return parseFloat(m[1].replace(/[.,]/g,''));
+  return null;
+}
+// regular / prog KO / hyper e a linha da grade (semanal, turbo, sunday, sng) de um torneio
+function gradeTipoTorneio(t){
+  const n=String(t.tournament_name||'').toLowerCase(), mod=String(t.modality||'').toLowerCase();
+  const hyper=/hyper|super ?sonic/.test(n);
+  const ko=num(t.bounty)>0||/bount|\bpko\b|\bko\b|knock|hunters|progressive/.test(n)||/pko|bount|knock|\bko\b/.test(mod);
+  const turbo=!hyper&&/turbo|\bfast\b|speed|rapid/.test(n);
+  const sng=/sit|sng|spin/.test(mod)||/sit ?& ?go|\bsng\b|\bspin/.test(n);
+  const domingo=!!t.entry_date&&new Date(String(t.entry_date).slice(0,10)+'T12:00:00Z').getUTCDay()===0;
+  return {tipo:hyper?'hyper':ko?'prog_ko':'regular',ko,hyper,turbo,sng,domingo,linha:sng?'sng':turbo?'turbo/fast':domingo?'sunday':'semanal'};
+}
+const GRADE_TIPO_ROT={regular:'Regular',prog_ko:'Prog KO',hyper:'Hyper'};
+const GRADE_LINHA_ROT={'semanal':'semanal','turbo/fast':'turbo','sunday':'domingo','extra':'extra','sng':'SNG'};
+// o nome do torneio tem todas as palavras do liberado? ("Bh Sunday Special" casa com "Bounty Hunters Sunday Special")
+const gradeNomeCasa=(lib,nome)=>{ const n=' '+String(nome||'').toLowerCase().replace(/[^0-9a-zà-ú]+/g,' ')+' ';
+  const pal=String(lib||'').toLowerCase().split(/\s+/).flatMap(w=>(GRADE_APELIDOS[w]||w).split(' ')).filter(w=>w.length>=2);
+  return pal.length>0&&pal.every(w=>n.includes(' '+w+' ')); };
+// uma célula aceita o torneio? {ok, incerto, motivo}
+function gradeCelulaAceita(c,buyin,gtd,nome){
+  const eps=0.005;
+  if(c.proibido) return {ok:false,motivo:'não liberado'};
+  if(c.vazia) return {ok:false,motivo:'nada liberado'};
+  if(c.livre) return {ok:true,motivo:'liberado'};
+  const lib=c.liberados.find(l=>gradeNomeCasa(l.nome,nome)&&(l.ate==null||buyin<=l.ate+eps));
+  if(lib) return {ok:true,motivo:`liberado: ${lib.nome}${lib.ate!=null?' até '+fmtGrade(lib.ate):''}`};
+  if(c.teto!=null&&buyin<=c.teto+eps) return {ok:true,motivo:`até ${fmtGrade(c.teto)}`};
+  const deg=c.degraus.filter(d=>buyin<=d.buyin+eps).sort((a,b)=>a.gtd-b.gtd);
+  if(deg.length){ const d=deg[0];
+    if(gtd==null) return {ok:false,incerto:true,motivo:`${fmtGrade(buyin)} só vale com garantido ${fmtGtd(d.gtd)}+ e o nome não traz o garantido`};
+    const passa=deg.find(x=>gtd>=x.gtd); if(passa) return {ok:true,motivo:`${fmtGrade(passa.buyin)} com garantido ${fmtGtd(passa.gtd)}+`};
+    return {ok:false,motivo:`${fmtGrade(buyin)} só com garantido ${fmtGtd(d.gtd)}+ (este tem ${fmtGtd(gtd)})`}; }
+  const topo=Math.max(c.teto??0,...c.degraus.map(d=>d.buyin),...c.liberados.map(l=>l.ate??0));
+  return {ok:false,motivo:topo>0?`buy-in ${fmtGrade(buyin)} acima do teto ${fmtGrade(topo)}`:'nada liberado'};
+}
+const fmtGrade=v=>'$'+(Math.round(v*100)/100).toFixed(2).replace('.',',');
+const fmtGtd=v=>v>=1e6?(v/1e6)+'M':v>=1000?(Math.round(v/100)/10)+'k':String(v);
+// torneio x grade -> {status:'dentro'|'atencao'|'fora', motivo (1 linha)}
+function classificarTorneioGrade(t,grade){
+  const linhas=(grade&&Array.isArray(grade.celulas)?grade.celulas:Array.isArray(grade)?grade:[]);
+  if(!linhas.length) return null;
+  const nome=String(t.tournament_name||''), n=nome.toLowerCase(), buyin=num(t.buyin), re=num(t.reentries);
+  const out=(status,motivo)=>({status,motivo});
+  // proibições estruturais (valem em qualquer reta)
+  if(/satellite|sat[eé]lite|\bsat\b|\bstep\b/.test(n)) return out('fora','satélite é proibido');
+  if(/re-?buy/.test(n)) return out('fora','torneio com rebuy é proibido');
+  if(/heads.?up|\bhu\b/.test(n)) return out('fora','heads-up é proibido');
+  if(/\b[34][- ]?max\b/.test(n)) return out('fora','3-max e 4-max são proibidos');
+  const sala=gradeSala(t.site), daSala=linhas.filter(l=>gradeSala(l.site)===sala);
+  if(!daSala.length) return out('fora',`${t.site||'sala'} não está na grade`);
+  const tp=gradeTipoTorneio(t), gtd=gtdDoNome(nome);
+  const cel=(linha,tipo)=>{ const l=daSala.find(x=>gradeLinha(x.tipo)===linha); return l?lerCelulaGrade(l[tipo]):null; };
+  // entrada: a linha do dia/velocidade; no domingo vale a linha Sunday (se ela não diz nada pro tipo, vale a semanal);
+  // os "extras" liberados pelo nome valem sempre
+  const domTemRegra=tp.domingo&&(()=>{ const c=cel('sunday',tp.tipo); return !!c&&!c.vazia; })();
+  const linhasEntrada=tp.sng?['sng']:tp.turbo?['turbo/fast']:domTemRegra?['sunday']:['semanal'];
+  let aceite=null, recusa=null, incerto=null, linhaUsada=null;
+  for(const ln of [...linhasEntrada,'extra']){
+    const tipos=ln==='extra'?['regular','prog_ko','hyper']:[tp.tipo];
+    for(const tipo of tipos){ const c=cel(ln,tipo); if(!c) continue;
+      if(ln==='extra'&&!c.liberados.length) continue;
+      const a=gradeCelulaAceita(c,buyin,gtd,nome);
+      if(ln==='extra'){ if(a.ok&&a.motivo.startsWith('liberado:')){ aceite=a; linhaUsada='extra'; } continue; }
+      if(a.ok){ aceite=a; linhaUsada=ln; break; }
+      if(a.incerto&&!incerto) incerto={...a,ln}; if(!recusa) recusa={...a,ln};
+      // hyper "somente vanilla" não aceita bounty
+    }
+    if(aceite) break;
+  }
+  const rot=ln=>`${GRADE_LINHA_ROT[ln]||ln} ${GRADE_TIPO_ROT[tp.tipo]}`;
+  if(aceite&&tp.hyper&&tp.ko){ const c=cel(linhaUsada,'hyper'); if(c&&/vanilla/i.test(c.obs)) return out('fora','hyper com bounty: a grade só libera hyper vanilla'); }
+  if(!aceite&&!incerto){
+    if(!recusa) return out('fora',`${rot(linhasEntrada[0])}: sem regra na grade`);
+    return out('fora',`${rot(recusa.ln)}: ${recusa.motivo}`);
+  }
+  if(!aceite) linhaUsada=incerto.ln;   // entrada em dúvida (garantido): o reentry proibido ainda tira da grade
+  // reentry: no máximo 1, e só onde a linha "Reentry …" libera
+  if(re>0){
+    if(re>1) return out('fora',`${re} reentries: a regra é no máximo 1`);
+    const lr=linhaUsada==='extra'?'reentry extras':linhaUsada==='turbo/fast'?'reentry turbo':'reentry '+linhaUsada;
+    const c=cel(lr,tp.tipo);
+    if(c&&!c.vazia){ const a=c.livre?{ok:true}:c.proibido?{ok:false,motivo:'não liberado'}:gradeCelulaAceita(c,buyin,gtd,nome);
+      if(!a.ok) return out('fora',`reentry ${GRADE_LINHA_ROT[linhaUsada]||linhaUsada}: ${a.motivo==='não liberado'?'não liberado':a.motivo}`); }
+    else if(c&&c.vazia&&linhaUsada!=='extra') return out('fora',`reentry ${GRADE_LINHA_ROT[linhaUsada]||linhaUsada}: não liberado`);
+  }
+  if(!aceite) return out('atencao',`${rot(incerto.ln)}: ${incerto.motivo}`);
+  if(t.currency&&t.currency!=='USD') return out('atencao',`moeda ${t.currency}: confira o buy-in em dólar`);
+  return out('dentro',`${linhaUsada==='extra'?'extra':rot(linhaUsada)}: ${aceite.motivo}`);
+}
+// grade que vale pra um torneio: a da unidade dele (ou da mais próxima acima) vigente na data
+function gradeDoTorneio(t,unidades,grades){
+  if(!t||!t.unidade_id||!grades||!grades.length) return null;
+  const U=Object.fromEntries((unidades||[]).map(u=>[u.id,u])); const u=U[t.unidade_id]; if(!u) return null;
+  const d=String(t.entry_date||'').slice(0,10);
+  const cand=grades.filter(g=>{ const gu=U[g.unidade_id]; return gu&&String(u.caminho).startsWith(gu.caminho)&&(!d||String(g.vigente_desde)<=d); })
+    .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1));
+  return cand[0]||null;
+}
+// o que o app entendeu da célula, em uma linha (o professor confere enquanto escreve)
+function resumoCelulaGrade(txt){
+  const c=lerCelulaGrade(txt); if(c.vazia) return '—'; if(c.proibido) return 'proibido'; if(c.livre) return 'liberado';
+  const p=[]; if(c.teto!=null) p.push('até '+fmtGrade(c.teto));
+  c.degraus.forEach(d=>p.push(`${fmtGrade(d.buyin)} com ${fmtGtd(d.gtd)}+`));
+  c.liberados.forEach(l=>p.push(`${l.nome}${l.ate!=null?' até '+fmtGrade(l.ate):''}`));
+  if(c.obs) p.push(c.obs); return p.join(' · ');
+}
+// grades do time carregadas pelo Dashboard (time de staking); vazio no pool e na conta individual
+let GRADE_CTX={unidades:[],grades:[],unidadeDe:{}};
+// status de grade de um torneio: pela grade da reta (quando o time tem) ou pelo teto de ABI dos Ajustes
+function statusGrade(t,config){
+  const tt=t.unidade_id?t:{...t,unidade_id:GRADE_CTX.unidadeDe[String(t.player||'').trim().toLowerCase()]||null};
+  const g=gradeDoTorneio(tt,GRADE_CTX.unidades,GRADE_CTX.grades);
+  if(g){ const r=classificarTorneioGrade(tt,g); if(r) return {...r,simulada:!!g.simulada,porGrade:true}; }
+  if(!config) return {status:'dentro',motivo:''};
+  const mx=abiMaxFor(config,t.player,t.entry_date);
+  return num(t.buyin)>mx?{status:'fora',motivo:`buy-in ${fmt(t.buyin)} · teto ${fmt(mx)}`,teto:mx}:{status:'dentro',motivo:'',teto:mx};
+}
+
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
 const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
@@ -1805,15 +1955,14 @@ function NotConfigured(){
 /* ---------- torneios: linha + card de dia (Torneios) + card por jogador (Diário) ---------- */
 function TourRow({t,config,players,onEdit,onDelete}){
   // só sinaliza o que é grave (fora da grade DA ÉPOCA); OK/ATENÇÃO poluíam a lista
-  const abiMax=abiMaxFor(config,t.player,t.entry_date);
-  const st=tourStatus(t,abiMax), lp=lucroTorneio(t);
+  const sg=statusGrade(t,config), lp=lucroTorneio(t);
   const col=PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft;
   return <Row onEdit={onEdit} onDelete={onDelete}
     left={<><span style={{width:38,height:38,borderRadius:11,background:C.goldSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.gold}}><IcoTrophy s={18}/></span>
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
       <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''}{bountyTorneio(t)>0?` · bounty ${fmt(bountyTorneio(t))}`:''}
         {t.ticket&&<span style={{padding:'1px 7px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>BILHETE</span>}
-        {st==='FORA DA GRADE'&&<><Badge text={st}/><span style={{color:C.red,fontWeight:700}}>buy-in {fmt(t.buyin)} · teto {fmt(abiMax)}</span></>}</div></div></>}
+        {sg.status!=='dentro'&&<span data-selo-grade={sg.status} style={{display:'contents'}}><Badge text={sg.status==='fora'?'FORA DA GRADE':'ATENÇÃO'}/><span style={{color:sg.status==='fora'?C.red:C.gold,fontWeight:700}}>{sg.motivo}{sg.simulada?' · grade simulada':''}</span></span>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
 const sortByCreated = arr => [...arr].sort((a,b)=>(a.created_at||'')<(b.created_at||'')?1:-1);
@@ -1885,7 +2034,8 @@ function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
 function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
   const [open,setOpen]=useState(false);
   const abiMax=abiMaxFor(config,entry.player,entry.entry_date);
-  const st=gradeStatus(entry,abiMax), r=resultadoDia(entry), i=players.indexOf(entry.player);
+  const sgs=dayTours.map(t=>statusGrade(t,config)), porGrade=sgs.some(s=>s.porGrade), foraGr=sgs.filter(s=>s.status==='fora');
+  const st=porGrade?(foraGr.length?'FORA DA GRADE':'OK'):gradeStatus(entry,abiMax), r=resultadoDia(entry), i=players.indexOf(entry.player);
   const ent=num(entry.qtd_entradas)||num(entry.qtd_torneios);
   const premios=dayTours.reduce((s,t)=>s+num(t.prize),0);
   const bounties=dayTours.reduce((s,t)=>s+bountyTorneio(t),0);
@@ -1902,7 +2052,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
       <span style={{fontWeight:800,fontSize:16,color:r>=0?C.greenMid:C.red}}>{r>=0?'+':'−'}{fmt(Math.abs(r))}</span>
       <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
-    {fora&&<div style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:C.redSoft,color:C.red,fontSize:12.5,fontWeight:700,borderTop:`1px solid ${C.red}33`}}><IcoAlert s={15}/>Fora da grade — maior buy-in {fmt(entry.maior_buyin)} · teto {fmt(abiMax)} na data (passou {fmt(num(entry.maior_buyin)-abiMax)})</div>}
+    {fora&&<div style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',background:C.redSoft,color:C.red,fontSize:12.5,fontWeight:700,borderTop:`1px solid ${C.red}33`}}><IcoAlert s={15}/>{porGrade?`Fora da grade — ${foraGr.length} torneio${foraGr.length!==1?'s':''} · ${foraGr[0].motivo}${foraGr[0].simulada?' · grade simulada':''}`:<>Fora da grade — maior buy-in {fmt(entry.maior_buyin)} · teto {fmt(abiMax)} na data (passou {fmt(num(entry.maior_buyin)-abiMax)})</>}</div>}
     {open&&<div style={{padding:'0 18px 16px'}}>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(88px,1fr))',gap:8,marginBottom:12}}>
         <MiniStat label="ABI médio" value={fmt(abiMedioDia(entry))}/>
@@ -2076,6 +2226,7 @@ function TimeTela({session,onVerJogador}){
   const [reloadAberto,setReloadAberto]=useState(false);
   const [periodo,setPeriodo]=useState('mes');     // visão do time: mes | 30 | tudo
   const [resumo,setResumo]=useState(null);
+  const [gradeAberta,setGradeAberta]=useState(null);   // id da unidade com o editor de grade aberto
   useEffect(()=>{ (async()=>{
     const hoje=todayISO(); const desde=periodo==='mes'?hoje.slice(0,8)+'01':periodo==='30'?new Date(Date.now()-30*86400000).toISOString().slice(0,10):null;
     const {data,error}=await sb.rpc('resumo_time',{p_desde:desde}); setResumo(error?[]:(data||[]));
@@ -2094,15 +2245,16 @@ function TimeTela({session,onVerJogador}){
   };
   const carregar=async()=>{
     const q=t=>sb.from(t).select('*');
-    const [u,p,v,a,cv,sq,ct,ab,rl]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
-      sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload')]);
+    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
+      sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
     if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data; }
     setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
       acessos:a.data||[],convites:cv.data||[],saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
-      contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit});
+      contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,
+      grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[])});
   };
   useEffect(()=>{ carregar(); },[]);
   const rodar=async(nome,args,okTexto)=>{
@@ -2131,6 +2283,15 @@ function TimeTela({session,onVerJogador}){
   const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
   const paraConferir=d.aberturas.filter(a=>a.status==='enviada'&&(!d.eu||a.pessoa_id!==d.eu.id)&&pode('aprovar_saques',a.unidade_id));
   const minhaGrade=(minhaAbertura?.planilha?.grade)||[];
+  const hoje=todayISO();
+  const gradeEf=uid_=>gradeDoTorneio({unidade_id:uid_,entry_date:hoje},d.unidades,d.grades);
+  const regraEf=(uid_,chave)=>{ const t=U[uid_]; if(!t) return null;
+    const r=d.regras.filter(x=>x.chave===chave&&String(x.vigente_desde)<=hoje&&U[x.unidade_id]&&String(t.caminho).startsWith(U[x.unidade_id].caminho))
+      .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1))[0];
+    return r?r.valor:null; };
+  const minhaUnidade=d.eu?ativo(d.eu.id)?.unidade_id:null;
+  const minhaGradeReta=minhaUnidade?gradeEf(minhaUnidade):null;
+  const emMk=pid=>{ const r=(resumo||[]).find(x=>x.pessoa_id===pid); return r&&r.banca!=null&&r.mu!=null&&Number(r.banca)<Number(r.mu)?Number(r.banca)-Number(r.mu):null; };
   const meusReloads=d.eu?d.reloads.filter(r=>r.pessoa_id===d.eu.id):[];
   const reloadsParaDecidir=d.reloads.filter(r=>['solicitado','aprovado'].includes(r.status)&&(!d.eu||r.pessoa_id!==d.eu.id)&&pode('aprovar_saques',r.unidade_id));
   const gestor=meus.some(a=>a.capacidades.some(c=>['ver_desempenho','ver_financeiro','administrar'].includes(c)));
@@ -2146,6 +2307,9 @@ function TimeTela({session,onVerJogador}){
         {pode('gerir_pessoas',u.id)&&<button style={btn} onClick={()=>setPerg({label:'Convidar jogador',hint:`Nome do jogador (como ele aparece nos lançamentos). Entra em ${u.nome}; depois é só mandar o link pessoal.`,kind:'text',valor:'',
           onSave:async nome=>{ setPerg(null); if(!nome) return; const p=await rodar('convidar_jogador',{p_unidade:u.id,p_nome:nome,p_nick_ps:null,p_id_gg:null}); if(p&&typeof p==='string') await novoLink(u.id,p,`Link pessoal de ${nome}`); }})}>+ Jogador</button>}
         {pode('gerir_pessoas',u.id)&&<button style={btn} onClick={()=>novoLink(u.id,null,`Link de ${u.nome} (vale 7 dias, várias pessoas)`)}>Link da reta</button>}
+        {(()=>{ const g=gradeEf(u.id); const propria=g&&g.unidade_id===u.id;
+          return <>{propria&&<span data-grade-selo={g.simulada?'simulada':'propria'} style={{fontSize:11,fontWeight:800,padding:'2px 8px',borderRadius:99,background:g.simulada?C.goldSoft:C.greenSoft,color:g.simulada?C.gold:C.greenMid}}>{g.simulada?'grade simulada':'grade'}</span>}
+            {(pode('configurar_regras',u.id)||(g&&(pode('ver_desempenho',u.id)||pode('promover',u.id))))&&<button style={btn} data-abrir-grade={u.nome} onClick={()=>setGradeAberta(u.id)}>Grade</button>}</>; })()}
         {pode('administrar',u.id)&&<button style={btn} onClick={()=>setPerg({label:`Nova unidade dentro de ${u.nome}`,hint:'Ex.: Pandeiro, Reco-reco, Turma A.',kind:'text',valor:'',
           onSave:async nome=>{ setPerg(null); if(nome) await rodar('criar_unidade',{p_mae:u.id,p_nome:nome,p_rotulo:null,p_ordem:0},`${nome} criada.`); }})}>+ Unidade</button>}
       </div>
@@ -2156,7 +2320,8 @@ function TimeTela({session,onVerJogador}){
           onSave:async v=>{ setPerg(null); if(v) await rodar('registrar_aporte',{p_pessoa:p.id,p_valor:v,p_data:todayISO(),p_obs:null},`Capital de ${fmt(v)} registrado pra ${p.nome}.`); }})}>Capital</button>}
         {pode('promover',u.id)&&<button style={btn} onClick={()=>{ const destinos=d.unidades.filter(x=>x.id!==u.id&&pode('promover',x.id));
           if(!destinos.length) return setAviso({erro:true,texto:'Você não tem outra unidade pra onde mover.'});
-          setPerg({label:`Mover ${p.nome}`,hint:'O histórico até hoje fica na unidade atual; daqui pra frente conta na nova.',kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
+          const mk=emMk(p.id);
+          setPerg({label:`Mover ${p.nome}`,hint:(mk!=null?`Atenção: ${p.nome} está em MK (${fmt(mk)}).${regraEf(u.id,'bloquear_promocao_com_mk')===true?' Este time não promove com MK: o servidor vai recusar.':''} `:'')+'O histórico até hoje fica na unidade atual; daqui pra frente conta na nova.',kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
             onSave:async nome=>{ setPerg(null); const alvo=destinos.find(x=>caminhoNome(x)===nome); if(alvo) await rodar('mover_jogador',{p_alvo:p.id,p_destino:alvo.id,p_motivo:'promocao'},`${p.nome} agora está em ${alvo.nome}.`); }}); }}>Mover</button>}
         {pode('gerir_pessoas',u.id)&&p.user_id!==uid&&<button style={{...btn,color:C.red}} onClick={()=>setPerg({label:`Saída de ${p.nome}`,hint:'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',kind:'text',valor:'',
           onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='SAIU') await rodar('registrar_saida',{p_alvo:p.id},`Saída de ${p.nome} registrada.`); }})}>Saída</button>}
@@ -2253,7 +2418,13 @@ function TimeTela({session,onVerJogador}){
       </div>; })}
     </Card>}
 
-    {minhaGrade.length>0&&<Card style={{padding:20}}>
+    {minhaGradeReta&&<Card style={{padding:20}}>
+      <h3 style={tit}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'}</h3>
+      {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:C.gold,borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
+      <GradeTabela celulas={minhaGradeReta.celulas||[]}/>
+      <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(minhaGradeReta.vigente_desde)}{minhaGradeReta.unidade_id!==minhaUnidade?` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})`:''}. Cada torneio lançado é conferido com ela.</div>
+    </Card>}
+    {!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
       <h3 style={tit}>Minha grade</h3>
       <div style={{overflowX:'auto'}}><table data-grade style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
         <thead><tr>{['Sala','Tipo','Regular','Prog KO','Hyper'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 6px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
@@ -2280,6 +2451,15 @@ function TimeTela({session,onVerJogador}){
     </Card>}
 
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+    {gradeAberta&&U[gradeAberta]&&(()=>{ const u=U[gradeAberta], g=gradeEf(u.id);
+      const planilhas=d.aberturas.filter(a=>a.planilha&&Array.isArray(a.planilha.grade)&&a.planilha.grade.length&&U[a.unidade_id]&&String(U[a.unidade_id].caminho).startsWith(u.caminho))
+        .map(a=>({nome:nomeDe(a.pessoa_id),grade:a.planilha.grade}));
+      return <GradeModal u={u} efetiva={g} origem={g?U[g.unidade_id]:null} podeEditar={pode('configurar_regras',u.id)} planilhas={planilhas}
+        historico={d.grades.filter(x=>x.unidade_id===u.id).sort((a,b)=>String(b.vigente_desde).localeCompare(String(a.vigente_desde)))}
+        regraMk={regraEf(u.id,'bloquear_promocao_com_mk')===true} onClose={()=>setGradeAberta(null)}
+        onSalvar={async({desde,simulada,celulas,obs})=>{ const r=await rodar('salvar_grade',{p_unidade:u.id,p_desde:desde,p_simulada:simulada,p_celulas:celulas,p_obs:obs||null},`Grade de ${u.nome} salva. Os jogadores dela foram avisados.`); if(r) setGradeAberta(null); }}
+        onApagar={async h=>{ await rodar('apagar_grade',{p_id:h.id},'Versão da grade apagada.'); }}
+        onRegra={async v=>{ await rodar('definir_regra',{p_unidade:u.id,p_chave:'bloquear_promocao_com_mk',p_valor:v,p_desde:null},v?`${u.nome}: promoção com MK bloqueada no servidor.`:`${u.nome}: promoção com MK liberada (a tela só avisa).`); }}/>; })()}
     {reloadAberto&&<ReloadModal onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
     {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
     {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
@@ -2369,6 +2549,81 @@ function PlanilhaModal({p,onClose,onEnviar}){
       <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5}}>O time confere esses valores antes de valer. Depois de conferida, a planilha vira o ponto de partida: os saques e o capital entram por aqui.</div>
       <button disabled={busy} onClick={async()=>{ setBusy(true); await onEnviar(); setBusy(false); }}
         style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer',opacity:busy?.6:1}}>Enviar pro time conferir</button>
+    </div>
+  </div>;
+}
+/* grade da reta: quadro só de leitura (aluno) e editor (quem configura regras), no formato da planilha do time */
+const GRADE_MODELO_LINHAS=['Semanal','Reentry semanal','Turbo/Fast','Reentry turbo','Sunday','Reentry sunday','Extra','Reentry extras'];
+const gradeModelo=()=>[...['GGpoker','PokerStars','ACR'].flatMap(site=>GRADE_MODELO_LINHAS.map(tipo=>({site,tipo,regular:'',prog_ko:'',hyper:''}))),
+  {site:'PokerStars',tipo:'SNG',regular:'',prog_ko:'',hyper:''}];
+function GradeTabela({celulas}){
+  const th={textAlign:'left',padding:'6px 6px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`};
+  return <div style={{overflowX:'auto'}}><table data-grade style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
+    <thead><tr>{['Sala','Tipo','Regular','Prog KO','Hyper'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+    <tbody>{celulas.map((g,i)=><tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
+      <td style={{padding:'6px',fontWeight:700}}>{i===0||celulas[i-1].site!==g.site?g.site:''}</td><td style={{padding:'6px'}}>{g.tipo}</td>
+      {['regular','prog_ko','hyper'].map(k=><td key={k} style={{padding:'6px',whiteSpace:'pre-line'}}>{g[k]||'—'}</td>)}</tr>)}</tbody>
+  </table></div>;
+}
+function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onSalvar,onApagar,onRegra,onClose}){
+  const [linhas,setLinhas]=useState(()=>((efetiva&&efetiva.celulas)||[]).map(x=>({...x})));
+  const [desde,setDesde]=useState(todayISO());
+  const [simulada,setSimulada]=useState(efetiva?!!efetiva.simulada:false);
+  const [obs,setObs]=useState('');
+  const [busy,setBusy]=useState(false);
+  const muda=(i,k,v)=>setLinhas(l=>l.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const inp={width:'100%',minWidth:70,padding:'7px 8px',borderRadius:9,border:`1.5px solid ${C.border}`,background:C.warm,color:C.ink,fontSize:13,outline:'none'};
+  const btn={padding:'7px 11px',borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:12.5,cursor:'pointer'};
+  const prontas=linhas.filter(x=>String(x.site||'').trim()&&String(x.tipo||'').trim());
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-grade-editor className="ftfade" style={{background:C.surface,width:'100%',maxWidth:980,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 18px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Grade · {u.nome}</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5}}>
+        {efetiva?(origem&&origem.id!==u.id?<>Hoje {u.nome} usa a grade de <b>{origem.nome}</b> (vale desde {dataBR(efetiva.vigente_desde)}).{podeEditar?' Salvar aqui cria uma grade própria pra esta unidade.':''}</>
+                 :<>Grade própria, vale desde {dataBR(efetiva.vigente_desde)}.</>)
+                :<>{u.nome} ainda não tem grade. Sem grade, vale o teto de ABI dos Ajustes.</>}
+        {' '}Escreva como na planilha: <i>até $2,50 + $3 2k+</i> · <i>$2,50 5k+</i> · <i>não</i> · <i>ok</i> · <i>$1.10 + Bounty Builder até $3.30</i>.
+      </div>
+      {efetiva&&efetiva.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:C.gold,borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700}}>Grade simulada: montada sem a planilha oficial desta reta.</div>}
+      {podeEditar&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {!linhas.length&&<button style={btn} onClick={()=>setLinhas(gradeModelo())}>Começar do modelo</button>}
+        {planilhas.map(pl=><button key={pl.nome} style={btn} onClick={()=>setLinhas(pl.grade.map(x=>({...x})))}>Copiar da planilha de {pl.nome}</button>)}
+      </div>}
+      {linhas.length>0&&<div style={{overflowX:'auto'}}><table style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
+        <thead><tr>{['Sala','Linha','Regular','Prog KO','Hyper',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'6px 4px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+        <tbody>{linhas.map((g,i)=><tr key={i} data-grade-linha={i} style={{borderBottom:`1px solid ${C.border}`,verticalAlign:'top'}}>
+          {['site','tipo','regular','prog_ko','hyper'].map(k=><td key={k} style={{padding:'5px 4px',minWidth:k==='site'?90:k==='tipo'?110:150}}>
+            {podeEditar?<input data-celula={k} value={g[k]||''} onChange={e=>muda(i,k,e.target.value)} style={inp}/>:<div style={{padding:'7px 2px'}}>{g[k]||'—'}</div>}
+            {['regular','prog_ko','hyper'].includes(k)&&String(g[k]||'').trim()&&<div data-entendi style={{fontSize:11,color:C.inkSoft,marginTop:3,lineHeight:1.35}}>{resumoCelulaGrade(g[k])}</div>}
+          </td>)}
+          <td style={{padding:'5px 4px'}}>{podeEditar&&<button aria-label="Tirar linha" onClick={()=>setLinhas(l=>l.filter((_,j)=>j!==i))} style={{border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',padding:6}}><IcoX s={15}/></button>}</td>
+        </tr>)}</tbody>
+      </table></div>}
+      {podeEditar&&<>
+        <div><button style={btn} onClick={()=>setLinhas(l=>[...l,{site:l.length?l[l.length-1].site:'',tipo:'',regular:'',prog_ko:'',hyper:''}])}>+ Linha</button></div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10,alignItems:'end'}}>
+          <div><label style={labelStyle}>Vale desde</label><input type="date" data-grade-desde value={desde} onChange={e=>setDesde(e.target.value)} style={inputStyle}/></div>
+          <div><label style={labelStyle}>Observação (opcional)</label><input value={obs} onChange={e=>setObs(e.target.value)} placeholder="ex.: liberado o Sunday Storm de $22" style={inputStyle}/></div>
+        </div>
+        <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13.5,fontWeight:600,cursor:'pointer'}}>
+          <input type="checkbox" data-grade-simulada-check checked={simulada} onChange={e=>setSimulada(e.target.checked)}/> Grade simulada (montada sem a planilha oficial; os jogadores veem o aviso)</label>
+        <button disabled={busy||!prontas.length} onClick={async()=>{ setBusy(true); await onSalvar({desde,simulada,celulas:prontas,obs}); setBusy(false); }}
+          style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:busy||!prontas.length?.5:1}}>Salvar grade de {u.nome}</button>
+        <div style={{borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+          <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13.5,fontWeight:600,cursor:'pointer'}}>
+            <input type="checkbox" data-regra-mk checked={!!regraMk} onChange={e=>onRegra(e.target.checked)}/> Não promover quem está em MK (vale pra {u.nome} e o que está abaixo)</label>
+        </div>
+      </>}
+      {historico.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
+        <div style={labelStyle}>Versões desta unidade</div>
+        {historico.map(h=><div key={h.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',fontSize:13}}>
+          <span style={{flex:1}}>Desde {dataBR(h.vigente_desde)}{h.simulada?' · simulada':''}{h.observacao?` · ${h.observacao}`:''}</span>
+          {podeEditar&&<button style={{...btn,color:C.red}} onClick={()=>onApagar(h)}>Apagar</button>}
+        </div>)}
+      </div>}
     </div>
   </div>;
 }
@@ -2526,9 +2781,13 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
-        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id'),
-        sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago')]);
+      const [pe,vi,ac,un,sq,gr]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome'),
+        sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago'),
+        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas')]);
+      // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
+      const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
+      GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe};
       const pessoas=(pe.data||[]).filter(x=>x.status!=='saiu'); const ativos=new Set((vi.data||[]).filter(v=>!v.fim).map(v=>v.pessoa_id));
       const eu=pessoas.find(x=>x.user_id===session.user.id)||null;
       const jogadores=pessoas.filter(x=>ativos.has(x.id)).map(x=>x.nome).sort((a,b)=>a.localeCompare(b));
@@ -2618,8 +2877,8 @@ function Dashboard({session,profile}){
       // o aviso é pro OUTRO jogador da pool: em conta solo não existe "outro" — seria o app
       // avisando a pessoa sobre ela mesma, no meio do lançamento dela.
       if(p.eventType==='INSERT' && p.new && p.new.player && !localIds.current.has(p.new.id) && configRef.current && !soloRef.current){
-        const c=configRef.current, mx=abiMaxFor(c,p.new.player,p.new.entry_date);
-        if(num(p.new.buyin)>mx) pushToast({tone:C.red,title:`${p.new.player} jogou fora da grade`,text:`${p.new.tournament_name||'Torneio'} · buy-in ${fmt(p.new.buyin)} (máx ${fmt(mx)}). Fique atento e verifique com ${p.new.player.split(' ')[0]}.`});
+        const c=configRef.current, sg=statusGrade(p.new,c);
+        if(sg.status==='fora') pushToast({tone:C.red,title:`${p.new.player} jogou fora da grade`,text:`${p.new.tournament_name||'Torneio'} · ${sg.motivo}. Fique atento e verifique com ${p.new.player.split(' ')[0]}.`});
       }
     };
     const ch=sb.channel('pool-sync')
@@ -2661,7 +2920,7 @@ function Dashboard({session,profile}){
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
     if(table==='tournaments' && row){
       localIds.current.add(row.id);
-      if(config && num(row.buyin)>abiMaxFor(config,row.player,row.entry_date)) avisarForaGrade(row); // avisa quem lançou
+      if(config && statusGrade(row,config).status==='fora') avisarForaGrade(row); // avisa quem lançou
     }
     setter([row,...list]); setModal(null);
   };
@@ -2829,7 +3088,7 @@ function Dashboard({session,profile}){
     }
     const outraMoeda=[...novos,...completa].filter(x=>x.linha.currency!=='USD');
     if(outraMoeda.length) issues.unshift(`${outraMoeda.length} torneio${outraMoeda.length!==1?'s':''} em ${[...new Set(outraMoeda.map(x=>x.linha.currency))].join('/')} (${outraMoeda.slice(0,3).map(x=>x.linha.tournament_name).join(', ')}${outraMoeda.length>3?'…':''}). Os valores entram como estão no arquivo, SEM converter pra US$ — confira ou exclua depois de salvar.`);
-    const fora=[...novos,...completa].filter(x=>x.linha.currency==='USD'&&x.linha.buyin>abiMaxFor(config,player,x.linha.entry_date));
+    const fora=[...novos,...completa].filter(x=>x.linha.currency==='USD'&&statusGrade({...x.linha,player},config).status==='fora');
     setTsImp({busy:false,prog:'',res:null,preview:{player,novos,completa,repetidos,issues,fora,arquivos:textos.length}});
   };
   // liga/desliga "entrei com bilhete" numa linha da prévia (o resumo do site não traz esse dado)
@@ -3082,7 +3341,7 @@ function Dashboard({session,profile}){
   if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({key:'makeup:'+p,tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
   if(bancaAtual<piso) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
-  const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && num(t.buyin)>abiMaxFor(config,t.player,t.entry_date));
+  const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && statusGrade(t,config).status==='fora');
   if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
   players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
   daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
@@ -4369,7 +4628,7 @@ function Dashboard({session,profile}){
               {nConf>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.goldSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>
                 ✋ <b>{nConf} lançamento{nConf!==1?'s':''} seu{nConf!==1?'s':''} com valor diferente do arquivo.</b> Nada que você digitou muda sem você escolher. <button onClick={()=>escolherResumo(null,null,'arquivo')} style={{border:'none',background:'transparent',color:C.gold,fontWeight:800,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:12.5}}>usar o do arquivo em todos</button> · <button onClick={()=>escolherResumo(null,null,'digitado')} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,cursor:'pointer',textDecoration:'underline',padding:0,fontSize:12.5}}>manter os digitados</button></div>}
               {nSat>0&&<div style={{padding:'9px 11px',borderRadius:12,background:C.goldSoft,fontSize:12,color:C.ink,marginBottom:12,lineHeight:1.5}}>🎟 <b>{nSat} com cara de satélite.</b> O arquivo do site não diz se você entrou com bilhete — se entrou, toque no 🎟 da linha pra não contar o buy-in duas vezes.</div>}
-              {pv.fora.length>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.redSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>⚠️ <b>{pv.fora.length} torneio{pv.fora.length!==1?'s':''} fora da grade</b> ({pv.fora.map(x=>fmt(x.linha.buyin)).filter((v,i,a)=>a.indexOf(v)===i).join(', ')} · teto {fmt(abiMaxFor(config,pv.player,pv.fora[0].linha.entry_date))}). Vão entrar assim mesmo — o registro é do que aconteceu.</div>}
+              {pv.fora.length>0&&<div style={{padding:'10px 12px',borderRadius:12,background:C.redSoft,fontSize:12.5,color:C.ink,marginBottom:12,lineHeight:1.5}}>⚠️ <b>{pv.fora.length} torneio{pv.fora.length!==1?'s':''} fora da grade</b> ({(()=>{ const sg=statusGrade({...pv.fora[0].linha,player:pv.player},config); return sg.porGrade?sg.motivo+(pv.fora.length>1?' e outros':''):`${pv.fora.map(x=>fmt(x.linha.buyin)).filter((v,i,a)=>a.indexOf(v)===i).join(', ')} · teto ${fmt(sg.teto)}`; })()}). Vão entrar assim mesmo — o registro é do que aconteceu.</div>}
               {dias.map(d=>{
                 const doDia=entrando.filter(x=>x.linha.entry_date===d);
                 const rd=doDia.reduce((s,x)=>s+lucroTorneio(tsEfetivo(x)),0);
@@ -4413,11 +4672,11 @@ function Dashboard({session,profile}){
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
           <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
-        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana com buy-in acima do ABI máximo do jogador. Toque no lápis pra corrigir.</div>
+        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana fora da grade. Toque no lápis pra corrigir.</div>
         {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={()=>{setAlertDetail(null);editTour(t);}} onDelete={()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
           left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
             <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
-            <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>(máx {fmt(abiMaxFor(config,t.player,t.entry_date))})</span></div></div></>}
+            <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>({statusGrade(t,config).motivo})</span></div></div></>}
           right={<span style={{fontWeight:800,fontSize:15,color:lucroTorneio(t)>=0?C.greenMid:C.red,flexShrink:0}}>{lucroTorneio(t)>=0?'+':'−'}{fmt(Math.abs(lucroTorneio(t)))}</span>}/>)}
         {(!alertDetail.items||!alertDetail.items.length)&&<Empty>Tudo certo agora — nenhum torneio fora da grade.</Empty>}
       </div>
@@ -4429,7 +4688,19 @@ function Dashboard({session,profile}){
         <div style={{width:56,height:56,borderRadius:18,background:C.redSoft,color:C.red,display:'grid',placeItems:'center',margin:'0 auto 14px'}}><IcoAlert s={30}/></div>
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 8px'}}>{gradeWarn.items.length>1?`${gradeWarn.items.length} torneios fora da grade`:'Atenção — fora da grade!'}</h3>
         {(()=>{
-          const it=gradeWarn.items, um=it[0], teto=abiMaxFor(config,um.player,um.entry_date);
+          const it=gradeWarn.items, um=it[0], teto=abiMaxFor(config,um.player,um.entry_date), sg=statusGrade(um,config);
+          if(sg.porGrade) return <>
+            <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 12px'}}>
+              {it.length>1?<>Você lançou <b>{it.length} torneios</b> fora da grade da sua reta.</>:<>{um.tournament_name||'Esse torneio'} ({fmt(um.buyin)}): <b style={{color:C.red}}>{sg.motivo}</b>.</>}
+            </p>
+            {it.length>1&&<div style={{textAlign:'left',maxHeight:150,overflowY:'auto',marginBottom:12,fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
+              {it.slice(0,8).map((t,i)=><div key={i} style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>· {t.tournament_name||'Torneio'} — <b style={{color:C.red}}>{statusGrade(t,config).motivo}</b></div>)}
+              {it.length>8&&<div>… e mais {it.length-8}</div>}
+            </div>}
+            <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.55,padding:'10px 12px',borderRadius:12,background:C.bg,textAlign:'left',marginBottom:16}}>
+              {sg.simulada?<>A grade da sua reta ainda é <b>simulada</b> (montada sem a planilha oficial): confirme com o professor.</>:<>A grade é a da sua reta, definida pelo time. Se o professor liberou esse torneio, ele atualiza a grade na aba Time.</>}
+            </div>
+          </>;
           return <>
             <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.6,margin:'0 0 12px'}}>
               {it.length>1

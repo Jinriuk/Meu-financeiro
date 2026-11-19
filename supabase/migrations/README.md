@@ -38,6 +38,10 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
 - `20261118160000_fase1_visao_reload_avisos.sql` — `resumo_time()` (visão do time por aluno, cada coluna só pra quem
   pode ver), pedido de reload (aluno pede → aprova → confirma o envio, que vira aporte) e avisos do sininho gerados
   no servidor (saque, reload, planilha, entrada no time).
+- `20261119100000_fase1_grade_regras.sql` — grade da reta (o quadro da planilha do time, com o texto do professor;
+  vale a da unidade ou da mais próxima acima, vigente na data; marca "simulada" quando não veio da planilha oficial),
+  regras por unidade herdadas para baixo (`regra_efetiva`), e "não promover com MK" recusado no servidor (`em_mk`).
+  Quem lê o texto da grade e classifica cada torneio (dentro / atenção / fora, com o motivo) é o app.
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.

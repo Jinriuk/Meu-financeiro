@@ -1,13 +1,8 @@
--- ============================================================
--- GrinderBank · schema public GERADO (não edite à mão)
--- Fonte: supabase/migrations/*.sql aplicadas do zero num Postgres limpo.
--- Regerar: DUMP=schema.sql bash tools/regua/banco/recriar.sh
--- Conferido contra produção em 18/11/2026: catálogo idêntico (11 seções) até 20261118160000.
--- ============================================================
 --
 -- PostgreSQL database dump
 --
 
+\restrict xYbQSJlr8F2EAGt74LHY1K5drTc9YYArbhg7zUvdCNvN2yjn6QeXUB4mv7AaYOR
 
 -- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
@@ -98,6 +93,24 @@ CREATE FUNCTION public.apagar_avisos() RETURNS void
     AS $$
   delete from public.aviso where user_id = auth.uid();
 $$;
+
+
+--
+-- Name: apagar_grade(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.apagar_grade(p_id uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare g record;
+begin
+  select * into g from public.grade where id = p_id;
+  if g.id is null then raise exception 'grade não existe'; end if;
+  if not public.pode('configurar_regras', g.unidade_id) then
+    raise exception 'precisa de "configurar_regras" nesta unidade' using errcode = 'insufficient_privilege'; end if;
+  delete from public.grade where id = p_id;
+end $$;
 
 
 --
@@ -656,6 +669,28 @@ end $$;
 
 
 --
+-- Name: definir_regra(uuid, text, jsonb, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.definir_regra(p_unidade uuid, p_chave text, p_valor jsonb, p_desde date DEFAULT NULL::date) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare u record;
+begin
+  select * into u from public.unidade where id = p_unidade;
+  if u.id is null then raise exception 'unidade não existe'; end if;
+  if not public.pode('configurar_regras', p_unidade) then
+    raise exception 'precisa de "configurar_regras" nesta unidade' using errcode = 'insufficient_privilege'; end if;
+  if p_chave not in ('bloquear_promocao_com_mk', 'jogador_ve_ranking') then raise exception 'regra desconhecida: %', p_chave; end if;
+  if jsonb_typeof(p_valor) <> 'boolean' then raise exception 'essa regra é ligada ou desligada (true/false)'; end if;
+  insert into public.regra_unidade(workspace_id, unidade_id, chave, valor, vigente_desde, criado_por)
+  values (u.workspace_id, p_unidade, p_chave, p_valor, coalesce(p_desde, current_date), auth.uid())
+  on conflict (unidade_id, chave, vigente_desde) do update set valor = excluded.valor, criado_por = excluded.criado_por, criado_em = now();
+end $$;
+
+
+--
 -- Name: dividir_cashout(jsonb, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -696,6 +731,31 @@ begin
     raise exception 'há jogadores ativos nesta unidade: mova-os antes de arquivar';
   end if;
   update public.unidade set nome = coalesce(p_nome, nome), rotulo = p_rotulo, ordem = coalesce(p_ordem, ordem), arquivada = p_arquivar where id = p_alvo;
+end $$;
+
+
+--
+-- Name: em_mk(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.em_mk(p_pessoa uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare ab record; desde timestamptz; mu numeric; banca numeric;
+begin
+  select a.mu, a.confirmado_em, a.status into ab from public.abertura a where a.pessoa_id = p_pessoa;
+  desde := case when ab.status = 'confirmada' then ab.confirmado_em else '-infinity'::timestamptz end;
+  select coalesce(sum(valor), 0) into mu from public.aporte where pessoa_id = p_pessoa and criado_em > desde;
+  select mu - coalesce(sum(devolucao), 0) into mu from public.saque where pessoa_id = p_pessoa and status = 'pago' and pago_em > desde;
+  if ab.status = 'confirmada' then mu := mu + ab.mu; end if;
+  select coalesce((select sum(w.saldo_inicial) from public.player_wallets w where w.pessoa_id = p_pessoa), 0)
+       + coalesce((select sum(t.prize + coalesce(t.bounty, 0) - case when t.ticket then 0 else t.buyin * (1 + coalesce(t.reentries, 0)) end)
+                     from public.tournaments t where t.pessoa_id = p_pessoa), 0)
+       + coalesce((select sum(l.entrada - l.saida) from public.bankroll_ledger l where l.pessoa_id = p_pessoa), 0)
+       - coalesce((select sum(q.devolucao + q.cashout) from public.saque q where q.pessoa_id = p_pessoa and q.status = 'pago'), 0)
+    into banca;
+  return round(banca, 2) < round(mu, 2);
 end $$;
 
 
@@ -965,6 +1025,9 @@ begin
   if not (public.pode(cap, atual.unidade_id) and public.pode(cap, p_destino)) then
     raise exception 'precisa de "%" na unidade de origem e na de destino', cap using errcode = 'insufficient_privilege'; end if;
   if (select arquivada from public.unidade where id = p_destino) then raise exception 'unidade de destino arquivada'; end if;
+  if p_motivo = 'promocao' and coalesce((public.regra_efetiva(atual.unidade_id, 'bloquear_promocao_com_mk'))::boolean, false)
+     and public.em_mk(p_alvo) then
+    raise exception 'jogador em MK: este time não promove com MK' using errcode = 'check_violation'; end if;
   update public.vinculo set fim = greatest(current_date, inicio) where id = atual.id;
   insert into public.vinculo(pessoa_id, unidade_id, inicio, motivo) values (p_alvo, p_destino, current_date, p_motivo);
   perform public.recalcular_fatos(p_alvo);
@@ -1209,6 +1272,26 @@ end $$;
 
 
 --
+-- Name: regra_efetiva(uuid, text, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date DEFAULT CURRENT_DATE) RETURNS jsonb
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select r.valor
+    from public.regra_unidade r
+    join public.unidade u on u.id = r.unidade_id
+    join public.unidade alvo on alvo.id = p_unidade and alvo.workspace_id = u.workspace_id
+                            and alvo.workspace_id in (select public.my_workspaces())
+   where r.chave = p_chave and r.vigente_desde <= coalesce(p_data, current_date)
+     and alvo.caminho like u.caminho || '%'
+   order by length(u.caminho) desc, r.vigente_desde desc
+   limit 1;
+$$;
+
+
+--
 -- Name: resumo_time(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1272,6 +1355,54 @@ begin
   select unidade_id into u from public.convite where id = p_id;
   if u is null or not public.pode('gerir_pessoas', u) then raise exception 'sem permissão' using errcode = 'insufficient_privilege'; end if;
   update public.convite set revogado = true where id = p_id;
+end $$;
+
+
+--
+-- Name: salvar_grade(uuid, date, boolean, jsonb, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.salvar_grade(p_unidade uuid, p_desde date, p_simulada boolean, p_celulas jsonb, p_obs text DEFAULT NULL::text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare u record; limpas jsonb := '[]'::jsonb; c jsonb; k text; linha jsonb; gid uuid; pes record; rot text;
+begin
+  select * into u from public.unidade where id = p_unidade;
+  if u.id is null then raise exception 'unidade não existe'; end if;
+  if not public.pode('configurar_regras', p_unidade) then
+    raise exception 'precisa de "configurar_regras" nesta unidade' using errcode = 'insufficient_privilege'; end if;
+  if p_celulas is null or jsonb_typeof(p_celulas) <> 'array' then raise exception 'grade inválida'; end if;
+  if jsonb_array_length(p_celulas) = 0 then raise exception 'grade vazia'; end if;
+  if jsonb_array_length(p_celulas) > 300 then raise exception 'grade grande demais (máximo 300 linhas)'; end if;
+  -- só as 5 colunas do quadro, como texto curto
+  for c in select x from jsonb_array_elements(p_celulas) x loop
+    if jsonb_typeof(c) <> 'object' then raise exception 'linha da grade inválida'; end if;
+    linha := '{}'::jsonb;
+    foreach k in array array['site','tipo','regular','prog_ko','hyper'] loop
+      if c ? k and jsonb_typeof(c->k) not in ('string','number','null') then raise exception 'célula inválida em %', k; end if;
+      if length(coalesce(c->>k, '')) > 300 then raise exception 'texto grande demais em %', k; end if;
+      linha := linha || jsonb_build_object(k, btrim(coalesce(c->>k, '')));
+    end loop;
+    if linha->>'site' = '' or linha->>'tipo' = '' then raise exception 'toda linha precisa de sala e linha (Semanal, Sunday…)'; end if;
+    limpas := limpas || jsonb_build_array(linha);
+  end loop;
+  insert into public.grade(workspace_id, unidade_id, vigente_desde, simulada, celulas, observacao, criado_por)
+  values (u.workspace_id, p_unidade, coalesce(p_desde, current_date), coalesce(p_simulada, false), limpas,
+          nullif(btrim(coalesce(p_obs, '')), ''), auth.uid())
+  on conflict (unidade_id, vigente_desde) do update
+     set simulada = excluded.simulada, celulas = excluded.celulas, observacao = excluded.observacao,
+         criado_por = excluded.criado_por, criado_em = now()
+  returning id into gid;
+  -- avisa os jogadores que a grade cobre (vínculo ativo na unidade ou abaixo)
+  rot := case when coalesce(p_simulada, false) then 'Grade simulada na ' else 'Grade nova na ' end || u.nome;
+  for pes in select distinct v.pessoa_id from public.vinculo v join public.unidade t on t.id = v.unidade_id
+              where v.fim is null and t.caminho like u.caminho || '%' loop
+    perform public.avisar_pessoa(pes.pessoa_id, 'grade', rot,
+      'Vale desde ' || to_char(coalesce(p_desde, current_date), 'DD/MM/YYYY') ||
+      case when coalesce(p_simulada, false) then '. Montada sem a planilha oficial: confirme com o professor.' else '.' end, gid);
+  end loop;
+  return gid;
 end $$;
 
 
@@ -1837,6 +1968,25 @@ CREATE TABLE public.daily_entries (
 
 
 --
+-- Name: grade; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.grade (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    unidade_id uuid NOT NULL,
+    vigente_desde date DEFAULT CURRENT_DATE NOT NULL,
+    simulada boolean DEFAULT false NOT NULL,
+    celulas jsonb DEFAULT '[]'::jsonb NOT NULL,
+    observacao text,
+    criado_por uuid DEFAULT auth.uid(),
+    criado_em timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT grade_celulas_check CHECK ((jsonb_typeof(celulas) = 'array'::text)),
+    CONSTRAINT grade_observacao_check CHECK (((observacao IS NULL) OR (length(observacao) <= 500)))
+);
+
+
+--
 -- Name: hh_import_log; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2019,6 +2169,23 @@ CREATE TABLE public.pool_config (
     abi_max_player1 numeric DEFAULT 2 NOT NULL,
     abi_max_player2 numeric DEFAULT 2 NOT NULL,
     workspace_id uuid NOT NULL
+);
+
+
+--
+-- Name: regra_unidade; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.regra_unidade (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    unidade_id uuid NOT NULL,
+    chave text NOT NULL,
+    valor jsonb NOT NULL,
+    vigente_desde date DEFAULT CURRENT_DATE NOT NULL,
+    criado_por uuid DEFAULT auth.uid(),
+    criado_em timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT regra_unidade_chave_check CHECK ((chave = ANY (ARRAY['bloquear_promocao_com_mk'::text, 'jogador_ve_ranking'::text])))
 );
 
 
@@ -2372,6 +2539,22 @@ ALTER TABLE ONLY public.daily_entries
 
 
 --
+-- Name: grade grade_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.grade
+    ADD CONSTRAINT grade_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: grade grade_unidade_id_vigente_desde_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.grade
+    ADD CONSTRAINT grade_unidade_id_vigente_desde_key UNIQUE (unidade_id, vigente_desde);
+
+
+--
 -- Name: hh_import_log hh_import_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2433,6 +2616,22 @@ ALTER TABLE ONLY public.player_wallets
 
 ALTER TABLE ONLY public.pool_config
     ADD CONSTRAINT pool_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: regra_unidade regra_unidade_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regra_unidade
+    ADD CONSTRAINT regra_unidade_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: regra_unidade regra_unidade_unidade_id_chave_vigente_desde_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regra_unidade
+    ADD CONSTRAINT regra_unidade_unidade_id_chave_vigente_desde_key UNIQUE (unidade_id, chave, vigente_desde);
 
 
 --
@@ -2653,6 +2852,13 @@ CREATE INDEX daily_entries_pessoa ON public.daily_entries USING btree (pessoa_id
 --
 
 CREATE INDEX daily_entries_unidade ON public.daily_entries USING btree (unidade_id) WHERE (unidade_id IS NOT NULL);
+
+
+--
+-- Name: grade_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX grade_ws ON public.grade USING btree (workspace_id);
 
 
 --
@@ -2905,6 +3111,13 @@ CREATE UNIQUE INDEX player_wallets_ws_key ON public.player_wallets USING btree (
 --
 
 CREATE UNIQUE INDEX pool_config_one_per_ws ON public.pool_config USING btree (workspace_id);
+
+
+--
+-- Name: regra_unidade_ws; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX regra_unidade_ws ON public.regra_unidade USING btree (workspace_id);
 
 
 --
@@ -3438,6 +3651,30 @@ ALTER TABLE ONLY public.daily_entries
 
 
 --
+-- Name: grade grade_criado_por_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.grade
+    ADD CONSTRAINT grade_criado_por_fkey FOREIGN KEY (criado_por) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: grade grade_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.grade
+    ADD CONSTRAINT grade_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id) ON DELETE CASCADE;
+
+
+--
+-- Name: grade grade_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.grade
+    ADD CONSTRAINT grade_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: hh_import_log hh_import_log_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3579,6 +3816,30 @@ ALTER TABLE ONLY public.pool_config
 
 ALTER TABLE ONLY public.pool_config
     ADD CONSTRAINT pool_config_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id);
+
+
+--
+-- Name: regra_unidade regra_unidade_criado_por_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regra_unidade
+    ADD CONSTRAINT regra_unidade_criado_por_fkey FOREIGN KEY (criado_por) REFERENCES auth.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: regra_unidade regra_unidade_unidade_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regra_unidade
+    ADD CONSTRAINT regra_unidade_unidade_id_fkey FOREIGN KEY (unidade_id) REFERENCES public.unidade(id) ON DELETE CASCADE;
+
+
+--
+-- Name: regra_unidade regra_unidade_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.regra_unidade
+    ADD CONSTRAINT regra_unidade_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -4118,6 +4379,19 @@ CREATE POLICY fato_ler ON public.withdrawals FOR SELECT TO authenticated USING (
 
 
 --
+-- Name: grade; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.grade ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: grade grade_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY grade_ler ON public.grade FOR SELECT TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
+
+
+--
 -- Name: hh_import_log; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4173,6 +4447,19 @@ ALTER TABLE public.pool_config ENABLE ROW LEVEL SECURITY;
 CREATE POLICY profile_self_or_teammates ON public.player_profiles USING (((user_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
    FROM public.workspace_members m
   WHERE ((m.user_id = player_profiles.user_id) AND (m.workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces))))))) WITH CHECK ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: regra_unidade; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.regra_unidade ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: regra_unidade regra_unidade_ler; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY regra_unidade_ler ON public.regra_unidade FOR SELECT TO authenticated USING ((workspace_id IN ( SELECT public.my_workspaces() AS my_workspaces)));
 
 
 --
@@ -4517,6 +4804,15 @@ GRANT ALL ON FUNCTION public.apagar_avisos() TO service_role;
 
 
 --
+-- Name: FUNCTION apagar_grade(p_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.apagar_grade(p_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.apagar_grade(p_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.apagar_grade(p_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION aplicar_ativacao(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4732,6 +5028,15 @@ GRANT ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_f
 
 
 --
+-- Name: FUNCTION definir_regra(p_unidade uuid, p_chave text, p_valor jsonb, p_desde date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.definir_regra(p_unidade uuid, p_chave text, p_valor jsonb, p_desde date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.definir_regra(p_unidade uuid, p_chave text, p_valor jsonb, p_desde date) TO authenticated;
+GRANT ALL ON FUNCTION public.definir_regra(p_unidade uuid, p_chave text, p_valor jsonb, p_desde date) TO service_role;
+
+
+--
 -- Name: FUNCTION dividir_cashout(p_faixas jsonb, p_lifetime numeric, p_cashout numeric); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4747,6 +5052,14 @@ GRANT ALL ON FUNCTION public.dividir_cashout(p_faixas jsonb, p_lifetime numeric,
 REVOKE ALL ON FUNCTION public.editar_unidade(p_alvo uuid, p_nome text, p_rotulo text, p_ordem integer, p_arquivar boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.editar_unidade(p_alvo uuid, p_nome text, p_rotulo text, p_ordem integer, p_arquivar boolean) TO authenticated;
 GRANT ALL ON FUNCTION public.editar_unidade(p_alvo uuid, p_nome text, p_rotulo text, p_ordem integer, p_arquivar boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION em_mk(p_pessoa uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.em_mk(p_pessoa uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.em_mk(p_pessoa uuid) TO service_role;
 
 
 --
@@ -4968,6 +5281,15 @@ GRANT ALL ON FUNCTION public.registrar_saida(p_alvo uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION regra_efetiva(p_unidade uuid, p_chave text, p_data date); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) TO authenticated;
+GRANT ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) TO service_role;
+
+
+--
 -- Name: FUNCTION resumo_time(p_desde date); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4983,6 +5305,15 @@ GRANT ALL ON FUNCTION public.resumo_time(p_desde date) TO service_role;
 REVOKE ALL ON FUNCTION public.revogar_convite(p_id uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.revogar_convite(p_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.revogar_convite(p_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION salvar_grade(p_unidade uuid, p_desde date, p_simulada boolean, p_celulas jsonb, p_obs text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.salvar_grade(p_unidade uuid, p_desde date, p_simulada boolean, p_celulas jsonb, p_obs text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.salvar_grade(p_unidade uuid, p_desde date, p_simulada boolean, p_celulas jsonb, p_obs text) TO authenticated;
+GRANT ALL ON FUNCTION public.salvar_grade(p_unidade uuid, p_desde date, p_simulada boolean, p_celulas jsonb, p_obs text) TO service_role;
 
 
 --
@@ -5294,6 +5625,14 @@ GRANT ALL ON TABLE public.daily_entries TO service_role;
 
 
 --
+-- Name: TABLE grade; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.grade TO service_role;
+GRANT SELECT ON TABLE public.grade TO authenticated;
+
+
+--
 -- Name: TABLE hh_import_log; Type: ACL; Schema: public; Owner: -
 --
 
@@ -5352,6 +5691,14 @@ GRANT ALL ON TABLE public.player_wallets TO service_role;
 GRANT ALL ON TABLE public.pool_config TO anon;
 GRANT ALL ON TABLE public.pool_config TO authenticated;
 GRANT ALL ON TABLE public.pool_config TO service_role;
+
+
+--
+-- Name: TABLE regra_unidade; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.regra_unidade TO service_role;
+GRANT SELECT ON TABLE public.regra_unidade TO authenticated;
 
 
 --
@@ -5472,3 +5819,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES 
 --
 -- PostgreSQL database dump complete
 --
+
+\unrestrict xYbQSJlr8F2EAGt74LHY1K5drTc9YYArbhg7zUvdCNvN2yjn6QeXUB4mv7AaYOR
+
