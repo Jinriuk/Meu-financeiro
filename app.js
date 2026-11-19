@@ -1,4 +1,5 @@
 /* GERADO por build.js a partir de app.jsx — não edite à mão. */
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 const {
   useState,
   useMemo,
@@ -2487,6 +2488,36 @@ const IcoStats = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/Reac
 }), /*#__PURE__*/React.createElement("path", {
   d: "M6 20v-6M11 20V5M16 20v-9M21 20v-4"
 }));
+const IcoUsers = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/React.createElement("circle", {
+  cx: "9",
+  cy: "8",
+  r: "3.5"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M2.5 20a6.5 6.5 0 0 1 13 0"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14a6 6 0 0 1 3.5 6"
+}));
+const IcoGrid = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/React.createElement("rect", {
+  x: "3",
+  y: "3",
+  width: "18",
+  height: "18",
+  rx: "2.5"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M3 9h18M3 15h18M9 3v18"
+}));
+const IcoHome = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/React.createElement("path", {
+  d: "M3 10.5 12 3l9 7.5"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M5 9.5V21h14V9.5"
+}));
+const IcoUser = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/React.createElement("circle", {
+  cx: "12",
+  cy: "8",
+  r: "4"
+}), /*#__PURE__*/React.createElement("path", {
+  d: "M4 21a8 8 0 0 1 16 0"
+}));
 const IcoEye = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/React.createElement("path", {
   d: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
 }), /*#__PURE__*/React.createElement("circle", {
@@ -4780,7 +4811,11 @@ function Login({
       lineHeight: 1.5,
       marginTop: 3
     }
-  }, conv.pessoa ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), "."), " Cria tua conta (ou entra, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
+  }, (() => {
+    const pap = papelDe(conv.capacidades || []);
+    if (pap) return /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", ", /*#__PURE__*/React.createElement("b", null, (PAPEL_ROT[pap] || 'gestão').toLowerCase()), " do time", conv.joga_em ? /*#__PURE__*/React.createElement(React.Fragment, null, ", e tamb\xE9m joga na ", /*#__PURE__*/React.createElement("b", null, conv.joga_em)) : null, ".");
+    return conv.pessoa ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".");
+  })(), " Cria tua conta (ou entra, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
     "data-convite": "ruim",
     style: {
       background: C.goldSoft,
@@ -6180,7 +6215,7 @@ function DayCard({
     players: players,
     onEdit: () => onEdit(t),
     onDelete: () => onDelete(t)
-  })), /*#__PURE__*/React.createElement("button", {
+  })), onAdd && /*#__PURE__*/React.createElement("button", {
     onClick: () => onAdd(date),
     style: {
       marginTop: 12,
@@ -6354,7 +6389,7 @@ function DiaryCard({
     players: players,
     onEdit: () => onEdit(t),
     onDelete: () => onDelete(t)
-  })), /*#__PURE__*/React.createElement("button", {
+  })), onAdd && /*#__PURE__*/React.createElement("button", {
     onClick: () => onAdd(entry.entry_date, entry.player),
     style: {
       marginTop: 12,
@@ -7046,33 +7081,1075 @@ function faixasTexto(f) {
     return t;
   }).join(' · ');
 }
-function TimeTela({
+/* ---------- papéis, make-up e selos do time ---------- */
+// pacotes prontos de capacidades (o admin escolhe um; o banco guarda as capacidades)
+const PACOTES = {
+  professor: ['promover', 'ver_desempenho', 'ver_financeiro'],
+  financeiro: ['aprovar_saques', 'ver_financeiro'],
+  admin: ['administrar']
+};
+const PAPEL_ROT = {
+  professor: 'Professor',
+  financeiro: 'Financeiro',
+  admin: 'Admin',
+  personalizado: 'Personalizado'
+};
+const papelDe = caps => {
+  const c = [...new Set(caps || [])].sort();
+  if (!c.length) return null;
+  if (c.includes('administrar')) return 'admin';
+  for (const [k, v] of Object.entries(PACOTES)) if ([...v].sort().join(',') === c.join(',')) return k;
+  return 'personalizado';
+};
+const PAPEL_DICA = {
+  professor: 'vê desempenho e dinheiro das retas dele e promove',
+  financeiro: 'vê o dinheiro, aprova saques e reloads, confere planilhas',
+  admin: 'tudo: estrutura, papéis, regras, grades e contrato'
+};
+const fmtSinal = v => (Number(v) < 0 ? '−' : '+') + fmt(Math.abs(Number(v) || 0));
+// make-up do jogador = banca − MU. Negativo: está em MK (mostra quanto). Positivo: profit.
+const mkDe = (banca, mu) => banca == null || mu == null ? null : Math.round((Number(banca) - Number(mu)) * 100) / 100;
+const TONS = {
+  ok: [C.greenSoft, C.greenMid],
+  warn: [C.goldSoft, '#7a5a1f'],
+  bad: [C.redSoft, C.red],
+  plum: [C.plumSoft, P],
+  neutro: [C.bg, C.inkSoft]
+};
+const Tag = ({
+  tom = 'neutro',
+  children,
+  ...r
+}) => {
+  const t = TONS[tom] || TONS.neutro;
+  return /*#__PURE__*/React.createElement("span", _extends({}, r, {
+    style: {
+      display: 'inline-block',
+      padding: '2px 9px',
+      borderRadius: 99,
+      fontSize: 11.5,
+      fontWeight: 800,
+      background: t[0],
+      color: t[1],
+      whiteSpace: 'nowrap'
+    }
+  }), children);
+};
+const MkSelo = ({
+  v
+}) => v == null ? /*#__PURE__*/React.createElement("span", {
+  style: {
+    color: C.inkSoft
+  }
+}, "\u2014") : v < 0 ? /*#__PURE__*/React.createElement(Tag, {
+  tom: "warn",
+  "data-mk": "em"
+}, "MK ", fmtSinal(v)) : /*#__PURE__*/React.createElement("span", {
+  "data-mk": "fora",
+  style: {
+    fontWeight: 700,
+    color: C.greenMid,
+    whiteSpace: 'nowrap'
+  }
+}, fmtSinal(v));
+const diasDesde = d => d ? Math.round((Date.parse(todayISO()) - Date.parse(String(d).slice(0, 10))) / 86400000) : null;
+const linkWhats = (url, texto) => `https://wa.me/?text=${encodeURIComponent(`${texto}\n${url}`)}`;
+const thS = {
+  textAlign: 'left',
+  padding: '8px 10px',
+  fontSize: 11,
+  textTransform: 'uppercase',
+  letterSpacing: '.04em',
+  color: C.inkSoft,
+  whiteSpace: 'nowrap',
+  borderBottom: `1px solid ${C.border}`,
+  fontWeight: 700
+};
+const tdS = {
+  padding: '10px',
+  fontSize: 13.5,
+  whiteSpace: 'nowrap',
+  borderBottom: `1px solid ${C.border}`
+};
+const btnS = {
+  padding: '8px 12px',
+  borderRadius: 11,
+  border: `1.5px solid ${C.border}`,
+  background: C.surface,
+  color: P,
+  fontWeight: 700,
+  fontSize: 13,
+  cursor: 'pointer'
+};
+const btnP = {
+  ...btnS,
+  background: P,
+  color: '#fff',
+  border: `1.5px solid ${P}`
+};
+const tituloS = {
+  fontFamily: "'Space Grotesk',sans-serif",
+  fontSize: 19,
+  fontWeight: 600,
+  margin: '0 0 10px'
+};
+const Kpi = ({
+  rot,
+  val,
+  sub,
+  tom,
+  onClick,
+  ...r
+}) => {
+  const cor = tom === 'ok' ? C.greenMid : tom === 'bad' ? C.red : tom === 'warn' ? '#7a5a1f' : C.ink;
+  const corpo = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: '.05em',
+      textTransform: 'uppercase',
+      color: C.inkSoft
+    }
+  }, rot), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 24,
+      fontWeight: 700,
+      marginTop: 4,
+      color: cor
+    }
+  }, val), sub && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 2
+    }
+  }, sub));
+  const st = {
+    background: C.surface,
+    border: `1px solid ${C.border}`,
+    borderRadius: 18,
+    padding: '15px 17px',
+    textAlign: 'left',
+    minWidth: 0
+  };
+  return onClick ? /*#__PURE__*/React.createElement("button", _extends({}, r, {
+    onClick: onClick,
+    style: {
+      ...st,
+      cursor: 'pointer',
+      font: 'inherit',
+      color: 'inherit'
+    }
+  }), corpo) : /*#__PURE__*/React.createElement("div", _extends({}, r, {
+    style: st
+  }), corpo);
+};
+const Chip = ({
+  on,
+  onClick,
+  children,
+  ...r
+}) => /*#__PURE__*/React.createElement("button", _extends({}, r, {
+  onClick: onClick,
+  "aria-pressed": !!on,
+  style: {
+    padding: '6px 11px',
+    borderRadius: 99,
+    border: `1.5px solid ${on ? P : C.border}`,
+    background: on ? C.plumSoft : C.surface,
+    color: on ? P : C.inkSoft,
+    fontWeight: 700,
+    fontSize: 12.5,
+    cursor: 'pointer'
+  }
+}), children);
+
+/* chave Gestão | Meu jogo: só aparece pra quem tem papel na gestão e também joga */
+function ModoSwitch({
+  modo,
+  onTrocar,
+  compacto
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    role: "group",
+    "aria-label": "Modo",
+    "data-modo": modo,
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+      border: `1.5px solid ${C.border}`,
+      borderRadius: 12,
+      overflow: 'hidden',
+      background: C.surface,
+      margin: compacto ? 0 : '4px 0 8px'
+    }
+  }, [['gestao', 'Gestão'], ['jogo', 'Meu jogo']].map(([k, r]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    "aria-pressed": modo === k,
+    "data-modo-btn": k,
+    onClick: () => {
+      if (modo !== k) onTrocar(k);
+    },
+    style: {
+      padding: compacto ? '7px 10px' : '10px 8px',
+      border: 'none',
+      background: modo === k ? P : 'transparent',
+      color: modo === k ? '#fff' : C.inkSoft,
+      fontWeight: 800,
+      fontSize: compacto ? 12 : 13,
+      cursor: 'pointer',
+      whiteSpace: 'nowrap'
+    }
+  }, r)));
+}
+/* link pronto de convite: copiar ou mandar no WhatsApp */
+function LinkPronto({
+  titulo,
+  url,
+  texto,
+  onFechar
+}) {
+  const [copiou, setCopiou] = useState(false);
+  return /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 15,
+      marginBottom: 6
+    }
+  }, titulo), /*#__PURE__*/React.createElement("input", {
+    readOnly: true,
+    "data-link-convite": true,
+    value: url,
+    "aria-label": "Link do convite",
+    style: {
+      ...inputStyle,
+      fontSize: 13
+    },
+    onFocus: e => e.target.select()
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginTop: 10,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnP,
+    onClick: () => {
+      try {
+        navigator.clipboard.writeText(url);
+        setCopiou(true);
+      } catch (e) {}
+    }
+  }, copiou ? 'Copiado' : 'Copiar link'), /*#__PURE__*/React.createElement("a", {
+    href: linkWhats(url, texto || 'Teu convite pro time no GrinderBank:'),
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      ...btnS,
+      textDecoration: 'none',
+      display: 'inline-block'
+    }
+  }, "Mandar no WhatsApp"), onFechar && /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: onFechar
+  }, "Fechar")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      marginTop: 8,
+      lineHeight: 1.5
+    }
+  }, "O link aparece s\xF3 agora: mande j\xE1. Quem abrir cria a conta e entra direto no lugar certo. Vale 7 dias."));
+}
+
+/* convite único: quem entra, onde e que link */
+function ConviteModal({
+  unidades,
+  podeGerir,
+  podeAdmin,
+  inicial,
+  nomeUnidade,
+  onGerar,
+  onClose
+}) {
+  // onde se joga: as retas (unidades sem nada dentro); time só com a raiz joga na raiz
+  const folha = u => !unidades.some(x => x.mae_id === u.id);
+  const retas = unidades.filter(u => folha(u) && (u.mae_id || unidades.length === 1) && podeGerir(u.id));
+  const raiz = unidades.find(u => !u.mae_id);
+  const gestaoOk = unidades.some(u => podeAdmin(u.id));
+  const [quem, setQuem] = useState(inicial?.quem || 'jogador');
+  const [reta, setReta] = useState(inicial?.unidade || retas[0]?.id || '');
+  const [onde, setOnde] = useState(inicial?.unidade ? [inicial.unidade] : []);
+  const [joga, setJoga] = useState(false);
+  const [jogaEm, setJogaEm] = useState(retas[0]?.id || '');
+  const [tipo, setTipo] = useState(inicial?.tipo || 'pessoal');
+  const [nome, setNome] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const [pronto, setPronto] = useState(null);
+  const staff = quem !== 'jogador';
+  const tipoEf = staff ? 'pessoal' : tipo;
+  const ondeEf = quem === 'admin' && raiz ? [raiz.id] : onde;
+  const valido = staff ? nome.trim() && ondeEf.length && (!joga || jogaEm) : reta && (tipoEf === 'aberto' || nome.trim());
+  const alterna = id => setOnde(o => o.includes(id) ? o.filter(x => x !== id) : [...o, id]);
+  const legenda = {
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '.05em',
+    textTransform: 'uppercase',
+    color: C.gold,
+    marginBottom: 8
+  };
+  const opc = on => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    padding: '9px 12px',
+    borderRadius: 99,
+    border: `1.5px solid ${on ? P : C.border}`,
+    background: on ? C.plumSoft : C.surface,
+    color: on ? P : C.ink,
+    fontSize: 13.5,
+    fontWeight: on ? 700 : 600,
+    cursor: 'pointer'
+  });
+  const gerar = async () => {
+    setBusy(true);
+    setErro('');
+    const r = await onGerar({
+      quem,
+      reta,
+      onde: ondeEf,
+      joga,
+      jogaEm,
+      tipo: tipoEf,
+      nome: nome.trim()
+    });
+    setBusy(false);
+    if (r && r.erro) setErro(r.erro);else if (r) setPronto(r);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-convite-modal": true,
+    className: "ftfade",
+    role: "dialog",
+    "aria-label": "Convidar",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 560,
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16,
+      maxHeight: '92vh',
+      overflowY: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 21,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Convidar"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": "Fechar",
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), pronto ? /*#__PURE__*/React.createElement(LinkPronto, {
+    titulo: pronto.titulo,
+    url: pronto.url,
+    texto: pronto.texto
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: legenda
+  }, "1 \xB7 Quem vai entrar"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(4,minmax(0,1fr))',
+      gap: 8
+    }
+  }, [['jogador', 'Jogador'], ['professor', 'Professor'], ['financeiro', 'Financeiro'], ['admin', 'Admin']].map(([k, r]) => {
+    const off = k !== 'jogador' && !gestaoOk;
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      "data-quem": k,
+      disabled: off,
+      onClick: () => setQuem(k),
+      style: {
+        padding: '11px 4px',
+        borderRadius: 12,
+        border: `1.5px solid ${quem === k ? P : C.border}`,
+        background: quem === k ? C.plumSoft : C.surface,
+        color: quem === k ? P : C.inkSoft,
+        fontWeight: quem === k ? 800 : 700,
+        fontSize: 13.5,
+        cursor: off ? 'default' : 'pointer',
+        opacity: off ? .45 : 1
+      }
+    }, r);
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 6,
+      lineHeight: 1.45
+    }
+  }, quem === 'jogador' ? 'Joga numa reta e vê só os próprios dados.' : `${PAPEL_ROT[quem]}: ${PAPEL_DICA[quem]}.`)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: legenda
+  }, "2 \xB7 Onde"), !staff && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, retas.map(u => /*#__PURE__*/React.createElement("label", {
+    key: u.id,
+    style: opc(reta === u.id)
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "radio",
+    name: "reta",
+    checked: reta === u.id,
+    onChange: () => setReta(u.id)
+  }), nomeUnidade(u))), !retas.length && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft
+    }
+  }, "Crie uma reta em Equipe e convites \u2192 Editar estrutura.")), staff && quem === 'admin' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5
+    }
+  }, "Admin cuida do time inteiro."), staff && quem !== 'admin' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, unidades.filter(u => podeAdmin(u.id)).map(u => /*#__PURE__*/React.createElement("label", {
+    key: u.id,
+    "data-onde": u.nome,
+    style: opc(onde.includes(u.id))
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: onde.includes(u.id),
+    onChange: () => alterna(u.id)
+  }), u.mae_id ? nomeUnidade(u) : `${u.nome} (time inteiro)`))), staff && /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+      marginTop: 12,
+      padding: '11px 13px',
+      borderRadius: 14,
+      background: C.warm,
+      border: `1px solid ${C.border}`,
+      fontSize: 13.5,
+      fontWeight: 600
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    "data-tambem-joga": true,
+    checked: joga,
+    onChange: e => setJoga(e.target.checked)
+  }), " Tamb\xE9m joga no time, na reta", /*#__PURE__*/React.createElement("select", {
+    "aria-label": "Reta em que joga",
+    disabled: !joga,
+    value: jogaEm,
+    onChange: e => setJogaEm(e.target.value),
+    style: {
+      ...inputStyle,
+      width: 'auto',
+      padding: '8px 10px',
+      fontSize: 13.5,
+      marginLeft: 'auto'
+    }
+  }, retas.map(u => /*#__PURE__*/React.createElement("option", {
+    key: u.id,
+    value: u.id
+  }, nomeUnidade(u)))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: legenda
+  }, "3 \xB7 Que link"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...opc(tipoEf === 'pessoal'),
+      borderRadius: 14,
+      alignItems: 'flex-start',
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "radio",
+    name: "tipo",
+    checked: tipoEf === 'pessoal',
+    onChange: () => setTipo('pessoal'),
+    style: {
+      marginTop: 3
+    }
+  }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Link pessoal"), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      fontWeight: 500
+    }
+  }, "S\xF3 essa pessoa entra."))), tipoEf === 'pessoal' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      margin: '0 0 10px 4px'
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "conv-nome"
+  }, "Nome como vai aparecer no time"), /*#__PURE__*/React.createElement("input", {
+    id: "conv-nome",
+    "data-conv-nome": true,
+    style: inputStyle,
+    value: nome,
+    placeholder: staff ? 'ex.: Prof. Marcos' : 'ex.: Bruno T. (como nos lançamentos)',
+    onChange: e => setNome(e.target.value)
+  })), /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...opc(tipoEf === 'aberto'),
+      borderRadius: 14,
+      alignItems: 'flex-start',
+      opacity: staff ? .5 : 1,
+      cursor: staff ? 'default' : 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "radio",
+    name: "tipo",
+    "data-link-aberto": true,
+    disabled: staff,
+    checked: tipoEf === 'aberto',
+    onChange: () => setTipo('aberto'),
+    style: {
+      marginTop: 3
+    }
+  }), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, "Link aberto da reta"), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      fontWeight: 500
+    }
+  }, "V\xE1rias pessoas entram como jogador. S\xF3 para jogador.")))), erro && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 13,
+      fontWeight: 600
+    }
+  }, erro), /*#__PURE__*/React.createElement("button", {
+    "data-gerar-link": true,
+    disabled: !valido || busy,
+    onClick: gerar,
+    style: {
+      padding: '15px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 16,
+      cursor: valido ? 'pointer' : 'default',
+      opacity: valido && !busy ? 1 : .5
+    }
+  }, "Gerar link"))));
+}
+
+/* editar alguém da gestão: nome, papel e onde */
+function PessoaModal({
+  p,
+  unidades,
+  podeAdmin,
+  nomeUnidade,
+  onSalvar,
+  onRemover,
+  onLink,
+  onClose
+}) {
+  const [nome, setNome] = useState(p.nome);
+  const [papel, setPapel] = useState(p.papel === 'personalizado' ? 'personalizado' : p.papel || 'professor');
+  const [onde, setOnde] = useState(p.unidades);
+  const raiz = unidades.find(u => !u.mae_id);
+  const alterna = id => setOnde(o => o.includes(id) ? o.filter(x => x !== id) : [...o, id]);
+  const ondeEf = papel === 'admin' && raiz ? [raiz.id] : onde;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-pessoa-modal": true,
+    className: "ftfade",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 520,
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 14,
+      maxHeight: '92vh',
+      overflowY: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Editar ", p.nome), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": "Fechar",
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "ed-nome"
+  }, "Nome no time"), /*#__PURE__*/React.createElement("input", {
+    id: "ed-nome",
+    "data-ed-nome": true,
+    style: inputStyle,
+    value: nome,
+    onChange: e => setNome(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: labelStyle
+  }, "Papel"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, ['professor', 'financeiro', 'admin', ...(p.papel === 'personalizado' ? ['personalizado'] : [])].map(k => /*#__PURE__*/React.createElement(Chip, {
+    key: k,
+    on: papel === k,
+    onClick: () => setPapel(k)
+  }, PAPEL_ROT[k]))), papel !== 'personalizado' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 6
+    }
+  }, PAPEL_DICA[papel], ".")), papel !== 'admin' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: labelStyle
+  }, "Cuida de"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 8
+    }
+  }, unidades.filter(u => podeAdmin(u.id)).map(u => /*#__PURE__*/React.createElement(Chip, {
+    key: u.id,
+    on: onde.includes(u.id),
+    onClick: () => alterna(u.id)
+  }, u.mae_id ? nomeUnidade(u) : `${u.nome} (time inteiro)`)))), /*#__PURE__*/React.createElement("button", {
+    disabled: !nome.trim() || !ondeEf.length,
+    onClick: () => onSalvar({
+      nome: nome.trim(),
+      caps: papel === 'personalizado' ? p.caps : PACOTES[papel],
+      unidades: ondeEf
+    }),
+    style: {
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer',
+      opacity: nome.trim() && ondeEf.length ? 1 : .5
+    }
+  }, "Salvar"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, onLink && /*#__PURE__*/React.createElement("button", {
+    "data-gerar-link-pessoal": true,
+    onClick: onLink,
+    style: btnS
+  }, "Gerar link pessoal de novo"), /*#__PURE__*/React.createElement("button", {
+    onClick: onRemover,
+    style: {
+      ...btnS,
+      color: C.red
+    }
+  }, p.joga ? 'Tirar da gestão (continua jogando)' : 'Tirar do time'))));
+}
+
+/* estrutura: criar, renomear e arquivar unidades */
+function EstruturaModal({
+  unidades,
+  podeAdmin,
+  onCriar,
+  onRenomear,
+  onArquivar,
+  onClose
+}) {
+  const nivel = u => String(u.caminho).split('/').filter(Boolean).length - 1;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-estrutura-modal": true,
+    className: "ftfade",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 560,
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+      maxHeight: '92vh',
+      overflowY: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Editar estrutura"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": "Fechar",
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), unidades.map(u => /*#__PURE__*/React.createElement("div", {
+    key: u.id,
+    "data-unidade-ed": u.nome,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+      padding: '8px 0',
+      borderBottom: `1px solid ${C.border}`,
+      paddingLeft: nivel(u) * 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 140,
+      fontWeight: 700,
+      fontSize: 14
+    }
+  }, u.nome, u.rotulo && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 500,
+      color: C.inkSoft,
+      fontSize: 12.5
+    }
+  }, " \xB7 ", u.rotulo)), podeAdmin(u.id) && /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => onCriar(u)
+  }, "+ Dentro"), podeAdmin(u.id) && /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => onRenomear(u)
+  }, "Renomear"), u.mae_id && podeAdmin(u.mae_id) && /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnS,
+      color: C.red
+    },
+    onClick: () => onArquivar(u)
+  }, "Arquivar"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "Arquivar s\xF3 funciona com a unidade vazia (sem jogador e sem unidade dentro). O hist\xF3rico fica.")));
+}
+
+/* contrato do time por faixas de lucro sacado */
+function ContratoModal({
+  atual,
+  onSalvar,
+  onClose
+}) {
+  const f = Array.isArray(atual) && atual.length ? [...atual].sort((a, b) => (a.ate == null ? 1e15 : a.ate) - (b.ate == null ? 1e15 : b.ate)) : [{
+    ate: 10000,
+    jogador: .35
+  }, {
+    ate: null,
+    jogador: .4
+  }];
+  const [lim, setLim] = useState(String(f[0].ate ?? 10000));
+  const [a, setA] = useState(String(Math.round(Number(f[0].jogador) * 1000) / 10));
+  const [b, setB] = useState(String(Math.round(Number((f[1] || f[0]).jogador) * 1000) / 10));
+  const [ini, setIni] = useState(todayISO());
+  const L = parseValor(lim),
+    A = parseValor(a),
+    B = parseValor(b);
+  const ok = L > 0 && A >= 0 && A <= 100 && B >= 0 && B <= 100;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-contrato-modal": true,
+    className: "ftfade",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 460,
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Contrato do time"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": "Fechar",
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "ct-a"
+  }, "% do jogador at\xE9 o limite"), /*#__PURE__*/React.createElement("input", {
+    id: "ct-a",
+    "data-ct-a": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: a,
+    onChange: e => setA(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "ct-lim"
+  }, "Limite de lucro sacado (US$)"), /*#__PURE__*/React.createElement("input", {
+    id: "ct-lim",
+    "data-ct-lim": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: lim,
+    onChange: e => setLim(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "ct-b"
+  }, "% do jogador depois do limite"), /*#__PURE__*/React.createElement("input", {
+    id: "ct-b",
+    "data-ct-b": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: b,
+    onChange: e => setB(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "ct-ini"
+  }, "Vale a partir de"), /*#__PURE__*/React.createElement("input", {
+    id: "ct-ini",
+    type: "date",
+    style: inputStyle,
+    value: ini,
+    onChange: e => setIni(e.target.value)
+  })), ok && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.plumSoft,
+      borderRadius: 12,
+      padding: '10px 12px',
+      fontSize: 13.5
+    }
+  }, A, "% pro jogador at\xE9 ", fmt(L), " de lucro sacado, ", B, "% depois. A faixa conta s\xF3 o lucro sacado, n\xE3o a devolu\xE7\xE3o de capital."), /*#__PURE__*/React.createElement("button", {
+    disabled: !ok,
+    onClick: () => onSalvar([{
+      ate: L,
+      jogador: A / 100
+    }, {
+      ate: null,
+      jogador: B / 100
+    }], ini),
+    style: {
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer',
+      opacity: ok ? 1 : .5
+    }
+  }, "Salvar contrato")));
+}
+
+/* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
+   Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
+function TimeApp({
   session,
-  onVerJogador
+  secao,
+  tours,
+  config,
+  banca,
+  onVerJogador,
+  onIr
 }) {
   const uid = session.user.id;
   const [d, setD] = useState(null);
-  const [aviso, setAviso] = useState(null); // {ok|erro, texto}
-  const [link, setLink] = useState(null); // {titulo, url}
-  const [perg, setPerg] = useState(null); // QuickEditModal aberto: {label,hint,kind,opts,valor,onSave}
+  const [aviso, setAviso] = useState(null); // {erro, texto}
+  const [perg, setPerg] = useState(null); // QuickEditModal: {label,hint,kind,opts,valor,onSave}
+  const [link, setLink] = useState(null); // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto, setSaqueAberto] = useState(false);
-  const [planilha, setPlanilha] = useState(null); // planilha do Samba lida no aparelho, antes de enviar
+  const [planilha, setPlanilha] = useState(null);
   const [reloadAberto, setReloadAberto] = useState(false);
-  const [periodo, setPeriodo] = useState('mes'); // visão do time: mes | 30 | tudo
+  const [periodo, setPeriodo] = useState('mes');
   const [resumo, setResumo] = useState(null);
-  const [gradeAberta, setGradeAberta] = useState(null); // id da unidade com o editor de grade aberto
+  const [gradeAberta, setGradeAberta] = useState(null);
+  const [gradeSel, setGradeSel] = useState(null);
+  const [versoes, setVersoes] = useState(false);
+  const [convite, setConvite] = useState(null);
+  const [pessoaEd, setPessoaEd] = useState(null);
+  const [estrutura, setEstrutura] = useState(false);
+  const [contratoAberto, setContratoAberto] = useState(false);
+  const [filtro, setFiltro] = useState({
+    reta: null,
+    sit: null,
+    busca: ''
+  });
+  const [menuDe, setMenuDe] = useState(null);
+  const [ord, setOrd] = useState({
+    k: 'nome',
+    dir: 1
+  });
+  const desdePeriodo = () => {
+    const hoje = todayISO();
+    return periodo === 'mes' ? hoje.slice(0, 8) + '01' : periodo === '30' ? addDaysISO(hoje, -29) : null;
+  };
+  const carregarResumo = async () => {
+    const {
+      data,
+      error
+    } = await sb.rpc('resumo_time', {
+      p_desde: desdePeriodo()
+    });
+    setResumo(error ? [] : data || []);
+  };
   useEffect(() => {
-    (async () => {
-      const hoje = todayISO();
-      const desde = periodo === 'mes' ? hoje.slice(0, 8) + '01' : periodo === '30' ? new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10) : null;
-      const {
-        data,
-        error
-      } = await sb.rpc('resumo_time', {
-        p_desde: desde
-      });
-      setResumo(error ? [] : data || []);
-    })();
+    carregarResumo();
   }, [periodo]);
   const lerPlanilha = async file => {
     setAviso(null);
@@ -7118,7 +8195,7 @@ function TimeTela({
       pessoas,
       vinculos,
       acessos: a.data || [],
-      convites: cv.data || [],
+      convites: cv.error ? [] : cv.data || [],
       saques: (sq.data || []).sort((x, y) => String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       contratos: ct.data || [],
       aberturas: ab.data || [],
@@ -7132,6 +8209,10 @@ function TimeTela({
   useEffect(() => {
     carregar();
   }, []);
+  useEffect(() => {
+    setAviso(null);
+    setMenuDe(null);
+  }, [secao]);
   const rodar = async (nome, args, okTexto) => {
     setAviso(null);
     const {
@@ -7149,7 +8230,7 @@ function TimeTela({
       erro: false,
       texto: okTexto
     });
-    await carregar();
+    await Promise.all([carregar(), carregarResumo()]);
     return data ?? true;
   };
   if (!d) return /*#__PURE__*/React.createElement("div", {
@@ -7161,6 +8242,8 @@ function TimeTela({
   }, /*#__PURE__*/React.createElement("div", {
     className: "spin"
   }));
+
+  /* ---------- quem pode o quê (o banco confere de novo em cada ação) ---------- */
   const U = Object.fromEntries(d.unidades.map(u => [u.id, u]));
   const raiz = d.unidades.find(u => !u.mae_id);
   const meus = d.eu ? d.acessos.filter(a => a.pessoa_id === d.eu.id) : [];
@@ -7173,47 +8256,17 @@ function TimeTela({
     });
   };
   const podeAlgum = cap => d.unidades.some(u => pode(cap, u.id));
+  const nomeUnidade = u => u ? `${u.nome}${u.rotulo ? ` · ${u.rotulo}` : ''}` : '—';
   const caminhoNome = u => {
     const ids = String(u.caminho).split('/').filter(Boolean);
     return ids.map(i => U[i]?.nome).filter(Boolean).slice(1).join(' › ') || u.nome;
   };
   const ativo = pid => d.vinculos.find(v => v.pessoa_id === pid && !v.fim);
-  const jogadoresDe = uid_ => d.pessoas.filter(p => p.status !== 'saiu' && ativo(p.id)?.unidade_id === uid_).sort((a, b) => a.nome.localeCompare(b.nome));
   const nomeDe = pid => d.pessoas.find(p => p.id === pid)?.nome || '—';
+  const pessoaPorNome = n => d.pessoas.find(p => p.status !== 'saiu' && nomeIgual(p.nome, n));
   const urlConvite = t => `${window.location.origin}/?convite=${t}`;
-  const novoLink = async (unidade, pessoa, titulo) => {
-    const t = await rodar('criar_convite', {
-      p_unidade: unidade,
-      p_pessoa: pessoa || null,
-      p_dias: 7,
-      p_usos: null
-    });
-    if (t && typeof t === 'string') setLink({
-      titulo,
-      url: urlConvite(t)
-    });
-  };
-  const btn = {
-    padding: '7px 11px',
-    borderRadius: 10,
-    border: `1.5px solid ${C.border}`,
-    background: C.surface,
-    color: P,
-    fontWeight: 700,
-    fontSize: 12.5,
-    cursor: 'pointer'
-  };
-  const tit = {
-    fontFamily: "'Space Grotesk',sans-serif",
-    fontSize: 20,
-    fontWeight: 600,
-    margin: '0 0 10px'
-  };
-  const meusSaques = d.eu ? d.saques.filter(s => s.pessoa_id === d.eu.id) : [];
-  const minhaAbertura = d.eu ? d.aberturas.find(a => a.pessoa_id === d.eu.id) : null;
-  const paraConferir = d.aberturas.filter(a => a.status === 'enviada' && (!d.eu || a.pessoa_id !== d.eu.id) && pode('aprovar_saques', a.unidade_id));
-  const minhaGrade = minhaAbertura?.planilha?.grade || [];
-  const hoje = todayISO();
+  const hoje = todayISO(),
+    semana = addDaysISO(hoje, -6);
   const gradeEf = uid_ => gradeDoTorneio({
     unidade_id: uid_,
     entry_date: hoje
@@ -7224,214 +8277,69 @@ function TimeTela({
     const r = d.regras.filter(x => x.chave === chave && String(x.vigente_desde) <= hoje && U[x.unidade_id] && String(t.caminho).startsWith(U[x.unidade_id].caminho)).sort((a, b) => U[b.unidade_id].caminho.length - U[a.unidade_id].caminho.length || (a.vigente_desde < b.vigente_desde ? 1 : -1))[0];
     return r ? r.valor : null;
   };
-  const minhaUnidade = d.eu ? ativo(d.eu.id)?.unidade_id : null;
-  const minhaGradeReta = minhaUnidade ? gradeEf(minhaUnidade) : null;
-  const emMk = pid => {
-    const r = (resumo || []).find(x => x.pessoa_id === pid);
-    return r && r.banca != null && r.mu != null && Number(r.banca) < Number(r.mu) ? Number(r.banca) - Number(r.mu) : null;
-  };
-  const meusReloads = d.eu ? d.reloads.filter(r => r.pessoa_id === d.eu.id) : [];
-  const reloadsParaDecidir = d.reloads.filter(r => ['solicitado', 'aprovado'].includes(r.status) && (!d.eu || r.pessoa_id !== d.eu.id) && pode('aprovar_saques', r.unidade_id));
-  const gestor = meus.some(a => a.capacidades.some(c => ['ver_desempenho', 'ver_financeiro', 'administrar'].includes(c)));
-  const RELOAD_ROTULO = {
-    solicitado: 'aguardando aprovação',
-    aprovado: 'aprovado · aguardando o envio',
-    recusado: 'recusado',
-    cancelado: 'cancelado',
-    enviado: 'enviado'
-  };
-  const paraDecidir = d.saques.filter(s => (!d.eu || s.pessoa_id !== d.eu.id) && pode('aprovar_saques', s.unidade_id));
-  const contratoRaiz = raiz ? d.contratos.filter(c => c.unidade_id === raiz.id && !c.pessoa_id).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0] : null;
-  const Unidade = ({
-    u,
-    nivel
-  }) => {
-    const filhas = d.unidades.filter(x => x.mae_id === u.id);
-    const js = jogadoresDe(u.id);
-    return /*#__PURE__*/React.createElement("div", {
-      style: {
-        marginLeft: nivel ? 14 : 0,
-        borderLeft: nivel ? `2px solid ${C.border}` : 'none',
-        paddingLeft: nivel ? 12 : 0,
-        marginTop: 10
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexWrap: 'wrap'
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontWeight: 800,
-        fontSize: 15
-      }
-    }, u.nome, u.rotulo && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 600,
-        fontSize: 12,
-        color: C.inkSoft
-      }
-    }, " \xB7 ", u.rotulo)), pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => setPerg({
-        label: 'Convidar jogador',
-        hint: `Nome do jogador (como ele aparece nos lançamentos). Entra em ${u.nome}; depois é só mandar o link pessoal.`,
-        kind: 'text',
-        valor: '',
-        onSave: async nome => {
-          setPerg(null);
-          if (!nome) return;
-          const p = await rodar('convidar_jogador', {
-            p_unidade: u.id,
-            p_nome: nome,
-            p_nick_ps: null,
-            p_id_gg: null
-          });
-          if (p && typeof p === 'string') await novoLink(u.id, p, `Link pessoal de ${nome}`);
-        }
-      })
-    }, "+ Jogador"), pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => novoLink(u.id, null, `Link de ${u.nome} (vale 7 dias, várias pessoas)`)
-    }, "Link da reta"), (() => {
-      const g = gradeEf(u.id);
-      const propria = g && g.unidade_id === u.id;
-      return /*#__PURE__*/React.createElement(React.Fragment, null, propria && /*#__PURE__*/React.createElement("span", {
-        "data-grade-selo": g.simulada ? 'simulada' : 'propria',
-        style: {
-          fontSize: 11,
-          fontWeight: 800,
-          padding: '2px 8px',
-          borderRadius: 99,
-          background: g.simulada ? C.goldSoft : C.greenSoft,
-          color: g.simulada ? C.gold : C.greenMid
-        }
-      }, g.simulada ? 'grade simulada' : 'grade'), (pode('configurar_regras', u.id) || g && (pode('ver_desempenho', u.id) || pode('promover', u.id))) && /*#__PURE__*/React.createElement("button", {
-        style: btn,
-        "data-abrir-grade": u.nome,
-        onClick: () => setGradeAberta(u.id)
-      }, "Grade"));
-    })(), pode('administrar', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => setPerg({
-        label: `Nova unidade dentro de ${u.nome}`,
-        hint: 'Ex.: Pandeiro, Reco-reco, Turma A.',
-        kind: 'text',
-        valor: '',
-        onSave: async nome => {
-          setPerg(null);
-          if (nome) await rodar('criar_unidade', {
-            p_mae: u.id,
-            p_nome: nome,
-            p_rotulo: null,
-            p_ordem: 0
-          }, `${nome} criada.`);
-        }
-      })
-    }, "+ Unidade")), js.map(p => /*#__PURE__*/React.createElement("div", {
-      key: p.id,
-      "data-jogador": p.nome,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexWrap: 'wrap',
-        padding: '8px 0',
-        borderBottom: `1px solid ${C.border}`
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 140,
-        fontSize: 14,
-        fontWeight: 600
-      }
-    }, p.nome, p.status === 'convidado' && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11.5,
-        fontWeight: 700,
-        color: C.gold
-      }
-    }, " \xB7 sem conta ainda")), p.status === 'convidado' && pode('gerir_pessoas', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => novoLink(u.id, p.id, `Link pessoal de ${p.nome}`)
-    }, "Link pessoal"), pode('aprovar_saques', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => setPerg({
-        label: `Capital mandado pra ${p.nome}`,
-        hint: 'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',
-        kind: 'money',
-        valor: 0,
-        onSave: async v => {
-          setPerg(null);
-          if (v) await rodar('registrar_aporte', {
-            p_pessoa: p.id,
-            p_valor: v,
-            p_data: todayISO(),
-            p_obs: null
-          }, `Capital de ${fmt(v)} registrado pra ${p.nome}.`);
-        }
-      })
-    }, "Capital"), pode('promover', u.id) && /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => {
-        const destinos = d.unidades.filter(x => x.id !== u.id && pode('promover', x.id));
-        if (!destinos.length) return setAviso({
-          erro: true,
-          texto: 'Você não tem outra unidade pra onde mover.'
-        });
-        const mk = emMk(p.id);
-        setPerg({
-          label: `Mover ${p.nome}`,
-          hint: (mk != null ? `Atenção: ${p.nome} está em MK (${fmt(mk)}).${regraEf(u.id, 'bloquear_promocao_com_mk') === true ? ' Este time não promove com MK: o servidor vai recusar.' : ''} ` : '') + 'O histórico até hoje fica na unidade atual; daqui pra frente conta na nova.',
-          kind: 'select',
-          opts: destinos.map(caminhoNome),
-          valor: caminhoNome(destinos[0]),
-          onSave: async nome => {
-            setPerg(null);
-            const alvo = destinos.find(x => caminhoNome(x) === nome);
-            if (alvo) await rodar('mover_jogador', {
-              p_alvo: p.id,
-              p_destino: alvo.id,
-              p_motivo: 'promocao'
-            }, `${p.nome} agora está em ${alvo.nome}.`);
-          }
-        });
-      }
-    }, "Mover"), pode('gerir_pessoas', u.id) && p.user_id !== uid && /*#__PURE__*/React.createElement("button", {
-      style: {
-        ...btn,
-        color: C.red
-      },
-      onClick: () => setPerg({
-        label: `Saída de ${p.nome}`,
-        hint: 'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',
-        kind: 'text',
-        valor: '',
-        onSave: async t => {
-          setPerg(null);
-          if (String(t).trim().toUpperCase() === 'SAIU') await rodar('registrar_saida', {
-            p_alvo: p.id
-          }, `Saída de ${p.nome} registrada.`);
-        }
-      })
-    }, "Sa\xEDda"))), filhas.map(f => /*#__PURE__*/React.createElement(Unidade, {
-      key: f.id,
-      u: f,
-      nivel: nivel + 1
-    })));
-  };
-  return /*#__PURE__*/React.createElement("div", {
-    className: "ftfade",
+  const linhas = resumo || [];
+  const linhaDe = pid => linhas.find(l => l.pessoa_id === pid);
+  const unidadeDoTorneio = t => t.unidade_id || GRADE_CTX.unidadeDe[String(t.player || '').trim().toLowerCase()] || null;
+  // grade dos últimos 7 dias, por jogador: quantos fora / atenção
+  const toursSemana = (tours || []).filter(t => String(t.entry_date) >= semana && String(t.entry_date) <= hoje);
+  const gradePorPessoa = {};
+  const conferidos = [];
+  toursSemana.forEach(t => {
+    const sg = statusGrade(t, config);
+    const p = t.pessoa_id || pessoaPorNome(t.player)?.id;
+    if (!p) return;
+    const g = gradePorPessoa[p] || (gradePorPessoa[p] = {
+      fora: 0,
+      atencao: 0,
+      n: 0
+    });
+    g.n++;
+    if (sg.status === 'fora') g.fora++;
+    if (sg.status === 'atencao') g.atencao++;
+    if (sg.status !== 'dentro') conferidos.push({
+      t,
+      sg,
+      pessoa: p
+    });
+  });
+  const header = (titulo, acoes) => /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      flexDirection: 'column',
-      gap: 16
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap'
     }
-  }, aviso && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 24,
+      fontWeight: 600,
+      margin: 0,
+      flex: 1,
+      minWidth: 180
+    }
+  }, titulo), acoes);
+  const periodoChips = /*#__PURE__*/React.createElement("div", {
+    role: "group",
+    "aria-label": "Per\xEDodo",
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, [['mes', 'Este mês'], ['30', '30 dias'], ['tudo', 'Tudo']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
+    key: k,
+    on: periodo === k,
+    onClick: () => setPeriodo(k)
+  }, r)));
+  const podeConvidar = podeAlgum('gerir_pessoas');
+  const btnConvidar = ctx => podeConvidar && /*#__PURE__*/React.createElement("button", {
+    "data-convidar": true,
+    style: btnP,
+    onClick: () => setConvite(ctx || {})
+  }, "+ Convidar");
+  const avisoBox = aviso && /*#__PURE__*/React.createElement("div", {
     "data-time-aviso": aviso.erro ? 'erro' : 'ok',
+    role: "status",
     style: {
       background: aviso.erro ? C.redSoft : C.greenSoft,
       color: aviso.erro ? C.red : C.greenMid,
@@ -7440,623 +8348,465 @@ function TimeTela({
       fontSize: 13.5,
       fontWeight: 600
     }
-  }, aviso.texto), link && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 18
+  }, aviso.texto);
+
+  /* ---------- listas usadas em mais de uma tela ---------- */
+  const paraDecidir = d.saques.filter(s => ['solicitado', 'aprovado'].includes(s.status) && (!d.eu || s.pessoa_id !== d.eu.id) && pode('aprovar_saques', s.unidade_id));
+  const reloadsParaDecidir = d.reloads.filter(r => ['solicitado', 'aprovado'].includes(r.status) && (!d.eu || r.pessoa_id !== d.eu.id) && pode('aprovar_saques', r.unidade_id));
+  const paraConferir = d.aberturas.filter(a => a.status === 'enviada' && (!d.eu || a.pessoa_id !== d.eu.id) && pode('aprovar_saques', a.unidade_id));
+  const parados = linhas.filter(l => l.status === 'ativo' && l.torneios != null && (l.ultimo_lancamento == null || diasDesde(l.ultimo_lancamento) > 7));
+  const convidados = linhas.filter(l => l.status === 'convidado');
+  const RELOAD_ROTULO = {
+    solicitado: 'aguardando aprovação',
+    aprovado: 'aprovado · falta mandar',
+    recusado: 'recusado',
+    cancelado: 'cancelado',
+    enviado: 'enviado'
+  };
+  const contratoRaiz = raiz ? d.contratos.filter(c => c.unidade_id === raiz.id && !c.pessoa_id).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)))[0] : null;
+
+  /* ---------- ações reaproveitadas ---------- */
+  const moverJogador = (p, uAtual) => {
+    const destinos = d.unidades.filter(x => x.id !== uAtual && x.mae_id && pode('promover', x.id));
+    if (!destinos.length) return setAviso({
+      erro: true,
+      texto: 'Você não tem outra reta pra onde mover.'
+    });
+    const l = linhaDe(p.id),
+      mk = l ? mkDe(l.banca, l.mu) : null,
+      bloqueia = regraEf(uAtual, 'bloquear_promocao_com_mk') === true;
+    setPerg({
+      label: `Mover ${p.nome}`,
+      hint: (mk != null && mk < 0 ? `Atenção: ${p.nome} está em MK (${fmtSinal(mk)}).${bloqueia ? ' Este time não promove com MK: o servidor vai recusar.' : ''} ` : '') + 'O histórico até hoje fica na reta atual; daqui pra frente conta na nova.',
+      kind: 'select',
+      opts: destinos.map(caminhoNome),
+      valor: caminhoNome(destinos[0]),
+      onSave: async nome => {
+        setPerg(null);
+        const alvo = destinos.find(x => caminhoNome(x) === nome);
+        if (alvo) await rodar('mover_jogador', {
+          p_alvo: p.id,
+          p_destino: alvo.id,
+          p_motivo: 'promocao'
+        }, `${p.nome} agora está em ${alvo.nome}.`);
+      }
+    });
+  };
+  const capital = p => setPerg({
+    label: `Capital mandado pra ${p.nome}`,
+    hint: 'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',
+    kind: 'money',
+    valor: 0,
+    onSave: async v => {
+      setPerg(null);
+      if (v) await rodar('registrar_aporte', {
+        p_pessoa: p.id,
+        p_valor: v,
+        p_data: todayISO(),
+        p_obs: null
+      }, `Capital de ${fmt(v)} registrado pra ${p.nome}.`);
     }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 800,
-      fontSize: 15,
-      marginBottom: 6
+  });
+  const linkPessoal = async (p, u) => {
+    const t = await rodar('criar_convite', {
+      p_unidade: u,
+      p_pessoa: p.id,
+      p_dias: 7,
+      p_usos: null
+    });
+    if (t && typeof t === 'string') setLink({
+      titulo: `Link pessoal de ${p.nome}`,
+      url: urlConvite(t),
+      texto: `${p.nome}, teu convite pro time no GrinderBank:`
+    });
+  };
+  const renomear = p => setPerg({
+    label: `Nome de ${p.nome}`,
+    hint: 'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',
+    kind: 'text',
+    valor: p.nome,
+    onSave: async n => {
+      setPerg(null);
+      const nn = String(n || '').trim();
+      if (nn && nn !== p.nome) await rodar('renomear_pessoa', {
+        p_alvo: p.id,
+        p_nome: nn
+      }, `Agora é ${nn}.`);
     }
-  }, link.titulo), /*#__PURE__*/React.createElement("input", {
-    readOnly: true,
-    "data-link-convite": true,
-    value: link.url,
-    style: {
-      ...inputStyle,
-      fontSize: 13
-    },
-    onFocus: e => e.target.select()
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 8,
-      marginTop: 10
+  });
+  const saida = p => setPerg({
+    label: `Saída de ${p.nome}`,
+    hint: 'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',
+    kind: 'text',
+    valor: '',
+    onSave: async t => {
+      setPerg(null);
+      if (String(t).trim().toUpperCase() === 'SAIU') await rodar('registrar_saida', {
+        p_alvo: p.id
+      }, `Saída de ${p.nome} registrada.`);
     }
-  }, /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btn,
-      background: P,
-      color: '#fff',
-      border: 'none'
-    },
-    onClick: () => {
-      try {
-        navigator.clipboard.writeText(link.url);
-        setAviso({
-          erro: false,
-          texto: 'Link copiado. Manda pro jogador pelo Discord ou WhatsApp.'
+  });
+  const gerarConvite = async ({
+    quem,
+    reta,
+    onde,
+    joga,
+    jogaEm,
+    tipo,
+    nome
+  }) => {
+    const chama = async (fn, args) => {
+      const {
+        data,
+        error
+      } = await sb.rpc(fn, args);
+      if (error) throw new Error(error.message || 'Não deu certo.');
+      return data;
+    };
+    try {
+      let tok,
+        titulo,
+        texto,
+        pessoa = null;
+      if (quem === 'jogador' && tipo === 'aberto') {
+        tok = await chama('criar_convite', {
+          p_unidade: reta,
+          p_pessoa: null,
+          p_dias: 7,
+          p_usos: null
         });
-      } catch (e) {}
-    }
-  }, "Copiar link"), /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => setLink(null)
-  }, "Fechar")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.inkSoft,
-      marginTop: 8,
-      lineHeight: 1.5
-    }
-  }, "O link aparece s\xF3 agora: guarde ou mande j\xE1. Quem abrir cria a conta e entra direto no time.")), d.sit && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Minha conta no time"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: labelStyle
-  }, "MU (capital do time)"), /*#__PURE__*/React.createElement("div", {
-    "data-mu": true,
-    style: {
-      fontWeight: 800,
-      fontSize: 20
-    }
-  }, fmt(d.sit.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: labelStyle
-  }, "Lucro j\xE1 sacado"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 800,
-      fontSize: 20
-    }
-  }, fmt(d.sit.lifetime)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.inkSoft,
-      marginTop: 8
-    }
-  }, "Contrato: ", faixasTexto(d.sit.contrato)), minhaAbertura?.status === 'confirmada' ? /*#__PURE__*/React.createElement("div", {
-    "data-abertura": "confirmada",
-    style: {
-      fontSize: 12.5,
-      color: C.greenMid,
-      fontWeight: 600,
-      marginTop: 6
-    }
-  }, "Planilha do Samba conferida pelo time em ", dataBR(minhaAbertura.confirmado_em), ".") : /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 10
-    }
-  }, minhaAbertura && /*#__PURE__*/React.createElement("div", {
-    "data-abertura": "enviada",
-    style: {
-      fontSize: 12.5,
-      color: C.gold,
-      fontWeight: 600,
-      marginBottom: 6
-    }
-  }, "Planilha enviada em ", dataBR(minhaAbertura.enviado_em), ": aguardando o time conferir. At\xE9 l\xE1 o MU e o lucro sacado dela n\xE3o contam."), /*#__PURE__*/React.createElement("label", {
-    style: {
-      ...btn,
-      display: 'inline-block'
-    }
-  }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar minha planilha do Samba', /*#__PURE__*/React.createElement("input", {
-    type: "file",
-    accept: ".xlsx",
-    "data-importar-planilha": true,
-    style: {
-      display: 'none'
-    },
-    onChange: e => {
-      lerPlanilha(e.target.files && e.target.files[0]);
-      e.target.value = '';
-    }
-  }))), /*#__PURE__*/React.createElement("button", {
-    disabled: meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)) || !d.sit.contrato,
-    onClick: () => setSaqueAberto(true),
-    style: {
-      marginTop: 14,
-      padding: '12px 18px',
-      borderRadius: 13,
-      border: 'none',
-      background: P,
-      color: '#fff',
-      fontWeight: 700,
-      fontSize: 14.5,
-      cursor: 'pointer',
-      opacity: meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)) || !d.sit.contrato ? .5 : 1
-    }
-  }, "Pedir saque"), /*#__PURE__*/React.createElement("button", {
-    "data-pedir-reload": true,
-    disabled: meusReloads.some(r => ['solicitado', 'aprovado'].includes(r.status)),
-    onClick: () => setReloadAberto(true),
-    style: {
-      marginTop: 14,
-      marginLeft: 8,
-      padding: '12px 18px',
-      borderRadius: 13,
-      border: `1.5px solid ${C.border}`,
-      background: C.surface,
-      color: P,
-      fontWeight: 700,
-      fontSize: 14.5,
-      cursor: 'pointer',
-      opacity: meusReloads.some(r => ['solicitado', 'aprovado'].includes(r.status)) ? .5 : 1
-    }
-  }, "Pedir reload"), meusReloads.slice(0, 3).map(r => /*#__PURE__*/React.createElement("div", {
-    key: r.id,
-    style: {
-      display: 'flex',
-      gap: 8,
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      padding: '8px 0',
-      borderTop: `1px solid ${C.border}`,
-      fontSize: 13,
-      marginTop: 6
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 160
-    }
-  }, dataBR(r.solicitado_em), " \xB7 reload ", fmt(r.status === 'enviado' ? r.enviado_valor : r.valor), r.sala ? ` · ${r.sala}` : ''), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      color: r.status === 'enviado' ? C.greenMid : r.status === 'recusado' ? C.red : C.gold
-    }
-  }, RELOAD_ROTULO[r.status], r.motivo_recusa ? ` · ${r.motivo_recusa}` : ''), r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => rodar('cancelar_reload', {
-      p_id: r.id
-    }, 'Pedido de reload cancelado.')
-  }, "Cancelar"))), meusSaques.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 14
-    }
-  }, meusSaques.slice(0, 6).map(s => /*#__PURE__*/React.createElement("div", {
-    key: s.id,
-    style: {
-      display: 'flex',
-      gap: 8,
-      flexWrap: 'wrap',
-      alignItems: 'center',
-      padding: '8px 0',
-      borderTop: `1px solid ${C.border}`,
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      minWidth: 160
-    }
-  }, dataBR(s.solicitado_em), " \xB7 MU ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 time ", fmt(s.total_time), ", voc\xEA ", fmt(s.parte_jogador)), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      color: s.status === 'pago' ? C.greenMid : s.status === 'recusado' ? C.red : C.gold
-    }
-  }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '', s.motivo ? ` · ${s.motivo}` : ''), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => rodar('cancelar_saque', {
-      p_id: s.id
-    }, 'Pedido cancelado.')
-  }, "Cancelar"))))), reloadsParaDecidir.length > 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Reloads pedidos"), reloadsParaDecidir.map(r => /*#__PURE__*/React.createElement("div", {
-    key: r.id,
-    "data-reload": nomeDe(r.pessoa_id),
-    style: {
-      padding: '10px 0',
-      borderTop: `1px solid ${C.border}`,
-      fontSize: 13.5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700
-    }
-  }, nomeDe(r.pessoa_id), " \xB7 ", fmt(r.valor), r.sala ? ` · ${r.sala}` : '', " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.gold
-    }
-  }, RELOAD_ROTULO[r.status])), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.inkSoft,
-      marginTop: 2
-    }
-  }, dataBR(r.solicitado_em), r.motivo ? ` · "${r.motivo}"` : ''), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 8,
-      marginTop: 8,
-      flexWrap: 'wrap'
-    }
-  }, r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btn,
-      background: P,
-      color: '#fff',
-      border: 'none'
-    },
-    onClick: () => rodar('decidir_reload', {
-      p_id: r.id,
-      p_aprovar: true,
-      p_motivo: null
-    }, 'Reload aprovado. Quando mandar o dinheiro, confirme o envio.')
-  }, "Aprovar"), r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btn,
-      color: C.red
-    },
-    onClick: () => setPerg({
-      label: 'Motivo da recusa',
-      hint: 'O jogador vê este motivo.',
-      kind: 'text',
-      valor: '',
-      onSave: async m => {
-        setPerg(null);
-        if (m) await rodar('decidir_reload', {
-          p_id: r.id,
-          p_aprovar: false,
-          p_motivo: m
-        }, 'Reload recusado.');
-      }
-    })
-  }, "Recusar"), r.status === 'aprovado' && /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => setPerg({
-      label: 'Quanto foi enviado?',
-      hint: `Pedido: ${fmt(r.valor)}. O valor enviado entra no MU de ${nomeDe(r.pessoa_id)}.`,
-      kind: 'money',
-      valor: r.valor,
-      onSave: async v => {
-        setPerg(null);
-        if (v > 0) await rodar('confirmar_envio_reload', {
-          p_id: r.id,
-          p_valor: v
-        }, `Reload de ${fmt(v)} registrado no MU de ${nomeDe(r.pessoa_id)}.`);
-      }
-    })
-  }, "Confirmar envio"))))), gestor && /*#__PURE__*/React.createElement(VisaoTime, {
-    linhas: resumo,
-    unidades: d.unidades,
-    periodo: periodo,
-    setPeriodo: setPeriodo,
-    onVerJogador: onVerJogador
-  }), paraDecidir.length > 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Saques do time"), paraDecidir.slice(0, 30).map(s => /*#__PURE__*/React.createElement("div", {
-    key: s.id,
-    "data-saque": nomeDe(s.pessoa_id),
-    style: {
-      padding: '10px 0',
-      borderTop: `1px solid ${C.border}`,
-      fontSize: 13.5
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700
-    }
-  }, nomeDe(s.pessoa_id), " \xB7 ", dataBR(s.solicitado_em), " \xB7 ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: s.status === 'pago' ? C.greenMid : s.status === 'recusado' ? C.red : C.gold
-    }
-  }, SAQUE_ROTULO[s.status])), /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.inkSoft,
-      marginTop: 3,
-      lineHeight: 1.5
-    }
-  }, "Banca ", fmt(s.banca), " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
-    style: {
-      color: C.ink
-    }
-  }, "time recebe ", fmt(s.total_time)), " \xB7 banca depois ", fmt(s.banca_depois), s.observacao ? ` · "${s.observacao}"` : ''), s.status === 'pago' && Number(s.diferenca) !== 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.red,
-      fontWeight: 700,
-      marginTop: 3
-    }
-  }, "Recebido ", fmt(s.recebido), ": diferen\xE7a de ", fmt(s.diferenca)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 8,
-      marginTop: 8,
-      flexWrap: 'wrap'
-    }
-  }, s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btn,
-      background: P,
-      color: '#fff',
-      border: 'none'
-    },
-    onClick: () => rodar('decidir_saque', {
-      p_id: s.id,
-      p_aprovar: true,
-      p_motivo: null
-    }, 'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')
-  }, "Aprovar"), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btn,
-      color: C.red
-    },
-    onClick: () => setPerg({
-      label: 'Motivo da recusa',
-      hint: 'O jogador vê este motivo.',
-      kind: 'text',
-      valor: '',
-      onSave: async m => {
-        setPerg(null);
-        if (m) await rodar('decidir_saque', {
-          p_id: s.id,
-          p_aprovar: false,
-          p_motivo: m
-        }, 'Saque recusado.');
-      }
-    })
-  }, "Recusar"), s.status === 'aprovado' && /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => setPerg({
-      label: 'Quanto o time recebeu?',
-      hint: `Esperado: ${fmt(s.total_time)}. Some tudo que chegou (todas as carteiras).`,
-      kind: 'money',
-      valor: s.total_time,
-      onSave: async v => {
-        setPerg(null);
-        const r = await rodar('confirmar_recebimento', {
-          p_id: s.id,
-          p_recebido: v
+        titulo = `Link aberto da ${U[reta]?.nome}`;
+        texto = `Convite pra jogar na ${U[reta]?.nome} pelo GrinderBank:`;
+      } else if (quem === 'jogador') {
+        pessoa = await chama('convidar_jogador', {
+          p_unidade: reta,
+          p_nome: nome,
+          p_nick_ps: null,
+          p_id_gg: null
         });
-        if (r && typeof r === 'object') setAviso({
-          erro: Number(r.diferenca) !== 0,
-          texto: Number(r.diferenca) === 0 ? 'Recebimento confirmado, sem diferença.' : `Recebimento confirmado com diferença de ${fmt(r.diferenca)} (esperado ${fmt(r.total_time)}, recebido ${fmt(r.recebido)}).`
+        tok = await chama('criar_convite', {
+          p_unidade: reta,
+          p_pessoa: pessoa,
+          p_dias: 7,
+          p_usos: null
         });
+        titulo = `Link pessoal de ${nome}`;
+        texto = `${nome}, teu convite pro time no GrinderBank:`;
+      } else {
+        pessoa = await chama('convidar_equipe', {
+          p_nome: nome,
+          p_unidades: onde,
+          p_caps: PACOTES[quem],
+          p_joga_em: joga ? jogaEm : null
+        });
+        tok = await chama('criar_convite', {
+          p_unidade: onde[0],
+          p_pessoa: pessoa,
+          p_dias: 7,
+          p_usos: null
+        });
+        titulo = `Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`;
+        texto = `${nome}, teu convite pra gestão do time no GrinderBank:`;
       }
-    })
-  }, "Confirmar recebimento"))))), paraConferir.length > 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
+      await Promise.all([carregar(), carregarResumo()]);
+      return {
+        titulo,
+        url: urlConvite(tok),
+        texto
+      };
+    } catch (e) {
+      return {
+        erro: e.message
+      };
     }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Planilhas pra conferir"), paraConferir.map(a => {
-    const pl = a.planilha || {};
+  };
+
+  /* ================= MEU TIME (jogador) ================= */
+  if (secao === 'meu') {
+    const meusSaques = d.eu ? d.saques.filter(s => s.pessoa_id === d.eu.id) : [];
+    const meusReloads = d.eu ? d.reloads.filter(r => r.pessoa_id === d.eu.id) : [];
+    const minhaAbertura = d.eu ? d.aberturas.find(a => a.pessoa_id === d.eu.id) : null;
+    const minhaGrade = minhaAbertura?.planilha?.grade || [];
+    const minhaUnidade = d.eu ? ativo(d.eu.id)?.unidade_id : null;
+    const minhaGradeReta = minhaUnidade ? gradeEf(minhaUnidade) : null;
+    const mk = d.sit ? mkDe(banca, d.sit.mu) : null;
+    const saqueAberto_ = meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)),
+      reloadAberto_ = meusReloads.some(r => ['solicitado', 'aprovado'].includes(r.status));
     return /*#__PURE__*/React.createElement("div", {
-      key: a.id,
-      "data-conferir": nomeDe(a.pessoa_id),
+      className: "ftfade",
       style: {
-        padding: '10px 0',
-        borderTop: `1px solid ${C.border}`,
-        fontSize: 13.5
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
+      }
+    }, header('Meu time'), avisoBox, !d.sit && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontWeight: 700
       }
-    }, nomeDe(a.pessoa_id), " \xB7 enviada ", dataBR(a.enviado_em), pl.atualizado_em ? ` · planilha de ${dataBR(pl.atualizado_em)}` : ''), /*#__PURE__*/React.createElement("div", {
+    }, "Voc\xEA ainda n\xE3o est\xE1 numa reta do time."), /*#__PURE__*/React.createElement("div", {
       style: {
+        fontSize: 13,
         color: C.inkSoft,
-        marginTop: 3,
-        lineHeight: 1.5
+        marginTop: 4
       }
-    }, "MakeUp ", /*#__PURE__*/React.createElement("b", {
+    }, "Pe\xE7a o link de convite da sua reta pro professor.")), d.sit && /*#__PURE__*/React.createElement(Card, {
       style: {
-        color: C.ink
+        padding: 20
       }
-    }, fmt(a.mu)), " \xB7 Cashout (lucro j\xE1 sacado) ", /*#__PURE__*/React.createElement("b", {
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Minha conta no time", minhaUnidade ? /*#__PURE__*/React.createElement("span", {
       style: {
-        color: C.ink
+        fontSize: 14,
+        color: C.inkSoft,
+        fontWeight: 500
       }
-    }, fmt(a.cashout)), " \xB7 banca ", fmt(pl.banca), " \xB7 lifetime ", fmt(pl.lifetime), pl.contrato_texto ? ` · contrato "${pl.contrato_texto}"` : ''), (pl.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
+    }, " \xB7 ", nomeUnidade(U[minhaUnidade])) : null), /*#__PURE__*/React.createElement("div", {
       style: {
-        color: C.red,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: labelStyle
+    }, "MU (capital do time)"), /*#__PURE__*/React.createElement("div", {
+      "data-mu": true,
+      style: {
+        fontWeight: 800,
+        fontSize: 20
+      }
+    }, fmt(d.sit.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: labelStyle
+    }, mk != null && mk < 0 ? 'Make-up' : 'Profit'), /*#__PURE__*/React.createElement("div", {
+      "data-meu-mk": true,
+      style: {
+        fontWeight: 800,
+        fontSize: 20,
+        color: mk == null ? C.ink : mk < 0 ? '#7a5a1f' : C.greenMid
+      }
+    }, mk == null ? '—' : mk < 0 ? `MK ${fmtSinal(mk)}` : fmtSinal(mk))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: labelStyle
+    }, "Lucro j\xE1 sacado"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 20
+      }
+    }, fmt(d.sit.lifetime)))), mk != null && /*#__PURE__*/React.createElement("div", {
+      style: {
         fontSize: 12.5,
-        fontWeight: 600
+        color: mk < 0 ? '#7a5a1f' : C.greenMid,
+        fontWeight: 600,
+        marginTop: 6
       }
-    }, t)), /*#__PURE__*/React.createElement("div", {
+    }, mk < 0 ? 'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.' : 'Fora de MK: dá pra pedir saque.'), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "Contrato: ", faixasTexto(d.sit.contrato)), minhaAbertura?.status === 'confirmada' ? /*#__PURE__*/React.createElement("div", {
+      "data-abertura": "confirmada",
+      style: {
+        fontSize: 12.5,
+        color: C.greenMid,
+        fontWeight: 600,
+        marginTop: 6
+      }
+    }, "Planilha do Samba conferida pelo time em ", dataBR(minhaAbertura.confirmado_em), ".") : /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10
+      }
+    }, minhaAbertura && /*#__PURE__*/React.createElement("div", {
+      "data-abertura": "enviada",
+      style: {
+        fontSize: 12.5,
+        color: C.gold,
+        fontWeight: 600,
+        marginBottom: 6
+      }
+    }, "Planilha enviada em ", dataBR(minhaAbertura.enviado_em), ": aguardando o time conferir. At\xE9 l\xE1 o MU e o lucro sacado dela n\xE3o contam."), /*#__PURE__*/React.createElement("label", {
+      style: {
+        ...btnS,
+        display: 'inline-block'
+      }
+    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar minha planilha do Samba', /*#__PURE__*/React.createElement("input", {
+      type: "file",
+      accept: ".xlsx",
+      "data-importar-planilha": true,
+      style: {
+        display: 'none'
+      },
+      onChange: e => {
+        lerPlanilha(e.target.files && e.target.files[0]);
+        e.target.value = '';
+      }
+    }))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
-        marginTop: 8,
-        flexWrap: 'wrap'
+        flexWrap: 'wrap',
+        marginTop: 14
       }
     }, /*#__PURE__*/React.createElement("button", {
+      disabled: saqueAberto_ || !d.sit.contrato,
+      onClick: () => setSaqueAberto(true),
       style: {
-        ...btn,
-        background: P,
-        color: '#fff',
-        border: 'none'
-      },
-      onClick: () => rodar('conferir_abertura', {
-        p_pessoa: a.pessoa_id,
-        p_mu: a.mu,
-        p_cashout: a.cashout
-      }, `Planilha de ${nomeDe(a.pessoa_id)} conferida.`)
-    }, "Conferir como est\xE1"), /*#__PURE__*/React.createElement("button", {
-      style: btn,
-      onClick: () => setPerg({
-        label: `MakeUp de ${nomeDe(a.pessoa_id)}`,
-        hint: 'Valor certo do MU (capital do time com o jogador).',
-        kind: 'money',
-        valor: a.mu,
-        onSave: mu => setPerg({
-          label: `Cashout de ${nomeDe(a.pessoa_id)}`,
-          hint: 'Lucro que ele já sacou no time (conta pra faixa do contrato).',
-          kind: 'money',
-          valor: a.cashout,
-          onSave: async co => {
-            setPerg(null);
-            await rodar('conferir_abertura', {
-              p_pessoa: a.pessoa_id,
-              p_mu: mu,
-              p_cashout: co
-            }, `Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`);
-          }
-        })
-      })
-    }, "Corrigir e conferir")));
-  })), minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Grade da ", U[minhaGradeReta.unidade_id]?.nome || 'reta'), minhaGradeReta.simulada && /*#__PURE__*/React.createElement("div", {
-    "data-grade-simulada": true,
-    style: {
-      background: C.goldSoft,
-      color: C.gold,
-      borderRadius: 12,
-      padding: '10px 12px',
-      fontSize: 13,
-      fontWeight: 700,
-      marginBottom: 10,
-      lineHeight: 1.5
-    }
-  }, "Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir \xE0 risca."), /*#__PURE__*/React.createElement(GradeTabela, {
-    celulas: minhaGradeReta.celulas || []
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: C.inkSoft,
-      marginTop: 8
-    }
-  }, "Vale desde ", dataBR(minhaGradeReta.vigente_desde), minhaGradeReta.unidade_id !== minhaUnidade ? ` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})` : '', ". Cada torneio lan\xE7ado \xE9 conferido com ela.")), !minhaGradeReta && minhaGrade.length > 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Minha grade"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      overflowX: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    "data-grade": true,
-    style: {
-      width: '100%',
-      borderCollapse: 'collapse',
-      fontSize: 12.5
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Sala', 'Tipo', 'Regular', 'Prog KO', 'Hyper'].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      textAlign: 'left',
-      padding: '6px 6px',
-      color: C.inkSoft,
-      fontSize: 11,
-      textTransform: 'uppercase',
-      borderBottom: `1px solid ${C.border}`
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, minhaGrade.map((g, i) => /*#__PURE__*/React.createElement("tr", {
-    key: i,
-    style: {
-      borderBottom: `1px solid ${C.border}`
-    }
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '6px',
-      fontWeight: 700
-    }
-  }, i === 0 || minhaGrade[i - 1].site !== g.site ? g.site : ''), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '6px'
-    }
-  }, g.tipo), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '6px',
-      whiteSpace: 'pre-line'
-    }
-  }, g.regular || '—'), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '6px',
-      whiteSpace: 'pre-line'
-    }
-  }, g.prog_ko || '—'), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '6px',
-      whiteSpace: 'pre-line'
-    }
-  }, g.hyper || '—')))))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11.5,
-      color: C.inkSoft,
-      marginTop: 8
-    }
-  }, "Da planilha enviada em ", dataBR(minhaAbertura?.enviado_em), ". As regras valem como o time definiu na planilha.")), raiz && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Estrutura do time"), meus.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: C.inkSoft,
-      marginBottom: 4
-    }
-  }, "Seu acesso: ", meus.map(a => `${U[a.unidade_id]?.nome || '?'} (${a.capacidades.map(c => CAPS_ROTULO[c] || c).join(', ')})`).join(' · ')), /*#__PURE__*/React.createElement(Unidade, {
-    u: raiz,
-    nivel: 0
-  })), raiz && pode('configurar_regras', raiz.id) && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tit
-  }, "Contrato do time"), /*#__PURE__*/React.createElement("div", {
-    "data-contrato": true,
-    style: {
-      fontSize: 13.5,
-      marginBottom: 10
-    }
-  }, faixasTexto(contratoRaiz?.faixas)), /*#__PURE__*/React.createElement("button", {
-    style: btn,
-    onClick: () => setPerg({
-      label: 'Contrato: % do jogador',
-      hint: 'Formato: limite;%até;%acima — ex.: 10000;35;40 = 35% pro jogador até 10 mil sacados de lucro, 40% depois. A faixa conta só o lucro já sacado (não a devolução de capital).',
-      kind: 'text',
-      valor: '10000;35;40',
-      onSave: async t => {
-        setPerg(null);
-        const [lim, a, b] = String(t).split(';').map(x => parseValor(x));
-        if (!(lim > 0 && a >= 0 && a <= 100 && b >= 0 && b <= 100)) return setAviso({
-          erro: true,
-          texto: 'Use o formato 10000;35;40.'
-        });
-        await rodar('definir_contrato', {
-          p_unidade: raiz.id,
-          p_pessoa: null,
-          p_faixas: [{
-            ate: lim,
-            jogador: a / 100
-          }, {
-            ate: null,
-            jogador: b / 100
-          }],
-          p_inicio: todayISO()
-        }, 'Contrato salvo.');
+        ...btnP,
+        padding: '12px 18px',
+        fontSize: 14.5,
+        opacity: saqueAberto_ || !d.sit.contrato ? .5 : 1
       }
-    })
-  }, "Definir contrato")), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+    }, "Pedir saque"), /*#__PURE__*/React.createElement("button", {
+      "data-pedir-reload": true,
+      disabled: reloadAberto_,
+      onClick: () => setReloadAberto(true),
+      style: {
+        ...btnS,
+        padding: '12px 18px',
+        fontSize: 14.5,
+        opacity: reloadAberto_ ? .5 : 1
+      }
+    }, "Pedir reload")), meusReloads.slice(0, 3).map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        padding: '8px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13,
+        marginTop: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 160
+      }
+    }, dataBR(r.solicitado_em), " \xB7 reload ", fmt(r.status === 'enviado' ? r.enviado_valor : r.valor), r.sala ? ` · ${r.sala}` : ''), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: r.status === 'enviado' ? C.greenMid : r.status === 'recusado' ? C.red : C.gold
+      }
+    }, RELOAD_ROTULO[r.status], r.motivo_recusa ? ` · ${r.motivo_recusa}` : ''), r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => rodar('cancelar_reload', {
+        p_id: r.id
+      }, 'Pedido de reload cancelado.')
+    }, "Cancelar"))), meusSaques.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10
+      }
+    }, meusSaques.slice(0, 6).map(s => /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        padding: '8px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 160
+      }
+    }, dataBR(s.solicitado_em), " \xB7 MU ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 time ", fmt(s.total_time), ", voc\xEA ", fmt(s.parte_jogador)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: s.status === 'pago' ? C.greenMid : s.status === 'recusado' ? C.red : C.gold
+      }
+    }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '', s.motivo ? ` · ${s.motivo}` : ''), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => rodar('cancelar_saque', {
+        p_id: s.id
+      }, 'Pedido cancelado.')
+    }, "Cancelar"))))), minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Grade da ", U[minhaGradeReta.unidade_id]?.nome || 'reta', " ", minhaGradeReta.simulada ? /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, "simulada") : /*#__PURE__*/React.createElement(Tag, {
+      tom: "ok"
+    }, "oficial")), minhaGradeReta.simulada && /*#__PURE__*/React.createElement("div", {
+      "data-grade-simulada": true,
+      style: {
+        background: C.goldSoft,
+        color: '#6b4e1a',
+        borderRadius: 12,
+        padding: '10px 12px',
+        fontSize: 13,
+        fontWeight: 700,
+        marginBottom: 10,
+        lineHeight: 1.5
+      }
+    }, "Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir \xE0 risca."), /*#__PURE__*/React.createElement(GradeTabela, {
+      celulas: minhaGradeReta.celulas || []
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "Vale desde ", dataBR(minhaGradeReta.vigente_desde), minhaGradeReta.unidade_id !== minhaUnidade ? ` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})` : '', ". Cada torneio lan\xE7ado \xE9 conferido com ela.")), !minhaGradeReta && minhaGrade.length > 0 && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Minha grade"), /*#__PURE__*/React.createElement(GradeTabela, {
+      celulas: minhaGrade
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "Da planilha enviada em ", dataBR(minhaAbertura?.enviado_em), ". As regras valem como o time definiu na planilha.")), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+      label: perg.label,
+      hint: perg.hint,
+      kind: perg.kind,
+      opts: perg.opts,
+      currentValue: perg.valor,
+      onClose: () => setPerg(null),
+      onSave: perg.onSave
+    }), reloadAberto && /*#__PURE__*/React.createElement(ReloadModal, {
+      onClose: () => setReloadAberto(false),
+      onPedir: async a => {
+        const r = await rodar('pedir_reload', a, 'Pedido de reload enviado. O time foi avisado.');
+        if (r) setReloadAberto(false);
+      }
+    }), planilha && /*#__PURE__*/React.createElement(PlanilhaModal, {
+      p: planilha,
+      onClose: () => setPlanilha(null),
+      onEnviar: async () => {
+        const r = await rodar('enviar_planilha', {
+          p_planilha: planilha
+        }, 'Planilha enviada. Agora o time confere os valores.');
+        if (r) setPlanilha(null);
+      }
+    }), saqueAberto && d.eu && /*#__PURE__*/React.createElement(SaqueModal, {
+      pessoa: d.eu.id,
+      onClose: () => setSaqueAberto(false),
+      onPedir: async a => {
+        const r = await rodar('solicitar_saque', a, 'Pedido de saque enviado. Aguarde a aprovação do time.');
+        if (r) setSaqueAberto(false);
+      }
+    }));
+  }
+
+  /* ================= GESTÃO ================= */
+  const souAdmin = !!(raiz && pode('administrar', raiz.id));
+  const modais = /*#__PURE__*/React.createElement(React.Fragment, null, perg && /*#__PURE__*/React.createElement(QuickEditModal, {
     label: perg.label,
     hint: perg.hint,
     kind: perg.kind,
@@ -8064,6 +8814,14 @@ function TimeTela({
     currentValue: perg.valor,
     onClose: () => setPerg(null),
     onSave: perg.onSave
+  }), convite && /*#__PURE__*/React.createElement(ConviteModal, {
+    unidades: d.unidades,
+    podeGerir: u => pode('gerir_pessoas', u),
+    podeAdmin: u => pode('administrar', u),
+    inicial: convite,
+    nomeUnidade: nomeUnidade,
+    onGerar: gerarConvite,
+    onClose: () => setConvite(null)
   }), gradeAberta && U[gradeAberta] && (() => {
     const u = U[gradeAberta],
       g = gradeEf(u.id);
@@ -8078,7 +8836,6 @@ function TimeTela({
       podeEditar: pode('configurar_regras', u.id),
       planilhas: planilhas,
       historico: d.grades.filter(x => x.unidade_id === u.id).sort((a, b) => String(b.vigente_desde).localeCompare(String(a.vigente_desde))),
-      regraMk: regraEf(u.id, 'bloquear_promocao_com_mk') === true,
       onClose: () => setGradeAberta(null),
       onSalvar: async ({
         desde,
@@ -8099,251 +8856,1642 @@ function TimeTela({
         await rodar('apagar_grade', {
           p_id: h.id
         }, 'Versão da grade apagada.');
-      },
-      onRegra: async v => {
-        await rodar('definir_regra', {
-          p_unidade: u.id,
-          p_chave: 'bloquear_promocao_com_mk',
-          p_valor: v,
-          p_desde: null
-        }, v ? `${u.nome}: promoção com MK bloqueada no servidor.` : `${u.nome}: promoção com MK liberada (a tela só avisa).`);
       }
     });
-  })(), reloadAberto && /*#__PURE__*/React.createElement(ReloadModal, {
-    onClose: () => setReloadAberto(false),
-    onPedir: async a => {
-      const r = await rodar('pedir_reload', a, 'Pedido de reload enviado. O time foi avisado.');
-      if (r) setReloadAberto(false);
+  })(), pessoaEd && /*#__PURE__*/React.createElement(PessoaModal, {
+    p: pessoaEd,
+    unidades: d.unidades,
+    podeAdmin: u => pode('administrar', u),
+    nomeUnidade: nomeUnidade,
+    onClose: () => setPessoaEd(null),
+    onLink: pessoaEd.status === 'convidado' ? () => {
+      const p = pessoaEd;
+      setPessoaEd(null);
+      linkPessoal(p, p.unidades[0]);
+    } : null,
+    onSalvar: async ({
+      nome,
+      caps,
+      unidades
+    }) => {
+      const p = pessoaEd;
+      setPessoaEd(null);
+      if (nome !== p.nome) {
+        const r = await rodar('renomear_pessoa', {
+          p_alvo: p.id,
+          p_nome: nome
+        });
+        if (!r) return;
+      }
+      await rodar('definir_papel', {
+        p_alvo: p.id,
+        p_unidades: unidades,
+        p_caps: caps
+      }, `${nome}: ${PAPEL_ROT[papelDe(caps)] || 'papel'} salvo.`);
+    },
+    onRemover: () => {
+      const p = pessoaEd;
+      setPessoaEd(null);
+      setPerg({
+        label: p.joga ? `Tirar ${p.nome} da gestão` : `Tirar ${p.nome} do time`,
+        hint: p.joga ? 'Ele continua jogando na reta dele, só perde o papel na gestão. Digite TIRAR pra confirmar.' : 'Ele perde o acesso ao time. Digite TIRAR pra confirmar.',
+        kind: 'text',
+        valor: '',
+        onSave: async t => {
+          setPerg(null);
+          if (String(t).trim().toUpperCase() === 'TIRAR') await rodar('definir_papel', {
+            p_alvo: p.id,
+            p_unidades: null,
+            p_caps: null
+          }, `${p.nome} saiu da gestão.`);
+        }
+      });
     }
-  }), planilha && /*#__PURE__*/React.createElement(PlanilhaModal, {
-    p: planilha,
-    onClose: () => setPlanilha(null),
-    onEnviar: async () => {
-      const r = await rodar('enviar_planilha', {
-        p_planilha: planilha
-      }, 'Planilha enviada. Agora o time confere os valores.');
-      if (r) setPlanilha(null);
-    }
-  }), saqueAberto && d.eu && /*#__PURE__*/React.createElement(SaqueModal, {
-    pessoa: d.eu.id,
-    onClose: () => setSaqueAberto(false),
-    onPedir: async a => {
-      const r = await rodar('solicitar_saque', a, 'Pedido de saque enviado. Aguarde a aprovação do time.');
-      if (r) setSaqueAberto(false);
+  }), estrutura && /*#__PURE__*/React.createElement(EstruturaModal, {
+    unidades: d.unidades,
+    podeAdmin: u => pode('administrar', u),
+    onClose: () => setEstrutura(false),
+    onCriar: u => setPerg({
+      label: `Nova unidade dentro de ${u.nome}`,
+      hint: 'Ex.: Pandeiro, Reco-reco, Turma A.',
+      kind: 'text',
+      valor: '',
+      onSave: async nome => {
+        setPerg(null);
+        if (nome) await rodar('criar_unidade', {
+          p_mae: u.id,
+          p_nome: nome,
+          p_rotulo: null,
+          p_ordem: 0
+        }, `${nome} criada.`);
+      }
+    }),
+    onRenomear: u => setPerg({
+      label: `Renomear ${u.nome}`,
+      hint: 'Nome e, se quiser, o rótulo depois de ";" (ex.: Banjo;Reta 3).',
+      kind: 'text',
+      valor: u.rotulo ? `${u.nome};${u.rotulo}` : u.nome,
+      onSave: async t => {
+        setPerg(null);
+        const [n, r] = String(t || '').split(';');
+        if (n && n.trim()) await rodar('renomear_unidade', {
+          p_alvo: u.id,
+          p_nome: n.trim(),
+          p_rotulo: (r || '').trim() || null
+        }, 'Unidade renomeada.');
+      }
+    }),
+    onArquivar: u => setPerg({
+      label: `Arquivar ${u.nome}`,
+      hint: 'Só funciona com a unidade vazia. Digite ARQUIVAR pra confirmar.',
+      kind: 'text',
+      valor: '',
+      onSave: async t => {
+        setPerg(null);
+        if (String(t).trim().toUpperCase() === 'ARQUIVAR') await rodar('arquivar_unidade', {
+          p_alvo: u.id
+        }, `${u.nome} arquivada.`);
+      }
+    })
+  }), contratoAberto && raiz && /*#__PURE__*/React.createElement(ContratoModal, {
+    atual: contratoRaiz?.faixas,
+    onClose: () => setContratoAberto(false),
+    onSalvar: async (faixas, ini) => {
+      const r = await rodar('definir_contrato', {
+        p_unidade: raiz.id,
+        p_pessoa: null,
+        p_faixas: faixas,
+        p_inicio: ini || todayISO()
+      }, 'Contrato salvo.');
+      if (r) setContratoAberto(false);
     }
   }));
-}
-/* visão do time: blocos por unidade (com o total de tudo que está abaixo dela) e uma linha por aluno.
-   ROI do bloco é PONDERADO (lucro ÷ investido), não média de ROIs: aluno com 5 torneios não pesa igual a um com 500. */
-function VisaoTime({
-  linhas,
-  unidades,
-  periodo,
-  setPeriodo,
-  onVerJogador
-}) {
-  if (linhas == null) return /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "spin"
-  }));
-  const hoje = Date.parse(todayISO());
-  const dias = d => d ? Math.round((hoje - Date.parse(d)) / 86400000) : null;
-  const soma = (ls, k) => {
-    const v = ls.map(l => l[k]).filter(x => x != null);
-    return v.length ? v.reduce((a, b) => a + Number(b), 0) : null;
-  };
-  const blocoDe = u => linhas.filter(l => String(l.caminho || '').startsWith(u.caminho));
-  const ordem = [...unidades].sort((a, b) => String(a.caminho).localeCompare(String(b.caminho)));
-  const nivel = u => String(u.caminho).split('/').filter(Boolean).length - 1;
-  const v = x => x == null ? '—' : fmt(x);
-  const th = {
-    textAlign: 'left',
-    padding: '6px 8px',
-    fontSize: 10.5,
-    textTransform: 'uppercase',
-    color: C.inkSoft,
-    whiteSpace: 'nowrap',
-    borderBottom: `1px solid ${C.border}`
-  };
-  const td = {
-    padding: '7px 8px',
-    fontSize: 13,
-    whiteSpace: 'nowrap',
-    borderBottom: `1px solid ${C.border}`
-  };
-  return /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: 10,
-      flexWrap: 'wrap',
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: {
-      fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 20,
-      fontWeight: 600,
-      margin: 0
-    }
-  }, "Vis\xE3o do time"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6
-    }
-  }, [['mes', 'Este mês'], ['30', '30 dias'], ['tudo', 'Tudo']].map(([k, r]) => /*#__PURE__*/React.createElement("button", {
-    key: k,
-    onClick: () => setPeriodo(k),
-    style: {
-      padding: '6px 11px',
-      borderRadius: 10,
-      border: `1.5px solid ${periodo === k ? P : C.border}`,
-      background: periodo === k ? C.plumSoft : 'transparent',
-      color: periodo === k ? P : C.inkSoft,
-      fontWeight: 700,
-      fontSize: 12.5,
-      cursor: 'pointer'
-    }
-  }, r)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.inkSoft,
-      marginBottom: 8,
-      lineHeight: 1.5
-    }
-  }, "Lucro, torneios, ROI e ABI s\xE3o do per\xEDodo; banca, MU e lucro sacado s\xE3o de agora. \"\u2014\" = sem permiss\xE3o pra ver. Banca s\xF3 fica certa se o aluno lan\xE7a os torneios: olhe o \xFAltimo lan\xE7amento."), linhas.length === 0 && /*#__PURE__*/React.createElement(Empty, null, "Nenhum aluno com v\xEDnculo ainda."), linhas.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      overflowX: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    "data-visao-time": true,
-    style: {
-      width: '100%',
-      borderCollapse: 'collapse'
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Aluno', 'Banca', 'Lucro', 'Torneios', 'ROI', 'ABI', 'MU', 'Sacado', 'Último lançamento'].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: th
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, ordem.map(u => {
-    const bloco = blocoDe(u);
-    if (!bloco.length) return null;
-    const diretos = bloco.filter(l => l.unidade_id === u.id).sort((a, b) => a.nome.localeCompare(b.nome));
-    const inv = soma(bloco, 'investido'),
-      luc = soma(bloco, 'lucro');
-    return /*#__PURE__*/React.createElement(React.Fragment, {
-      key: u.id
-    }, /*#__PURE__*/React.createElement("tr", {
-      "data-bloco": u.nome,
+  const linkBox = link && /*#__PURE__*/React.createElement(LinkPronto, {
+    titulo: link.titulo,
+    url: link.url,
+    texto: link.texto,
+    onFechar: () => setLink(null)
+  });
+
+  /* ---------- VISÃO GERAL ---------- */
+  if (secao === 'g_visao') {
+    const vis = linhas.filter(l => l.status !== 'convidado');
+    const soma = (ls, k) => {
+      const v = ls.map(l => l[k]).filter(x => x != null);
+      return v.length ? v.reduce((a, b) => a + Number(b), 0) : null;
+    };
+    const temPerf = vis.some(l => l.torneios != null);
+    const torn = soma(vis, 'torneios'),
+      inv = soma(vis, 'investido'),
+      luc = soma(vis, 'lucro');
+    const abiPond = (() => {
+      const ls = vis.filter(l => l.abi != null && l.torneios);
+      const n = ls.reduce((a, l) => a + l.torneios, 0);
+      return n ? ls.reduce((a, l) => a + Number(l.abi) * l.torneios, 0) / n : null;
+    })();
+    const foraTot = Object.values(gradePorPessoa).reduce((a, g) => a + g.fora, 0),
+      foraAlunos = Object.values(gradePorPessoa).filter(g => g.fora > 0).length;
+    const porReta = Object.values(vis.reduce((m, l) => {
+      const k = l.unidade_id;
+      (m[k] || (m[k] = {
+        u: U[k],
+        ls: []
+      })).ls.push(l);
+      return m;
+    }, {})).filter(x => x.u).sort((a, b) => String(a.u.caminho).localeCompare(String(b.u.caminho)));
+    const pend = [...(paraDecidir.filter(s => s.status === 'solicitado').length ? [{
+      n: paraDecidir.filter(s => s.status === 'solicitado').length,
+      t: 'Saques para aprovar',
+      ir: 'g_financeiro',
+      tom: 'warn'
+    }] : []), ...(paraDecidir.filter(s => s.status === 'aprovado').length ? [{
+      n: paraDecidir.filter(s => s.status === 'aprovado').length,
+      t: 'Saques aprovados esperando o dinheiro chegar',
+      ir: 'g_financeiro',
+      tom: 'warn'
+    }] : []), ...(reloadsParaDecidir.length ? [{
+      n: reloadsParaDecidir.length,
+      t: 'Reloads pedidos',
+      ir: 'g_financeiro',
+      tom: 'warn'
+    }] : []), ...(paraConferir.length ? [{
+      n: paraConferir.length,
+      t: 'Planilhas para conferir',
+      ir: 'g_financeiro',
+      tom: 'warn'
+    }] : []), ...(parados.length ? [{
+      n: parados.length,
+      t: 'Alunos sem lançar há mais de 7 dias',
+      ir: 'g_jogadores',
+      sit: 'parados',
+      tom: 'bad'
+    }] : []), ...(convidados.length && podeConvidar ? [{
+      n: convidados.length,
+      t: 'Convites ainda não aceitos',
+      ir: 'g_jogadores',
+      sit: 'convidados',
+      tom: 'plum'
+    }] : [])];
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
       style: {
-        background: C.warm
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
       }
-    }, /*#__PURE__*/React.createElement("td", {
+    }, header(raiz && meus.some(a => a.unidade_id === raiz.id) ? 'Visão geral' : 'Minhas retas', /*#__PURE__*/React.createElement(React.Fragment, null, periodoChips, btnConvidar())), avisoBox, linkBox, resumo == null ? /*#__PURE__*/React.createElement(Card, {
       style: {
-        ...td,
-        fontWeight: 800,
-        paddingLeft: 8 + nivel(u) * 14
+        padding: 30,
+        display: 'grid',
+        placeItems: 'center'
       }
-    }, u.nome, " ", /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "spin"
+    })) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      "data-kpis": true,
       style: {
-        fontWeight: 600,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))',
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Alunos ativos",
+      val: vis.length,
+      sub: parados.length ? `${parados.length} sem lançar há 7+ dias` : 'todos lançando'
+    }), temPerf && /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Torneios",
+      val: (torn || 0).toLocaleString('pt-BR'),
+      sub: abiPond != null ? `ABI médio ${fmt(abiPond)}` : null
+    }), temPerf && /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Resultado",
+      val: luc == null ? '—' : fmtSinal(luc),
+      tom: luc > 0 ? 'ok' : luc < 0 ? 'bad' : null,
+      sub: inv > 0 ? `ROI ${pctFmt(luc / inv * 100)}` : null
+    }), /*#__PURE__*/React.createElement(Kpi, {
+      "data-kpi-fora": true,
+      rot: "Fora da grade \xB7 7 dias",
+      val: `${foraTot} torneio${foraTot !== 1 ? 's' : ''}`,
+      tom: foraTot ? 'bad' : 'ok',
+      sub: foraTot ? `de ${foraAlunos} aluno${foraAlunos !== 1 ? 's' : ''} · ver quais` : 'tudo dentro',
+      onClick: foraTot ? () => onIr('g_grades') : null
+    })), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Pend\xEAncias"), pend.length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft
+      }
+    }, "Nada pendente agora."), pend.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))',
+        gap: 10
+      }
+    }, pend.map((p, i) => /*#__PURE__*/React.createElement("button", {
+      key: i,
+      "data-pendencia": p.t,
+      onClick: () => {
+        if (p.sit) setFiltro(f => ({
+          ...f,
+          sit: p.sit,
+          reta: null
+        }));
+        onIr(p.ir);
+      },
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '12px 14px',
+        borderRadius: 14,
+        border: `1px solid ${C.border}`,
+        background: C.warm,
+        cursor: 'pointer',
+        textAlign: 'left',
+        font: 'inherit',
+        color: C.ink
+      }
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: p.tom
+    }, p.n), /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        fontSize: 14,
+        lineHeight: 1.35
+      }
+    }, p.t), /*#__PURE__*/React.createElement("span", {
+      "aria-hidden": "true",
+      style: {
+        color: P,
+        fontWeight: 800
+      }
+    }, "\u203A"))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20,
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Por reta"), !porReta.length && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft
+      }
+    }, "Nenhum aluno com v\xEDnculo ainda. Use ", /*#__PURE__*/React.createElement("b", null, "+ Convidar"), " pra chamar os jogadores."), porReta.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-por-reta": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Reta', 'Alunos', ...(temPerf ? ['Torneios', 'ABI', 'ROI', 'Resultado'] : []), 'Fora da grade'].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: thS
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, porReta.map(({
+      u,
+      ls
+    }) => {
+      const i_ = soma(ls, 'investido'),
+        l_ = soma(ls, 'lucro'),
+        n_ = soma(ls, 'torneios');
+      const ab = (() => {
+        const x = ls.filter(l => l.abi != null && l.torneios);
+        const n = x.reduce((a, l) => a + l.torneios, 0);
+        return n ? x.reduce((a, l) => a + Number(l.abi) * l.torneios, 0) / n : null;
+      })();
+      const fora = ls.reduce((a, l) => a + (gradePorPessoa[l.pessoa_id]?.fora || 0), 0);
+      const g = gradeEf(u.id);
+      return /*#__PURE__*/React.createElement("tr", {
+        key: u.id,
+        "data-reta": u.nome,
+        onClick: () => {
+          setFiltro({
+            reta: u.id,
+            sit: null,
+            busca: ''
+          });
+          onIr('g_jogadores');
+        },
+        style: {
+          cursor: 'pointer'
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, /*#__PURE__*/React.createElement("b", null, u.nome), u.rotulo && /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, " \xB7 ", u.rotulo), " ", g && g.simulada && /*#__PURE__*/React.createElement(Tag, {
+        tom: "warn"
+      }, "grade simulada")), /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, ls.length), temPerf && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, n_ ?? '—'), /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, ab != null ? fmt(ab) : '—'), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...tdS,
+          color: l_ > 0 ? C.greenMid : l_ < 0 ? C.red : C.ink
+        }
+      }, i_ > 0 ? pctFmt(l_ / i_ * 100) : '—'), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...tdS,
+          color: l_ > 0 ? C.greenMid : l_ < 0 ? C.red : C.ink
+        }
+      }, l_ == null ? '—' : fmtSinal(l_))), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...tdS,
+          color: fora ? C.red : C.ink,
+          fontWeight: fora ? 700 : 400
+        }
+      }, fora));
+    }), porReta.length > 1 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, "Total"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, vis.length), temPerf && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, torn ?? '—'), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, abiPond != null ? fmt(abiPond) : '—'), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, inv > 0 ? pctFmt(luc / inv * 100) : '—'), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, luc == null ? '—' : fmtSinal(luc))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 800
+      }
+    }, foraTot))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
         color: C.inkSoft,
-        fontSize: 12
+        marginTop: 8
       }
-    }, "\xB7 ", bloco.length, " aluno", bloco.length > 1 ? 's' : '')), /*#__PURE__*/React.createElement("td", {
+    }, "Clique na reta pra ver os jogadores dela. ROI do bloco \xE9 pelo total investido. Fora da grade: \xFAltimos 7 dias.")))), modais);
+  }
+
+  /* ---------- JOGADORES ---------- */
+  if (secao === 'g_jogadores') {
+    const retasComJogador = [...new Set(linhas.map(l => l.unidade_id))].map(id => U[id]).filter(Boolean).sort((a, b) => String(a.caminho).localeCompare(String(b.caminho)));
+    const busca = filtro.busca.trim().toLowerCase();
+    const lista = linhas.filter(l => (!filtro.reta || String(l.caminho || U[l.unidade_id]?.caminho || '').startsWith(U[filtro.reta]?.caminho || '§')) && (!busca || l.nome.toLowerCase().includes(busca)) && (!filtro.sit || filtro.sit === 'fora' && gradePorPessoa[l.pessoa_id]?.fora > 0 || filtro.sit === 'mk' && mkDe(l.banca, l.mu) < 0 || filtro.sit === 'parados' && parados.includes(l) || filtro.sit === 'convidados' && l.status === 'convidado'));
+    const chave = {
+      nome: l => l.nome.toLowerCase(),
+      torneios: l => l.torneios ?? -1,
+      lucro: l => l.lucro ?? -1e9,
+      banca: l => l.banca ?? -1e9,
+      mk: l => mkDe(l.banca, l.mu) ?? -1e9,
+      grade: l => gradePorPessoa[l.pessoa_id]?.fora || 0,
+      ultimo: l => l.ultimo_lancamento || ''
+    }[ord.k] || (l => l.nome);
+    lista.sort((a, b) => {
+      const x = chave(a),
+        y = chave(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * ord.dir;
+    });
+    const temDin = linhas.some(l => l.banca != null),
+      temPerf = linhas.some(l => l.torneios != null);
+    const col = (k, r) => /*#__PURE__*/React.createElement("th", {
+      key: k,
+      style: thS
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setOrd(o => ({
+        k,
+        dir: o.k === k ? -o.dir : k === 'nome' ? 1 : -1
+      })),
       style: {
-        ...td,
-        fontWeight: 700
-      }
-    }, v(soma(bloco, 'banca'))), /*#__PURE__*/React.createElement("td", {
-      style: {
-        ...td,
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        font: 'inherit',
+        color: ord.k === k ? P : C.inkSoft,
+        cursor: 'pointer',
         fontWeight: 700,
-        color: luc > 0 ? C.greenMid : luc < 0 ? C.red : C.ink
+        textTransform: 'uppercase',
+        fontSize: 11,
+        letterSpacing: '.04em'
       }
-    }, v(luc)), /*#__PURE__*/React.createElement("td", {
+    }, r, ord.k === k ? ord.dir > 0 ? ' ↑' : ' ↓' : ''));
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
       style: {
-        ...td,
-        fontWeight: 700
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
       }
-    }, soma(bloco, 'torneios') ?? '—'), /*#__PURE__*/React.createElement("td", {
+    }, header(/*#__PURE__*/React.createElement(React.Fragment, null, "Jogadores ", /*#__PURE__*/React.createElement("span", {
       style: {
-        ...td,
-        fontWeight: 700
+        fontSize: 15,
+        color: C.inkSoft,
+        fontWeight: 500
       }
-    }, inv > 0 ? `${Math.round(luc / inv * 1000) / 10}%` : '—'), /*#__PURE__*/React.createElement("td", {
-      style: td
-    }), /*#__PURE__*/React.createElement("td", {
+    }, linhas.filter(l => l.status === 'ativo').length, " ativos")), /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+      "aria-label": "Buscar jogador",
+      "data-busca": true,
+      value: filtro.busca,
+      placeholder: "Buscar jogador",
+      onChange: e => setFiltro(f => ({
+        ...f,
+        busca: e.target.value
+      })),
       style: {
-        ...td,
-        fontWeight: 700
+        ...inputStyle,
+        width: 220,
+        padding: '10px 12px',
+        fontSize: 14
       }
-    }, v(soma(bloco, 'mu'))), /*#__PURE__*/React.createElement("td", {
+    }), btnConvidar({
+      quem: 'jogador',
+      unidade: filtro.reta && U[filtro.reta]?.mae_id ? filtro.reta : undefined
+    }))), avisoBox, linkBox, /*#__PURE__*/React.createElement("div", {
       style: {
-        ...td,
-        fontWeight: 700
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'center'
       }
-    }, v(soma(bloco, 'lucro_sacado'))), /*#__PURE__*/React.createElement("td", {
-      style: td
-    })), diretos.map(l => {
-      const dd = dias(l.ultimo_lancamento);
+    }, /*#__PURE__*/React.createElement(Chip, {
+      on: !filtro.reta,
+      onClick: () => setFiltro(f => ({
+        ...f,
+        reta: null
+      }))
+    }, "Todas as retas"), retasComJogador.map(u => /*#__PURE__*/React.createElement(Chip, {
+      key: u.id,
+      "data-filtro-reta": u.nome,
+      on: filtro.reta === u.id,
+      onClick: () => setFiltro(f => ({
+        ...f,
+        reta: f.reta === u.id ? null : u.id
+      }))
+    }, u.nome)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 1,
+        height: 22,
+        background: C.border,
+        margin: '0 4px'
+      }
+    }), [['fora', 'Fora da grade'], ...(temDin ? [['mk', 'Em MK']] : []), ['parados', 'Sem lançar'], ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
+      key: k,
+      "data-filtro-sit": k,
+      on: filtro.sit === k,
+      onClick: () => setFiltro(f => ({
+        ...f,
+        sit: f.sit === k ? null : k
+      }))
+    }, r)), periodoChips), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: '6px 10px'
+      }
+    }, resumo == null && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: 30,
+        display: 'grid',
+        placeItems: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "spin"
+    })), resumo != null && !lista.length && /*#__PURE__*/React.createElement(Empty, null, linhas.length ? 'Ninguém com esse filtro.' : 'Nenhum jogador no time ainda. Use + Convidar.'), lista.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-jogadores": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, col('nome', 'Jogador'), temPerf && col('torneios', 'Torneios'), temPerf && col('lucro', 'Resultado'), temDin && col('banca', 'Banca'), temDin && col('mk', 'Make-up'), col('grade', 'Grade 7 dias'), col('ultimo', 'Último lançamento'), /*#__PURE__*/React.createElement("th", {
+      style: thS
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        position: 'absolute',
+        left: -9999
+      }
+    }, "A\xE7\xF5es")))), /*#__PURE__*/React.createElement("tbody", null, lista.map(l => {
+      const p = d.pessoas.find(x => x.id === l.pessoa_id) || {
+        id: l.pessoa_id,
+        nome: l.nome
+      };
+      const g = gradePorPessoa[l.pessoa_id];
+      const dd = diasDesde(l.ultimo_lancamento);
+      const conv = l.status === 'convidado';
+      const acoes = [...(l.status === 'ativo' && onVerJogador ? [['Ver painel do aluno', () => onVerJogador(l.nome)]] : []), ...(pode('promover', l.unidade_id) && l.status === 'ativo' ? [['Mover de reta (promover)', () => moverJogador(p, l.unidade_id)]] : []), ...(pode('aprovar_saques', l.unidade_id) && l.status === 'ativo' ? [['Capital mandado (MU)', () => capital(p)]] : []), ...(l.status === 'convidado' && pode('gerir_pessoas', l.unidade_id) ? [['Link pessoal', () => linkPessoal(p, l.unidade_id)]] : []), ...(pode('gerir_pessoas', l.unidade_id) || souAdmin ? [['Renomear', () => renomear(p)]] : []), ...(pode('gerir_pessoas', l.unidade_id) && p.user_id !== uid ? [['Registrar saída', () => saida(p), true]] : [])];
       return /*#__PURE__*/React.createElement("tr", {
         key: l.pessoa_id,
-        "data-aluno": l.nome
+        "data-jogador": l.nome
       }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          ...td,
-          paddingLeft: 22 + nivel(u) * 14
-        }
-      }, onVerJogador ? /*#__PURE__*/React.createElement("button", {
+        style: tdS
+      }, l.status === 'ativo' && onVerJogador ? /*#__PURE__*/React.createElement("button", {
         onClick: () => onVerJogador(l.nome),
         style: {
           border: 'none',
           background: 'transparent',
+          padding: 0,
           color: P,
           fontWeight: 700,
-          cursor: 'pointer',
-          padding: 0,
-          fontSize: 13
+          fontSize: 14,
+          cursor: 'pointer'
         }
-      }, l.nome) : /*#__PURE__*/React.createElement("b", null, l.nome), l.status === 'convidado' && /*#__PURE__*/React.createElement("span", {
+      }, l.nome) : /*#__PURE__*/React.createElement("b", null, l.nome), l.status === 'convidado' && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+        tom: "plum"
+      }, "convite enviado")), /*#__PURE__*/React.createElement("div", {
         style: {
-          color: C.gold,
-          fontSize: 11.5
+          fontSize: 12,
+          color: C.inkSoft
         }
-      }, " \xB7 sem conta")), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, v(l.banca)), /*#__PURE__*/React.createElement("td", {
+      }, U[l.unidade_id]?.nome || l.unidade)), temPerf && /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, conv ? '—' : l.torneios ?? '—', !conv && l.abi != null && l.torneios ? /*#__PURE__*/React.createElement("div", {
         style: {
-          ...td,
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "ABI ", fmt(l.abi)) : null), temPerf && /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...tdS,
           color: l.lucro > 0 ? C.greenMid : l.lucro < 0 ? C.red : C.ink
         }
-      }, v(l.lucro)), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, l.torneios ?? '—'), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, l.roi == null ? '—' : `${l.roi}%`), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, v(l.abi)), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, v(l.mu)), /*#__PURE__*/React.createElement("td", {
-        style: td
-      }, v(l.lucro_sacado)), /*#__PURE__*/React.createElement("td", {
+      }, conv || l.lucro == null || !l.torneios ? '—' : fmtSinal(l.lucro), !conv && l.roi != null && l.torneios ? /*#__PURE__*/React.createElement("div", {
         style: {
-          ...td,
-          color: dd != null && dd > 7 ? C.red : C.ink,
-          fontWeight: dd != null && dd > 7 ? 700 : 400
+          fontSize: 12,
+          color: l.roi < 0 ? C.red : C.inkSoft
         }
-      }, l.ultimo_lancamento ? `${dataBR(l.ultimo_lancamento)}${dd > 7 ? ` · parado há ${dd} dias` : ''}` : l.torneios == null ? '—' : 'nunca lançou'));
-    }));
-  })))));
+      }, "ROI ", pctFmt(l.roi)) : null), temDin && /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, conv || l.banca == null ? '—' : fmt(l.banca), !conv && l.mu != null && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "MU ", fmt(l.mu))), temDin && /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, conv ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "\u2014") : /*#__PURE__*/React.createElement(MkSelo, {
+        v: mkDe(l.banca, l.mu)
+      })), /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, !g ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "\u2014") : g.fora ? /*#__PURE__*/React.createElement(Tag, {
+        tom: "bad"
+      }, g.fora, " fora") : g.atencao ? /*#__PURE__*/React.createElement(Tag, {
+        tom: "warn"
+      }, g.atencao, " aten\xE7\xE3o") : /*#__PURE__*/React.createElement(Tag, {
+        tom: "ok"
+      }, "dentro")), /*#__PURE__*/React.createElement("td", {
+        style: tdS
+      }, l.ultimo_lancamento ? dLabel(l.ultimo_lancamento) : conv ? '—' : 'nunca lançou', dd != null && dd > 7 && /*#__PURE__*/React.createElement("div", {
+        "data-parado": true,
+        style: {
+          fontSize: 12,
+          color: C.red,
+          fontWeight: 700
+        }
+      }, "parado h\xE1 ", dd, " dias")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          ...tdS,
+          position: 'relative'
+        }
+      }, acoes.length > 0 && /*#__PURE__*/React.createElement("button", {
+        "aria-label": `Ações de ${l.nome}`,
+        "aria-expanded": menuDe === l.pessoa_id,
+        "data-acoes": l.nome,
+        onClick: () => setMenuDe(m => m === l.pessoa_id ? null : l.pessoa_id),
+        style: {
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          border: `1.5px solid ${menuDe === l.pessoa_id ? P : C.border}`,
+          background: menuDe === l.pessoa_id ? C.plumSoft : C.surface,
+          color: menuDe === l.pessoa_id ? P : C.inkSoft,
+          fontWeight: 800,
+          cursor: 'pointer'
+        }
+      }, "\u22EF"), menuDe === l.pessoa_id && /*#__PURE__*/React.createElement("div", {
+        role: "menu",
+        style: {
+          position: 'absolute',
+          right: 8,
+          top: 48,
+          zIndex: 5,
+          width: 230,
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          boxShadow: '0 16px 40px -18px rgba(25,35,29,.45)',
+          padding: 6,
+          whiteSpace: 'normal'
+        }
+      }, acoes.map(([r, fn, perigo]) => /*#__PURE__*/React.createElement("button", {
+        key: r,
+        role: "menuitem",
+        onClick: () => {
+          setMenuDe(null);
+          fn();
+        },
+        style: {
+          display: 'block',
+          width: '100%',
+          textAlign: 'left',
+          padding: '10px 12px',
+          borderRadius: 10,
+          border: 'none',
+          background: 'transparent',
+          color: perigo ? C.red : C.ink,
+          fontWeight: 600,
+          fontSize: 13.5,
+          cursor: 'pointer'
+        }
+      }, r)))));
+    }))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        lineHeight: 1.5
+      }
+    }, "Make-up = banca \u2212 MU: ", /*#__PURE__*/React.createElement("b", null, "MK"), " com o valor quando a banca est\xE1 abaixo do capital do time; positivo \xE9 profit. Resultado e ROI s\xE3o do per\xEDodo; banca e make-up s\xE3o de agora."), modais);
+  }
+
+  /* ---------- GRADES ---------- */
+  if (secao === 'g_grades') {
+    const nivel = u => String(u.caminho).split('/').filter(Boolean).length - 1;
+    const lista = d.unidades.filter(u => u.mae_id);
+    const comGrade = lista.find(u => d.grades.some(g => g.unidade_id === u.id));
+    const sel = U[gradeSel] || comGrade || lista.find(u => !d.unidades.some(x => x.mae_id === u.id)) || lista[0];
+    const g = sel ? gradeEf(sel.id) : null;
+    const propria = g && g.unidade_id === sel.id;
+    const hist = sel ? d.grades.filter(x => x.unidade_id === sel.id).sort((a, b) => String(b.vigente_desde).localeCompare(String(a.vigente_desde))) : [];
+    const conf = sel ? conferidos.filter(c => {
+      const uid_ = unidadeDoTorneio(c.t);
+      return uid_ && U[uid_] && String(U[uid_].caminho).startsWith(sel.caminho);
+    }).sort((a, b) => (a.sg.status === 'fora' ? 0 : 1) - (b.sg.status === 'fora' ? 0 : 1) || String(b.t.entry_date).localeCompare(String(a.t.entry_date))) : [];
+    const podeVerDesempenho = podeAlgum('ver_desempenho');
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }
+    }, header('Grades'), avisoBox, !lista.length && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement(Empty, null, "Crie as retas em Equipe e convites \u2192 Editar estrutura.")), lista.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 16,
+        alignItems: 'flex-start'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      role: "list",
+      "aria-label": "Retas",
+      style: {
+        flex: '0 1 250px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        minWidth: 200
+      }
+    }, lista.map(u => {
+      const gu = gradeEf(u.id),
+        pr = gu && gu.unidade_id === u.id,
+        on = sel && sel.id === u.id;
+      return /*#__PURE__*/React.createElement("button", {
+        key: u.id,
+        role: "listitem",
+        "data-grade-reta": u.nome,
+        onClick: () => {
+          setGradeSel(u.id);
+          setVersoes(false);
+        },
+        style: {
+          textAlign: 'left',
+          padding: '12px 14px',
+          marginLeft: Math.max(0, nivel(u) - 1) * 12,
+          borderRadius: 14,
+          border: `1.5px solid ${on ? P : C.border}`,
+          background: on ? C.plumSoft : C.surface,
+          cursor: 'pointer',
+          font: 'inherit',
+          color: C.ink
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontWeight: 800,
+          fontSize: 14.5
+        }
+      }, u.nome, u.rotulo && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 600,
+          color: C.inkSoft,
+          fontSize: 12.5
+        }
+      }, " \xB7 ", u.rotulo)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 5,
+          display: 'flex',
+          gap: 6,
+          alignItems: 'center',
+          flexWrap: 'wrap'
+        }
+      }, pr ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Tag, {
+        tom: gu.simulada ? 'warn' : 'ok'
+      }, gu.simulada ? 'simulada' : 'oficial'), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "desde ", dataBR(gu.vigente_desde))) : gu ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "usa a da ", U[gu.unidade_id]?.nome) : /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "sem grade")));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        lineHeight: 1.5,
+        padding: '2px 4px'
+      }
+    }, "Reta sem grade pr\xF3pria usa a de cima. Sem nenhuma, vale o teto de ABI das Regras do time.")), sel && /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: '1 1 540px',
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        ...tituloS,
+        margin: 0,
+        flex: 1
+      }
+    }, "Grade da ", sel.nome, " ", g && (propria ? /*#__PURE__*/React.createElement(Tag, {
+      tom: g.simulada ? 'warn' : 'ok'
+    }, g.simulada ? 'simulada' : 'oficial') : /*#__PURE__*/React.createElement(Tag, null, "da ", U[g.unidade_id]?.nome))), hist.length > 0 && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setVersoes(v => !v)
+    }, "Vers\xF5es (", hist.length, ")"), pode('configurar_regras', sel.id) && /*#__PURE__*/React.createElement("button", {
+      "data-editar-grade": true,
+      style: btnP,
+      onClick: () => setGradeAberta(sel.id)
+    }, propria ? 'Editar grade' : 'Criar grade')), g && g.simulada && /*#__PURE__*/React.createElement("div", {
+      "data-grade-simulada": true,
+      style: {
+        marginTop: 12,
+        background: C.goldSoft,
+        color: '#6b4e1a',
+        borderRadius: 12,
+        padding: '10px 12px',
+        fontSize: 13,
+        fontWeight: 600,
+        lineHeight: 1.5
+      }
+    }, "Simulada: montada sem a planilha oficial. Os alunos desta reta veem este aviso at\xE9 algu\xE9m salvar a grade real."), g && g.observacao && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, g.observacao), versoes && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        borderTop: `1px solid ${C.border}`
+      }
+    }, hist.map(h => /*#__PURE__*/React.createElement("div", {
+      key: h.id,
+      style: {
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        padding: '8px 0',
+        borderBottom: `1px solid ${C.border}`,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1
+      }
+    }, "Desde ", dataBR(h.vigente_desde), h.simulada ? ' · simulada' : '', h.observacao ? ` · ${h.observacao}` : ''), pode('configurar_regras', sel.id) && /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnS,
+        color: C.red
+      },
+      onClick: () => rodar('apagar_grade', {
+        p_id: h.id
+      }, 'Versão da grade apagada.')
+    }, "Apagar")))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 12
+      }
+    }, g ? /*#__PURE__*/React.createElement(GradeTabela, {
+      celulas: g.celulas || []
+    }) : /*#__PURE__*/React.createElement(Empty, null, "Sem grade. Os torneios desta reta s\xE3o conferidos s\xF3 pelo teto de ABI das Regras do time.")), g && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "Vale desde ", dataBR(g.vigente_desde), ". Escrita como na planilha; o app l\xEA cada c\xE9lula e confere cada torneio.")), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Confer\xEAncia dos \xFAltimos 7 dias \xB7 ", sel.nome), !podeVerDesempenho ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        color: C.inkSoft
+      }
+    }, "Seu papel n\xE3o v\xEA os torneios dos alunos.") : !conf.length ? /*#__PURE__*/React.createElement("div", {
+      "data-conferencia-vazia": true,
+      style: {
+        fontSize: 13.5,
+        color: C.inkSoft
+      }
+    }, "Nenhum torneio fora ou em aten\xE7\xE3o nos \xFAltimos 7 dias.") : /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-conferencia": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Aluno', 'Dia', 'Torneio', 'Buy-in', 'Status', 'Motivo'].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: thS
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, conf.slice(0, 60).map(({
+      t,
+      sg,
+      pessoa
+    }, i) => /*#__PURE__*/React.createElement("tr", {
+      key: t.id || i
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 700
+      }
+    }, nomeDe(pessoa)), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, dLabel(t.entry_date)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        maxWidth: 240,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis'
+      }
+    }, t.tournament_name || 'Torneio'), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : ''), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: sg.status === 'fora' ? 'bad' : 'warn'
+    }, sg.status === 'fora' ? 'fora' : 'atenção')), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        whiteSpace: 'normal',
+        minWidth: 220
+      }
+    }, sg.motivo, sg.simulada ? ' · grade simulada' : ''))))))))), modais);
+  }
+
+  /* ---------- FINANCEIRO ---------- */
+  if (secao === 'g_financeiro') {
+    const din = linhas.filter(l => l.banca != null && l.status !== 'convidado');
+    const soma = k => din.reduce((a, l) => a + Number(l[k] || 0), 0);
+    const aReceber = paraDecidir.filter(s => s.status === 'aprovado').reduce((a, s) => a + Number(s.total_time || 0), 0);
+    const historico = d.saques.filter(s => ['pago', 'recusado'].includes(s.status) && pode('ver_financeiro', s.unidade_id)).slice(0, 10);
+    const itens = paraDecidir.length + reloadsParaDecidir.length + paraConferir.length;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
+      }
+    }, header('Financeiro'), avisoBox, din.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))',
+        gap: 12
+      }
+    }, /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Banca somada",
+      val: fmt(soma('banca')),
+      sub: `${din.length} aluno${din.length !== 1 ? 's' : ''}, todas as salas`
+    }), /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Capital do time (MU)",
+      val: fmt(soma('mu'))
+    }), /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Profit (banca \u2212 MU)",
+      val: fmtSinal(soma('banca') - soma('mu')),
+      tom: soma('banca') - soma('mu') >= 0 ? 'ok' : 'bad'
+    }), /*#__PURE__*/React.createElement(Kpi, {
+      rot: "A receber",
+      val: fmt(aReceber),
+      sub: "saques aprovados, dinheiro ainda n\xE3o chegou"
+    })), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Para resolver ", itens > 0 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft,
+        fontWeight: 500
+      }
+    }, itens)), itens === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft
+      }
+    }, "Nada para resolver agora."), paraDecidir.map(s => /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      "data-saque": nomeDe(s.pessoa_id),
+      style: {
+        padding: '12px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13.5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: "plum"
+    }, "saque"), /*#__PURE__*/React.createElement("b", null, nomeDe(s.pessoa_id)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "\xB7 ", dataBR(s.solicitado_em), " \xB7"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.gold,
+        fontWeight: 700
+      }
+    }, SAQUE_ROTULO[s.status])), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft,
+        marginTop: 4,
+        lineHeight: 1.5
+      }
+    }, "Banca ", fmt(s.banca), " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "time recebe ", fmt(s.total_time)), s.observacao ? ` · "${s.observacao}"` : ''), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        marginTop: 8,
+        flexWrap: 'wrap'
+      }
+    }, s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: () => rodar('decidir_saque', {
+        p_id: s.id,
+        p_aprovar: true,
+        p_motivo: null
+      }, 'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')
+    }, "Aprovar"), s.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnS,
+        color: C.red
+      },
+      onClick: () => setPerg({
+        label: 'Motivo da recusa',
+        hint: 'O jogador vê este motivo.',
+        kind: 'text',
+        valor: '',
+        onSave: async m => {
+          setPerg(null);
+          if (m) await rodar('decidir_saque', {
+            p_id: s.id,
+            p_aprovar: false,
+            p_motivo: m
+          }, 'Saque recusado.');
+        }
+      })
+    }, "Recusar"), s.status === 'aprovado' && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setPerg({
+        label: 'Quanto o time recebeu?',
+        hint: `Esperado: ${fmt(s.total_time)}. Some tudo que chegou (todas as carteiras).`,
+        kind: 'money',
+        valor: s.total_time,
+        onSave: async v => {
+          setPerg(null);
+          const r = await rodar('confirmar_recebimento', {
+            p_id: s.id,
+            p_recebido: v
+          });
+          if (r && typeof r === 'object') setAviso({
+            erro: Number(r.diferenca) !== 0,
+            texto: Number(r.diferenca) === 0 ? 'Recebimento confirmado, sem diferença.' : `Recebimento confirmado com diferença de ${fmt(r.diferenca)} (esperado ${fmt(r.total_time)}, recebido ${fmt(r.recebido)}).`
+          });
+        }
+      })
+    }, "Confirmar recebimento")))), reloadsParaDecidir.map(r => /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      "data-reload": nomeDe(r.pessoa_id),
+      style: {
+        padding: '12px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13.5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, "reload"), /*#__PURE__*/React.createElement("b", null, nomeDe(r.pessoa_id)), /*#__PURE__*/React.createElement("span", null, fmt(r.valor), r.sala ? ` · ${r.sala}` : ''), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.gold,
+        fontWeight: 700
+      }
+    }, "\xB7 ", RELOAD_ROTULO[r.status])), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft,
+        marginTop: 4
+      }
+    }, dataBR(r.solicitado_em), r.motivo ? ` · "${r.motivo}"` : ''), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        marginTop: 8,
+        flexWrap: 'wrap'
+      }
+    }, r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: btnP,
+      onClick: () => rodar('decidir_reload', {
+        p_id: r.id,
+        p_aprovar: true,
+        p_motivo: null
+      }, 'Reload aprovado. Quando mandar o dinheiro, confirme o envio.')
+    }, "Aprovar"), r.status === 'solicitado' && /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnS,
+        color: C.red
+      },
+      onClick: () => setPerg({
+        label: 'Motivo da recusa',
+        hint: 'O jogador vê este motivo.',
+        kind: 'text',
+        valor: '',
+        onSave: async m => {
+          setPerg(null);
+          if (m) await rodar('decidir_reload', {
+            p_id: r.id,
+            p_aprovar: false,
+            p_motivo: m
+          }, 'Reload recusado.');
+        }
+      })
+    }, "Recusar"), r.status === 'aprovado' && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setPerg({
+        label: 'Quanto foi enviado?',
+        hint: `Pedido: ${fmt(r.valor)}. O valor enviado entra no MU de ${nomeDe(r.pessoa_id)}.`,
+        kind: 'money',
+        valor: r.valor,
+        onSave: async v => {
+          setPerg(null);
+          if (v > 0) await rodar('confirmar_envio_reload', {
+            p_id: r.id,
+            p_valor: v
+          }, `Reload de ${fmt(v)} registrado no MU de ${nomeDe(r.pessoa_id)}.`);
+        }
+      })
+    }, "Confirmar envio")))), paraConferir.map(a => {
+      const pl = a.planilha || {};
+      return /*#__PURE__*/React.createElement("div", {
+        key: a.id,
+        "data-conferir": nomeDe(a.pessoa_id),
+        style: {
+          padding: '12px 0',
+          borderTop: `1px solid ${C.border}`,
+          fontSize: 13.5
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap'
+        }
+      }, /*#__PURE__*/React.createElement(Tag, {
+        tom: "ok"
+      }, "planilha"), /*#__PURE__*/React.createElement("b", null, nomeDe(a.pessoa_id)), /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "\xB7 enviada ", dataBR(a.enviado_em), pl.atualizado_em ? ` · planilha de ${dataBR(pl.atualizado_em)}` : '')), /*#__PURE__*/React.createElement("div", {
+        style: {
+          color: C.inkSoft,
+          marginTop: 4,
+          lineHeight: 1.5
+        }
+      }, "MakeUp ", /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: C.ink
+        }
+      }, fmt(a.mu)), " \xB7 Cashout (lucro j\xE1 sacado) ", /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: C.ink
+        }
+      }, fmt(a.cashout)), " \xB7 banca ", fmt(pl.banca), " \xB7 lifetime ", fmt(pl.lifetime), pl.contrato_texto ? ` · contrato "${pl.contrato_texto}"` : ''), (pl.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
+        key: i,
+        style: {
+          color: C.red,
+          fontSize: 12.5,
+          fontWeight: 600
+        }
+      }, t)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          gap: 8,
+          marginTop: 8,
+          flexWrap: 'wrap'
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        style: btnP,
+        onClick: () => rodar('conferir_abertura', {
+          p_pessoa: a.pessoa_id,
+          p_mu: a.mu,
+          p_cashout: a.cashout
+        }, `Planilha de ${nomeDe(a.pessoa_id)} conferida.`)
+      }, "Conferir como est\xE1"), /*#__PURE__*/React.createElement("button", {
+        style: btnS,
+        onClick: () => setPerg({
+          label: `MakeUp de ${nomeDe(a.pessoa_id)}`,
+          hint: 'Valor certo do MU (capital do time com o jogador).',
+          kind: 'money',
+          valor: a.mu,
+          onSave: mu => setPerg({
+            label: `Cashout de ${nomeDe(a.pessoa_id)}`,
+            hint: 'Lucro que ele já sacou no time (conta pra faixa do contrato).',
+            kind: 'money',
+            valor: a.cashout,
+            onSave: async co => {
+              setPerg(null);
+              await rodar('conferir_abertura', {
+                p_pessoa: a.pessoa_id,
+                p_mu: mu,
+                p_cashout: co
+              }, `Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`);
+            }
+          })
+        })
+      }, "Corrigir e conferir")));
+    })), din.length > 0 && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Dinheiro por jogador"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-dinheiro": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lucro já sacado'].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: thS
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, [...din].sort((a, b) => (mkDe(a.banca, a.mu) ?? 0) - (mkDe(b.banca, b.mu) ?? 0)).map(l => /*#__PURE__*/React.createElement("tr", {
+      key: l.pessoa_id,
+      "data-dinheiro-de": l.nome
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 700
+      }
+    }, l.nome), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, U[l.unidade_id]?.nome || l.unidade), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, fmt(l.banca)), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, l.mu == null ? '—' : fmt(l.mu)), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, /*#__PURE__*/React.createElement(MkSelo, {
+      v: mkDe(l.banca, l.mu)
+    })), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, l.lucro_sacado == null ? '—' : fmt(l.lucro_sacado))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "Contrato do time: ", faixasTexto(contratoRaiz?.faixas), souAdmin ? ' · muda em Regras do time' : '')), historico.length > 0 && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "\xDAltimos saques"), historico.map(s => /*#__PURE__*/React.createElement("div", {
+      key: s.id,
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        padding: '8px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        minWidth: 200
+      }
+    }, /*#__PURE__*/React.createElement("b", null, nomeDe(s.pessoa_id)), " \xB7 ", dataBR(s.pago_em || s.solicitado_em), " \xB7 time ", fmt(s.recebido ?? s.total_time), " \xB7 jogador ", fmt(s.parte_jogador)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: s.status === 'pago' ? C.greenMid : C.red
+      }
+    }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '')))), modais);
+  }
+
+  /* ---------- EQUIPE E CONVITES ---------- */
+  if (secao === 'g_equipe') {
+    const nivel = u => String(u.caminho).split('/').filter(Boolean).length - 1;
+    const alunosEm = u => linhas.filter(l => l.status === 'ativo' && String(l.caminho || '').startsWith(u.caminho)).length;
+    const porPessoa = {};
+    d.acessos.forEach(a => {
+      const x = porPessoa[a.pessoa_id] || (porPessoa[a.pessoa_id] = {
+        caps: new Set(),
+        unidades: []
+      });
+      a.capacidades.forEach(c => x.caps.add(c));
+      x.unidades.push(a.unidade_id);
+    });
+    const gestao = Object.entries(porPessoa).map(([pid, x]) => {
+      const p = d.pessoas.find(y => y.id === pid);
+      if (!p || p.status === 'saiu') return null;
+      const caps = [...x.caps];
+      const v = ativo(pid);
+      return {
+        ...p,
+        caps,
+        papel: papelDe(caps),
+        unidades: x.unidades,
+        joga: v ? v.unidade_id : null
+      };
+    }).filter(Boolean).sort((a, b) => a.nome.localeCompare(b.nome));
+    const agora = Date.now();
+    const convAtivos = d.convites.filter(c => !c.revogado && Date.parse(c.expira_em) > agora && (c.usos_max == null || c.usos < c.usos_max)).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+    const tipoConvite = c => {
+      if (!c.pessoa_id) return 'Link aberto · jogador';
+      const g = porPessoa[c.pessoa_id];
+      return `Link pessoal · ${g ? PAPEL_ROT[papelDe([...g.caps])]?.toLowerCase() || 'gestão' : 'jogador'}`;
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
+      }
+    }, header('Equipe e convites', btnConvidar()), avisoBox, linkBox, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 16,
+        alignItems: 'flex-start'
+      }
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20,
+        flex: '1 1 280px'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: {
+        ...tituloS,
+        margin: 0,
+        flex: 1
+      }
+    }, "Estrutura"), podeAlgum('administrar') && /*#__PURE__*/React.createElement("button", {
+      "data-editar-estrutura": true,
+      style: btnS,
+      onClick: () => setEstrutura(true)
+    }, "Editar")), /*#__PURE__*/React.createElement("div", {
+      "data-estrutura": true,
+      style: {
+        marginTop: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7
+      }
+    }, d.unidades.map(u => /*#__PURE__*/React.createElement("div", {
+      key: u.id,
+      style: {
+        paddingLeft: nivel(u) * 16,
+        fontSize: 14
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: nivel(u) < 2 ? 800 : 600
+      }
+    }, u.nome), u.rotulo && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft,
+        fontSize: 12.5
+      }
+    }, " \xB7 ", u.rotulo), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft,
+        fontSize: 12.5
+      }
+    }, " \xB7 ", alunosEm(u), " aluno", alunosEm(u) !== 1 ? 's' : ''))))), souAdmin && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20,
+        flex: '2 1 480px',
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Pessoas da gest\xE3o"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-gestao": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Nome', 'Papel', 'Cuida de', 'Também joga', ''].map((h, i) => /*#__PURE__*/React.createElement("th", {
+      key: i,
+      style: thS
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, gestao.map(p => /*#__PURE__*/React.createElement("tr", {
+      key: p.id,
+      "data-gestor": p.nome
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 700
+      }
+    }, p.nome, p.user_id === uid && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft,
+        fontWeight: 500
+      }
+    }, " (voc\xEA)"), p.status === 'convidado' && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+      tom: "plum"
+    }, "convite enviado"))), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: p.papel === 'admin' ? 'plum' : p.papel === 'financeiro' ? 'warn' : 'ok'
+    }, PAPEL_ROT[p.papel] || '—')), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        whiteSpace: 'normal'
+      }
+    }, p.unidades.map(id => U[id] ? U[id].mae_id ? U[id].nome : 'time inteiro' : null).filter(Boolean).join(', ')), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, p.joga ? U[p.joga]?.nome : /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "n\xE3o")), /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        display: 'flex',
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      "data-editar-gestor": p.nome,
+      style: btnS,
+      onClick: () => setPessoaEd(p)
+    }, "Editar"))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))',
+        gap: 10,
+        marginTop: 12
+      }
+    }, ['professor', 'financeiro', 'admin'].map(k => /*#__PURE__*/React.createElement("div", {
+      key: k,
+      style: {
+        background: C.warm,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: '10px 12px',
+        fontSize: 12.5,
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("b", null, PAPEL_ROT[k]), /*#__PURE__*/React.createElement("br", null), PAPEL_DICA[k], "."))))), podeConvidar && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Convites ativos"), !convAtivos.length && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft
+      }
+    }, "Nenhum convite aberto."), convAtivos.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        overflowX: 'auto'
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      "data-convites": true,
+      style: {
+        width: '100%',
+        borderCollapse: 'collapse'
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Para', 'Tipo', 'Onde', 'Usos', 'Vence', ''].map((h, i) => /*#__PURE__*/React.createElement("th", {
+      key: i,
+      style: thS
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, convAtivos.map(c => /*#__PURE__*/React.createElement("tr", {
+      key: c.id
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        ...tdS,
+        fontWeight: 700
+      }
+    }, c.pessoa_id ? nomeDe(c.pessoa_id) : 'Qualquer jogador'), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, tipoConvite(c)), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, U[c.unidade_id]?.nome || '—'), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, c.usos, c.usos_max ? ` de ${c.usos_max}` : ''), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, dataBR(c.expira_em)), /*#__PURE__*/React.createElement("td", {
+      style: tdS
+    }, pode('gerir_pessoas', c.unidade_id) && /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...btnS,
+        color: C.red
+      },
+      onClick: () => rodar('revogar_convite', {
+        p_id: c.id
+      }, 'Convite cancelado.')
+    }, "Cancelar"))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        marginTop: 8
+      }
+    }, "O link s\xF3 aparece na hora de gerar. Perdeu? Cancele e gere outro.")), modais);
+  }
+
+  /* ---------- REGRAS DO TIME (contrato e promoção; as regras de jogo ficam logo abaixo, nos Ajustes do time) ---------- */
+  if (secao === 'g_regras') {
+    const mkBloq = raiz ? regraEf(raiz.id, 'bloquear_promocao_com_mk') === true : false;
+    const podeRegras = raiz && pode('configurar_regras', raiz.id);
+    return /*#__PURE__*/React.createElement("div", {
+      className: "ftfade",
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16
+      }
+    }, header('Regras do time'), avisoBox, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Contrato"), /*#__PURE__*/React.createElement("div", {
+      "data-contrato": true,
+      style: {
+        fontSize: 14,
+        marginBottom: 12,
+        lineHeight: 1.5
+      }
+    }, faixasTexto(contratoRaiz?.faixas)), podeRegras && /*#__PURE__*/React.createElement("button", {
+      "data-editar-contrato": true,
+      style: btnS,
+      onClick: () => setContratoAberto(true)
+    }, contratoRaiz ? 'Mudar contrato' : 'Definir contrato')), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Promo\xE7\xE3o"), /*#__PURE__*/React.createElement("label", {
+      style: {
+        display: 'flex',
+        gap: 10,
+        alignItems: 'center',
+        fontSize: 14,
+        fontWeight: 600,
+        cursor: podeRegras ? 'pointer' : 'default'
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      "data-regra-mk-time": true,
+      disabled: !podeRegras,
+      checked: mkBloq,
+      onChange: e => rodar('definir_regra', {
+        p_unidade: raiz.id,
+        p_chave: 'bloquear_promocao_com_mk',
+        p_valor: e.target.checked,
+        p_desde: null
+      }, e.target.checked ? 'Promoção com MK bloqueada no servidor.' : 'Promoção com MK liberada (a tela só avisa).')
+    }), "N\xE3o promover quem est\xE1 em MK"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginTop: 6,
+        lineHeight: 1.5
+      }
+    }, mkBloq ? 'Ligado: o servidor recusa promover jogador com make-up negativo.' : 'Desligado: dá pra promover, a tela só avisa que o jogador está em MK.')), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft
+      }
+    }, "A grade de cada reta fica na aba ", /*#__PURE__*/React.createElement("button", {
+      onClick: () => onIr('g_grades'),
+      style: {
+        border: 'none',
+        background: 'transparent',
+        color: P,
+        fontWeight: 700,
+        padding: 0,
+        cursor: 'pointer',
+        font: 'inherit'
+      }
+    }, "Grades"), "."), modais);
+  }
+  return null;
 }
 function ReloadModal({
   onClose,
@@ -8916,7 +11064,7 @@ function GradeModal({
       cursor: 'pointer',
       opacity: busy || !prontas.length ? .5 : 1
     }
-  }, "Salvar grade de ", u.nome), /*#__PURE__*/React.createElement("div", {
+  }, "Salvar grade de ", u.nome), onRegra && /*#__PURE__*/React.createElement("div", {
     style: {
       borderTop: `1px solid ${C.border}`,
       paddingTop: 12
@@ -9179,6 +11327,34 @@ function Dashboard({
     saquesPagos: []
   });
   const [jogadorSel, setJogadorSel] = useState(null);
+  // gestão x jogo: quem tem papel na gestão E joga escolhe o modo (lembrado no aparelho)
+  const [modoSel, setModoSel] = useState(() => {
+    try {
+      return localStorage.getItem('gb_modo') || 'gestao';
+    } catch (e) {
+      return 'gestao';
+    }
+  });
+  const [alunoAberto, setAlunoAberto] = useState(null); // gestor olhando o painel de um aluno (só leitura)
+  const [sitSel, setSitSel] = useState(null); // MU do jogador na tela (make-up no Início)
+  const gestaoAtiva = modoTime && !!timeGente.temGestao && !alunoAberto && (modoSel !== 'jogo' || !timeGente.joga);
+  const podeTrocarModo = modoTime && !!timeGente.temGestao && !!timeGente.joga && !alunoAberto;
+  const somenteLeitura = modoTime && !!alunoAberto;
+  const trocarModo = m => {
+    setModoSel(m);
+    try {
+      localStorage.setItem('gb_modo', m);
+    } catch (e) {}
+    setView(m === 'gestao' ? 'g_visao' : 'painel');
+  };
+  const abrirAluno = n => {
+    setAlunoAberto(n);
+    setView('painel');
+  };
+  const fecharAluno = () => {
+    setAlunoAberto(null);
+    setView('g_jogadores');
+  };
   const doJogador = arr => modoTime ? (arr || []).filter(r => nomeIgual(r.player, jogadorSel)) : arr;
   const tours = useMemo(() => doJogador(toursRaw), [toursRaw, modoTime, jogadorSel]);
   const ledger = useMemo(() => doJogador(ledgerRaw), [ledgerRaw, modoTime, jogadorSel]);
@@ -9196,6 +11372,41 @@ function Dashboard({
     makeup_inicial_player1: 0,
     makeup_inicial_player2: 0
   } : configRaw, [configRaw, modoTime, jogadorSel, wallets]);
+  // no time, de quem são os dados na tela: o aluno aberto pelo gestor, ou o próprio jogador
+  useEffect(() => {
+    if (!modoTime) return;
+    setJogadorSel(alunoAberto || (timeGente.joga && timeGente.eu ? timeGente.eu.nome : null));
+  }, [modoTime, alunoAberto, timeGente]);
+  // cada modo tem as suas abas: gestão só g_* (e Minha conta); jogo nenhuma g_*
+  useEffect(() => {
+    if (!modoTime || !timeGente.carregado) return;
+    if (gestaoAtiva && !String(viewSel).startsWith('g_') && viewSel !== 'config') setView('g_visao');
+    if (!gestaoAtiva && String(viewSel).startsWith('g_')) setView('painel');
+  }, [gestaoAtiva, modoTime, timeGente.carregado]);
+  // MU do jogador na tela: make-up = banca − MU
+  useEffect(() => {
+    if (!modoTime || !jogadorSel) {
+      setSitSel(null);
+      return;
+    }
+    const pp = (timeGente.pessoas || []).find(x => nomeIgual(x.nome, jogadorSel));
+    if (!pp) {
+      setSitSel(null);
+      return;
+    }
+    let vivo = true;
+    sb.rpc('situacao_jogador', {
+      p_pessoa: pp.id
+    }).then(({
+      data,
+      error
+    }) => {
+      if (vivo) setSitSel(error ? null : data);
+    }).catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [modoTime, jogadorSel, timeGente]);
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
   const [imp, setImp] = useState({
     busy: false,
@@ -9387,13 +11598,27 @@ function Dashboard({
         wallet: null,
         observacoes: 'saque do time'
       }));
+      const meusAc = eu ? (ac.data || []).filter(a => a.pessoa_id === eu.id) : [];
+      const caps = [...new Set(meusAc.flatMap(a => a.capacidades || []))];
+      const joga = !!(eu && ativos.has(eu.id));
+      const souAdmin = !!(raiz && meusAc.some(a => a.unidade_id === raiz.id && (a.capacidades || []).includes('administrar')));
+      const naRaiz = !!(raiz && meusAc.some(a => a.unidade_id === raiz.id));
       setTimeGente({
         jogadores,
         eu,
         podeConfigurar,
-        saquesPagos
+        saquesPagos,
+        caps,
+        temGestao: meusAc.length > 0,
+        joga,
+        souAdmin,
+        naRaiz,
+        carregado: true,
+        pessoas: pessoas.map(x => ({
+          id: x.id,
+          nome: x.nome
+        }))
       });
-      setJogadorSel(sel => sel && jogadores.some(n => nomeIgual(n, sel)) ? sel : eu && jogadores.some(n => nomeIgual(n, eu.nome)) ? eu.nome : jogadores[0] || null);
     } catch (e) {
       console.error(e);
     }
@@ -10918,8 +13143,8 @@ function Dashboard({
   };
 
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
-  const MAIN_TABS = ['painel', 'torneios', 'diario', 'stats'];
-  const nav = [{
+  let MAIN_TABS = ['painel', 'torneios', 'diario', 'stats'];
+  let nav = [{
     id: 'painel',
     label: 'Painel',
     Icon: IcoPanel
@@ -10959,11 +13184,72 @@ function Dashboard({
     label: 'Ajustes',
     Icon: IcoGear
   }].filter(n => !solo || n.id !== 'saques');
-  if (temTime) nav.splice(nav.length - 1, 0, {
-    id: 'time',
-    label: 'Time',
-    Icon: IcoShield
-  }); // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
+  // time de staking: o menu é o do papel. Gestão: telas do time. Jogo (ou gestor olhando um aluno): telas de um jogador.
+  const GRUPO_TORNEIOS = ['torneios', 'diario', 'semanal', 'mensal'];
+  if (modoTime) {
+    const cs = new Set(timeGente.caps || []),
+      tem = c => cs.has(c) || cs.has('administrar');
+    if (gestaoAtiva) {
+      nav = [{
+        id: 'g_visao',
+        label: timeGente.naRaiz ? 'Visão geral' : 'Minhas retas',
+        Icon: IcoPanel
+      }, ...(tem('ver_desempenho') || tem('ver_financeiro') || tem('gerir_pessoas') || tem('promover') || tem('aprovar_saques') ? [{
+        id: 'g_jogadores',
+        label: 'Jogadores',
+        Icon: IcoUsers
+      }] : []), {
+        id: 'g_grades',
+        label: 'Grades',
+        Icon: IcoGrid
+      }, ...(tem('ver_financeiro') || tem('aprovar_saques') ? [{
+        id: 'g_financeiro',
+        label: 'Financeiro',
+        Icon: IcoCashOut
+      }] : []), ...(tem('gerir_pessoas') ? [{
+        id: 'g_equipe',
+        label: 'Equipe e convites',
+        Icon: IcoShield
+      }] : []), ...(tem('configurar_regras') ? [{
+        id: 'g_regras',
+        label: 'Regras do time',
+        Icon: IcoGear
+      }] : []), {
+        id: 'config',
+        label: 'Minha conta',
+        Icon: IcoUser
+      }];
+      MAIN_TABS = nav.slice(0, 4).map(n => n.id);
+    } else {
+      nav = [{
+        id: 'painel',
+        label: 'Início',
+        Icon: IcoHome
+      }, {
+        id: 'torneios',
+        label: 'Torneios',
+        Icon: IcoTrophy
+      }, {
+        id: 'stats',
+        label: 'Stats',
+        Icon: IcoStats
+      }, {
+        id: 'banca',
+        label: 'Banca',
+        Icon: IcoStack
+      }, ...(alunoAberto ? [] : [{
+        id: 'time',
+        label: 'Meu time',
+        Icon: IcoShield
+      }, {
+        id: 'config',
+        label: 'Ajustes',
+        Icon: IcoGear
+      }])];
+      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', 'banca'] : ['painel', 'torneios', 'stats', 'time'];
+    }
+  }
+  const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
 
   /* ---------- mensal ---------- */
   // O mês é o mês do CALENDÁRIO em que o dia foi jogado: lançou dia 28/07, conta em julho.
@@ -11133,11 +13419,14 @@ function Dashboard({
     style: {
       height: 6
     }
+  }), podeTrocarModo && /*#__PURE__*/React.createElement(ModoSwitch, {
+    modo: gestaoAtiva ? 'gestao' : 'jogo',
+    onTrocar: trocarModo
   }), nav.map(n => /*#__PURE__*/React.createElement(NavBtn, {
     key: n.id,
     Icon: n.Icon,
     label: n.label,
-    active: view === n.id,
+    active: navAtiva(n.id),
     onClick: () => setView(n.id)
   })), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -11146,7 +13435,25 @@ function Dashboard({
       flexDirection: 'column',
       gap: 10
     }
+  }, gestaoAtiva ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 14,
+      borderRadius: 16,
+      background: C.plumSoft,
+      fontSize: 12.5,
+      color: P,
+      lineHeight: 1.45
+    }
   }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800
+    }
+  }, ws?.name || 'Time', " \xB7 ", timeGente.souAdmin ? 'admin' : PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase() || 'gestão'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.inkSoft,
+      marginTop: 2
+    }
+  }, timeGente.joga ? 'Também joga: troque em Meu jogo.' : 'Esta conta só gere o time.')) : /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 15,
       borderRadius: 16,
@@ -11158,7 +13465,7 @@ function Dashboard({
       color: P,
       fontWeight: 700
     }
-  }, "Banca atual"), /*#__PURE__*/React.createElement("div", {
+  }, somenteLeitura ? `Banca de ${alunoAberto}` : 'Banca atual'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: "'Space Grotesk',sans-serif",
       fontSize: 24,
@@ -11251,7 +13558,15 @@ function Dashboard({
     onIr: av => {
       if (av.items && av.items.length) setAlertDetail({
         items: av.items
-      });else if (!av.local && !av.painel) setView('time');
+      });else if (!av.local && !av.painel) {
+        if (gestaoAtiva) setView({
+          saque: 'g_financeiro',
+          reload: 'g_financeiro',
+          abertura: 'g_financeiro',
+          entrada: 'g_jogadores',
+          grade: 'g_grades'
+        }[av.tipo] || 'g_visao');else setView('time');
+      }
     }
   }), /*#__PURE__*/React.createElement("button", {
     className: "mobile-only",
@@ -11271,8 +13586,25 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement(IcoLogout, {
     s: 16
-  }), "Sair"))), modoTime && view !== 'time' && (timeGente.jogadores.length > 1 || timeGente.jogadores.length === 1 && !(timeGente.eu && nomeIgual(timeGente.eu.nome, timeGente.jogadores[0]))) && /*#__PURE__*/React.createElement("div", {
-    "data-seletor-jogador": true,
+  }), "Sair"))), podeTrocarModo && /*#__PURE__*/React.createElement("div", {
+    className: "mobile-only",
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement(ModoSwitch, {
+    modo: gestaoAtiva ? 'gestao' : 'jogo',
+    onTrocar: trocarModo,
+    compacto: true
+  })), modoTime && !timeGente.carregado && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      placeItems: 'center',
+      padding: 60
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "spin"
+  })), somenteLeitura && /*#__PURE__*/React.createElement("div", {
+    "data-aluno-aberto": true,
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -11285,25 +13617,24 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: 13,
-      fontWeight: 700,
-      color: P
-    }
-  }, "Vendo os dados de"), /*#__PURE__*/React.createElement("select", {
-    value: jogadorSel || '',
-    onChange: e => setJogadorSel(e.target.value),
-    style: {
-      ...inputStyle,
-      width: 'auto',
-      minWidth: 160,
-      padding: '8px 12px',
       fontSize: 14,
-      background: C.surface
+      color: P,
+      flex: 1,
+      minWidth: 180
     }
-  }, timeGente.jogadores.map(n => /*#__PURE__*/React.createElement("option", {
-    key: n,
-    value: n
-  }, n, timeGente.eu && nomeIgual(n, timeGente.eu.nome) ? ' (você)' : '')))), modoTime && view !== 'time' && !jogadorSel && /*#__PURE__*/React.createElement(Card, {
+  }, "Painel de ", /*#__PURE__*/React.createElement("b", null, alunoAberto), " \xB7 s\xF3 leitura"), /*#__PURE__*/React.createElement("button", {
+    onClick: fecharAluno,
+    style: {
+      padding: '8px 14px',
+      borderRadius: 11,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: 'pointer'
+    }
+  }, "Voltar para a gest\xE3o")), modoTime && timeGente.carregado && !gestaoAtiva && !jogadorSel && view !== 'config' && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20,
       marginBottom: 16
@@ -11312,13 +13643,38 @@ function Dashboard({
     style: {
       fontWeight: 700
     }
-  }, "Nenhum jogador no time ainda."), /*#__PURE__*/React.createElement("div", {
+  }, "Voc\xEA ainda n\xE3o est\xE1 numa reta do time."), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginTop: 4
     }
-  }, "Convide os jogadores pela aba Time. Quando eles entrarem, os dados de cada um aparecem aqui.")), view === 'painel' && /*#__PURE__*/React.createElement("div", {
+  }, "Pe\xE7a o link de convite da sua reta pro professor.")), modoTime && !gestaoAtiva && GRUPO_TORNEIOS.includes(view) && /*#__PURE__*/React.createElement("div", {
+    role: "tablist",
+    "aria-label": "Torneios",
+    "data-sub-torneios": true,
+    style: {
+      display: 'flex',
+      gap: 6,
+      flexWrap: 'wrap',
+      marginBottom: 14
+    }
+  }, [['torneios', 'Lista'], ['diario', 'Diário'], ['semanal', 'Semana'], ['mensal', 'Mês']].map(([k, r]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    role: "tab",
+    "aria-selected": view === k,
+    onClick: () => setView(k),
+    style: {
+      padding: '8px 14px',
+      borderRadius: 99,
+      border: `1.5px solid ${view === k ? P : C.border}`,
+      background: view === k ? C.plumSoft : C.surface,
+      color: view === k ? P : C.inkSoft,
+      fontWeight: 700,
+      fontSize: 13,
+      cursor: 'pointer'
+    }
+  }, r))), view === 'painel' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: {
       display: 'flex',
@@ -11473,7 +13829,7 @@ function Dashboard({
       opacity: .88,
       fontWeight: 600
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Inicial ", fmt(config.banca_inicial)), /*#__PURE__*/React.createElement("span", null, "Jogos ", resultadosTotal >= 0 ? '+' : '−', fmt(Math.abs(resultadosTotal))), movimentosTotal !== 0 && /*#__PURE__*/React.createElement("span", null, "Aportes ", movimentosTotal >= 0 ? '+' : '−', fmt(Math.abs(movimentosTotal))), sacadoTotal > 0 && /*#__PURE__*/React.createElement("span", null, "Saques \u2212", fmt(sacadoTotal))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, "Inicial ", fmt(config.banca_inicial)), /*#__PURE__*/React.createElement("span", null, "Jogos ", resultadosTotal >= 0 ? '+' : '−', fmt(Math.abs(resultadosTotal))), movimentosTotal !== 0 && /*#__PURE__*/React.createElement("span", null, "Aportes ", movimentosTotal >= 0 ? '+' : '−', fmt(Math.abs(movimentosTotal))), sacadoTotal > 0 && /*#__PURE__*/React.createElement("span", null, "Saques \u2212", fmt(sacadoTotal))), !(modoTime && !(piso > 0)) && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12
     }
@@ -11489,7 +13845,27 @@ function Dashboard({
       fontSize: 13.5,
       opacity: .92
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), /*#__PURE__*/React.createElement(ResumoTorneios, {
+  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), modoTime && sitSel && sitSel.mu != null && (() => {
+    const mk = mkDe(bancaAtual, sitSel.mu);
+    return /*#__PURE__*/React.createElement("div", {
+      "data-painel-mk": true,
+      style: {
+        marginTop: 12,
+        background: 'rgba(255,255,255,.14)',
+        borderRadius: 12,
+        padding: '9px 12px',
+        fontSize: 13.5,
+        fontWeight: 600,
+        display: 'flex',
+        gap: '4px 14px',
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "MU ", fmt(sitSel.mu)), /*#__PURE__*/React.createElement("span", null, mk < 0 ? `MK ${fmtSinal(mk)}` : `Profit ${fmtSinal(mk)}`), /*#__PURE__*/React.createElement("span", {
+      style: {
+        opacity: .85
+      }
+    }, mk < 0 ? 'saque só depois de sair do MK' : 'fora de MK: dá pra pedir saque'));
+  })()), /*#__PURE__*/React.createElement(ResumoTorneios, {
     tours: tours,
     players: players,
     solo: solo,
@@ -11754,7 +14130,7 @@ function Dashboard({
         fontWeight: 600,
         lineHeight: 1.1
       }
-    }, "Torneios")), /*#__PURE__*/React.createElement("button", {
+    }, "Torneios")), !somenteLeitura && /*#__PURE__*/React.createElement("button", {
       onClick: () => addTourOn(today),
       style: {
         display: 'flex',
@@ -11777,7 +14153,7 @@ function Dashboard({
       tours: tours,
       players: players,
       solo: solo
-    }), /*#__PURE__*/React.createElement(Card, {
+    }), !somenteLeitura && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 18
       }
@@ -11895,13 +14271,13 @@ function Dashboard({
       style: {
         color: C.ink
       }
-    }, "PokerStars:"), " o resumo que chega por e-mail, ou o do hist\xF3rico local.", /*#__PURE__*/React.createElement("br", null), "O sistema l\xEA nome, buy-in, re-entries, field, coloca\xE7\xE3o e premia\xE7\xE3o \u2014 voc\xEA ", /*#__PURE__*/React.createElement("b", null, "confere antes de salvar"), " e reimportar a mesma pasta n\xE3o duplica nada.", /*#__PURE__*/React.createElement("br", null), "Os arquivos de ", /*#__PURE__*/React.createElement("b", null, "m\xE3os"), " (hand history) v\xE3o na aba ", /*#__PURE__*/React.createElement("b", null, "Stats"), ", n\xE3o aqui.")), /*#__PURE__*/React.createElement(DayCard, {
+    }, "PokerStars:"), " o resumo que chega por e-mail, ou o do hist\xF3rico local.", /*#__PURE__*/React.createElement("br", null), "O sistema l\xEA nome, buy-in, re-entries, field, coloca\xE7\xE3o e premia\xE7\xE3o \u2014 voc\xEA ", /*#__PURE__*/React.createElement("b", null, "confere antes de salvar"), " e reimportar a mesma pasta n\xE3o duplica nada.", /*#__PURE__*/React.createElement("br", null), "Os arquivos de ", /*#__PURE__*/React.createElement("b", null, "m\xE3os"), " (hand history) v\xE3o na aba ", /*#__PURE__*/React.createElement("b", null, "Stats"), ", n\xE3o aqui."))), /*#__PURE__*/React.createElement(DayCard, {
       today: true,
       date: today,
       dayTours: tours.filter(t => t.entry_date === today),
       players: players,
       config: config,
-      onAdd: addTourOn,
+      onAdd: somenteLeitura ? null : addTourOn,
       onEdit: editTour,
       onDelete: delTour
     }), past.length > 0 && /*#__PURE__*/React.createElement("div", {
@@ -11917,7 +14293,7 @@ function Dashboard({
       dayTours: tours.filter(t => t.entry_date === d),
       players: players,
       config: config,
-      onAdd: addTourOn,
+      onAdd: somenteLeitura ? null : addTourOn,
       onEdit: editTour,
       onDelete: delTour
     })), /*#__PURE__*/React.createElement(VerMais, {
@@ -12150,7 +14526,7 @@ function Dashboard({
     dayTours: diaryTours.filter(t => t.player === e.player && t.entry_date === e.entry_date),
     players: players,
     config: config,
-    onAdd: addTourOn,
+    onAdd: somenteLeitura ? null : addTourOn,
     onEdit: editTour,
     onDelete: delTour
   })), /*#__PURE__*/React.createElement(VerMais, {
@@ -14489,15 +16865,27 @@ function Dashboard({
         }, net >= 0 ? '+' : '−', fmt(Math.abs(net)))
       });
     }
-  })), view === 'time' && temTime && /*#__PURE__*/React.createElement(TimeTela, {
+  })), view === 'time' && modoTime && !gestaoAtiva && !somenteLeitura && /*#__PURE__*/React.createElement(TimeApp, {
+    secao: "meu",
     session: session,
-    onVerJogador: modoTime ? n => {
-      setJogadorSel(n);
-      setView('painel');
-    } : null
-  }), view === 'config' && /*#__PURE__*/React.createElement("div", {
-    className: "ftfade"
-  }, /*#__PURE__*/React.createElement(Card, {
+    tours: toursRaw,
+    config: config,
+    banca: bancaAtual,
+    onIr: setView
+  }), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
+    secao: view,
+    session: session,
+    tours: toursRaw,
+    config: config,
+    banca: bancaAtual,
+    onVerJogador: abrirAluno,
+    onIr: setView
+  }), (view === 'config' || view === 'g_regras') && /*#__PURE__*/React.createElement("div", {
+    className: "ftfade",
+    style: view === 'g_regras' ? {
+      marginTop: 16
+    } : undefined
+  }, !(gestaoAtiva && view === 'config') && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -14508,7 +16896,7 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, modoTime ? 'Configurações do time' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
+  }, modoTime ? view === 'g_regras' ? 'Regras de jogo' : 'Configurações do time' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
@@ -14528,7 +16916,7 @@ function Dashboard({
     kind: 'text',
     key: 'player1_name'
   }]), {
-    label: 'ABI máximo',
+    label: modoTime ? 'ABI máximo (reta sem grade)' : 'ABI máximo',
     val: config.abi_max_player1,
     kind: 'money',
     key: 'abi_max_player1',
@@ -14545,13 +16933,13 @@ function Dashboard({
     kind: 'percent',
     key: 'stoploss_weekly_pct',
     show: pctFmt(num(config.stoploss_weekly_pct) * 100)
-  }, {
+  }, ...(modoTime ? [] : [{
     label: 'Banca inicial',
     val: config.banca_inicial,
     kind: 'money',
     key: 'banca_inicial',
     show: fmt(config.banca_inicial)
-  }, {
+  }]), {
     label: 'Início da semana de referência',
     val: config.week_start_date,
     kind: 'date',
@@ -14723,7 +17111,7 @@ function Dashboard({
       color: C.inkSoft,
       marginBottom: 10
     }
-  }, "Toda mudan\xE7a nos Ajustes fica registrada aqui e o outro jogador \xE9 avisado na hora. A grade (\"fora da grade\") julga cada torneio pelo ABI que valia ", /*#__PURE__*/React.createElement("b", null, "na data dele"), "."), chgs.length === 0 && /*#__PURE__*/React.createElement(Empty, null, "Nenhuma altera\xE7\xE3o registrada ainda."), chgs.slice(0, 12).map(c => /*#__PURE__*/React.createElement("div", {
+  }, modoTime ? /*#__PURE__*/React.createElement(React.Fragment, null, "Toda mudan\xE7a nas regras fica registrada aqui. Reta sem grade \xE9 julgada pelo ABI m\xE1ximo que valia ", /*#__PURE__*/React.createElement("b", null, "na data"), " de cada torneio.") : /*#__PURE__*/React.createElement(React.Fragment, null, "Toda mudan\xE7a nos Ajustes fica registrada aqui e o outro jogador \xE9 avisado na hora. A grade (\"fora da grade\") julga cada torneio pelo ABI que valia ", /*#__PURE__*/React.createElement("b", null, "na data dele"), ".")), chgs.length === 0 && /*#__PURE__*/React.createElement(Empty, null, "Nenhuma altera\xE7\xE3o registrada ainda."), chgs.slice(0, 12).map(c => /*#__PURE__*/React.createElement("div", {
     key: c.id,
     style: {
       padding: '10px 0',
@@ -14740,7 +17128,7 @@ function Dashboard({
       color: C.inkSoft,
       marginTop: 1
     }
-  }, c.changed_by_name || '—', " \xB7 ", dLabel(String(c.created_at).slice(0, 10)))))), soloConta && /*#__PURE__*/React.createElement(Card, {
+  }, c.changed_by_name || '—', " \xB7 ", dLabel(String(c.created_at).slice(0, 10))))))), view !== 'g_regras' && /*#__PURE__*/React.createElement(React.Fragment, null, soloConta && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20,
       marginTop: 16
@@ -14954,7 +17342,7 @@ function Dashboard({
       fontSize: 13.5,
       cursor: rows.length ? 'pointer' : 'default'
     }
-  }, label, " (", rows.length, ")")))))), /*#__PURE__*/React.createElement("nav", {
+  }, label, " (", rows.length, ")"))))))), /*#__PURE__*/React.createElement("nav", {
     className: "bottomnav",
     style: {
       position: 'fixed',
@@ -14972,7 +17360,7 @@ function Dashboard({
     key: n.id,
     Icon: n.Icon,
     label: n.label,
-    active: view === n.id,
+    active: navAtiva(n.id),
     onClick: () => {
       setView(n.id);
       setMenuOpen(false);
@@ -14981,7 +17369,7 @@ function Dashboard({
   })), /*#__PURE__*/React.createElement(NavBtn, {
     Icon: IcoMenu,
     label: "Mais",
-    active: menuOpen || !MAIN_TABS.includes(view),
+    active: menuOpen || !nav.filter(n => MAIN_TABS.includes(n.id)).some(n => navAtiva(n.id)),
     onClick: () => setMenuOpen(true),
     mobile: true
   })), menuOpen && /*#__PURE__*/React.createElement("div", {

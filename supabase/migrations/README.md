@@ -42,6 +42,10 @@ corresponde a uma linha de `supabase_migrations.schema_migrations` em produção
   vale a da unidade ou da mais próxima acima, vigente na data; marca "simulada" quando não veio da planilha oficial),
   regras por unidade herdadas para baixo (`regra_efetiva`), e "não promover com MK" recusado no servidor (`em_mk`).
   Quem lê o texto da grade e classifica cada torneio (dentro / atenção / fora, com o motivo) é o app.
+- `20261119200000_fase1_papeis_convite.sql` — convite único da gestão (`convidar_equipe`: professor / financeiro / admin
+  em várias unidades e, se também joga, já com a reta), `definir_papel` (troca papel e unidades; o time nunca fica sem um
+  admin com conta), `renomear_pessoa` (os lançamentos acompanham o nome), `renomear_unidade`, `arquivar_unidade` (só vazia)
+  e `ver_convite` dizendo o papel de quem vai entrar.
 
 As três da fase 1 foram aplicadas numa transação só, com uma foto do que cada conta enxergava antes e
 depois (simulando o login de cada uma): as 17 contas viam exatamente o mesmo, senão a transação abortava.

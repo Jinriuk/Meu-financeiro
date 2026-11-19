@@ -1,4 +1,5 @@
-// Aba Time (fase 1): jogador vê a conta e pede saque com prévia; admin aprova saque e gera link; sem estrutura, sem aba.
+// Time (fase 1): jogador vê a conta em Meu time e pede saque com prévia; gestor aprova no Financeiro, gera link pelo convite único,
+// vê a visão geral; conta individual não tem nada de time.
 import { abrirApp, dbBase } from './harness.mjs';
 const falhas = []; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ ') + m); if (!c) falhas.push(m); };
 const EU = '00000000-0000-0000-0000-00000000aaaa';
@@ -11,7 +12,8 @@ async function cenario(nome, db, fn) {
 const rpc = (escritas, n) => escritas.filter(e => e.tabela === 'rpc.' + n).map(e => JSON.parse(e.corpo || '{}'));
 const CONTRATO = [{ ate: 10000, jogador: 0.35 }, { ate: null, jogador: 0.40 }];
 const estrutura = (extra = {}) => dbBase({
-  workspaces: [{ id: 'w1', name: 'Samba', kind: 'team', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
+  workspaces: [{ id: 'w1', name: 'Samba', kind: 'time', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
+  pool_config: [{ ...dbBase().pool_config[0], player1_name: '', player2_name: '' }],
   unidade: [
     { id: 'u1', workspace_id: 'w1', mae_id: null, nome: 'Samba', rotulo: 'Time', caminho: '/u1/', arquivada: false },
     { id: 'u2', workspace_id: 'w1', mae_id: 'u1', nome: 'Base', rotulo: 'Base', caminho: '/u1/u2/', arquivada: false },
@@ -30,7 +32,8 @@ const estrutura = (extra = {}) => dbBase({
   acesso: [], convite: [], saque: [], contrato: [{ id: 'c1', workspace_id: 'w1', unidade_id: 'u1', pessoa_id: null, faixas: CONTRATO, inicio: '2026-01-01', criado_em: '2026-01-01T00:00:00Z' }],
   ...extra,
 });
-const abrirTime = async (page) => { await page.getByRole('button', { name: /^Time$/ }).first().click({ timeout: 15000 }); await page.getByText('Estrutura do time').waitFor({ timeout: 10000 }); };
+const aba = async (page, nome) => { await page.getByRole('button', { name: new RegExp('^' + nome + '$') }).first().click({ timeout: 15000 }); await page.waitForTimeout(400); };
+const abrirTime = async (page) => { await aba(page, 'Meu time'); await page.getByText('Minha conta no time').waitFor({ timeout: 10000 }); };
 
 // 1) jogador: vê MU, contrato e pede saque com a prévia do servidor
 await cenario('jogador', estrutura({ __rpc: {
@@ -41,8 +44,9 @@ await cenario('jogador', estrutura({ __rpc: {
   const t = await page.locator('body').innerText();
   ok(/Minha conta no time/.test(t) && /\$\s?310[.,]00/.test(await page.locator('[data-mu]').innerText()), 'mostra o MU');
   ok(/35% pro jogador/.test(t) && /40% pro jogador/.test(t), 'mostra o contrato');
-  ok(!/Contrato do time/.test(t) && !/Saques do time/.test(t), 'jogador não vê contrato pra editar nem saques dos outros');
-  ok(await page.getByRole('button', { name: 'Link da reta' }).count() === 0, 'jogador não gera link');
+  ok(!/Para resolver/.test(t) && await page.getByRole('button', { name: /^Financeiro$/ }).count() === 0, 'jogador não vê saques dos outros nem a aba Financeiro');
+  ok(await page.locator('[data-convidar]').count() === 0 && await page.getByRole('button', { name: /^Equipe e convites$/ }).count() === 0, 'jogador não convida');
+  ok(await page.locator('[data-modo]').count() === 0, 'sem chave Gestão/Meu jogo (não tem papel na gestão)');
   await page.getByRole('button', { name: 'Pedir saque' }).first().click();
   const campos = page.locator('input[inputmode="decimal"]');
   await campos.nth(0).fill('625'); await campos.nth(1).fill('310'); await campos.nth(2).fill('165');
@@ -56,27 +60,37 @@ await cenario('jogador', estrutura({ __rpc: {
   ok(sol && sol.p_banca === 625 && sol.p_devolucao === 310 && sol.p_cashout === 165, 'pedido enviado com os mesmos valores');
 });
 
-// 2) admin: aprova saque, gera link da reta, vê contrato
+// 2) admin que também joga: abre na gestão; aprova saque no Financeiro, gera link pelo convite único, contrato em Regras do time
 await cenario('admin', estrutura({
   acesso: [{ id: 'a1', pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
   saque: [{ id: 's1', workspace_id: 'w1', pessoa_id: 'p3', unidade_id: 'u3', status: 'solicitado', banca: 625, mu_antes: 310, devolucao: 310, cashout: 165,
     parte_jogador: 57.75, parte_time: 107.25, total_time: 417.25, banca_depois: 150, solicitado_em: '2026-10-25T20:21:00Z' }],
-  __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO }, criar_convite: 'ab'.repeat(32), decidir_saque: null } }), async (page, escritas) => {
-  await abrirTime(page);
-  const t = await page.locator('body').innerText();
-  ok(/Saques do time/.test(t) && /Maria/.test(t) && /417,25/.test(t), 'vê o saque da Maria com o total do time');
-  ok(/Contrato do time/.test(t), 'vê o contrato pra editar');
-  ok(await page.locator('[data-jogador="João"]').getByRole('button', { name: 'Link pessoal' }).count() === 1, 'jogador sem conta tem link pessoal');
+  __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO }, criar_convite: 'ab'.repeat(32), decidir_saque: null,
+    resumo_time: [{ pessoa_id: 'p2', nome: 'João', unidade_id: 'u3', caminho: '/u1/u2/u3/', status: 'convidado', torneios: 0, investido: 0, lucro: 0, roi: null, abi: null, ultimo_lancamento: null, banca: 0, mu: 0, lucro_sacado: 0 }] } }), async (page, escritas) => {
+  await page.getByRole('button', { name: /^Visão geral$/ }).first().waitFor({ timeout: 15000 });
+  ok(await page.locator('[data-modo="gestao"]').count() >= 1, 'admin que também joga abre na gestão, com a chave Gestão/Meu jogo');
+  await aba(page, 'Financeiro');
+  const t = await page.locator('main').innerText();
+  ok(/Para resolver/.test(t) && /Maria/.test(t) && /417,25/.test(t), 'vê o saque da Maria com o total do time');
   await page.locator('[data-saque="Maria"]').getByRole('button', { name: 'Aprovar' }).click();
   await page.waitForTimeout(400);
   const dec = rpc(escritas, 'decidir_saque').pop();
   ok(dec && dec.p_id === 's1' && dec.p_aprovar === true, 'aprovar chama o servidor');
-  await page.getByRole('button', { name: 'Link da reta' }).last().click();
+  await aba(page, 'Regras do time');
+  ok(/35% pro jogador/.test(await page.locator('[data-contrato]').innerText()), 'contrato em Regras do time');
+  await aba(page, 'Jogadores');
+  await page.locator('[data-acoes="João"]').click();
+  ok(await page.getByRole('menuitem', { name: 'Link pessoal' }).count() === 1, 'jogador sem conta tem link pessoal no menu');
+  await page.locator('[data-acoes="João"]').click();
+  await aba(page, 'Equipe e convites');
+  await page.locator('[data-convidar]').first().click();
+  await page.locator('[data-link-aberto]').check();
+  await page.locator('[data-gerar-link]').click();
   await page.locator('[data-link-convite]').waitFor({ timeout: 5000 });
   const url = await page.locator('[data-link-convite]').inputValue();
-  ok(url.endsWith('/?convite=' + 'ab'.repeat(32)), 'link da reta montado com o token');
+  ok(url.endsWith('/?convite=' + 'ab'.repeat(32)), 'link aberto da reta montado com o token');
   const cv = rpc(escritas, 'criar_convite').pop();
-  ok(cv && cv.p_unidade === 'u3' && cv.p_pessoa === null, 'link pedido pra unidade certa');
+  ok(cv && cv.p_unidade === 'u3' && cv.p_pessoa === null, 'link pedido pra reta certa (a única reta)');
 });
 
 // 3) jogador importa a planilha do Samba: lê no aparelho, mostra a prévia e envia pro time conferir
@@ -101,20 +115,24 @@ await cenario('conferir planilha', estrutura({
       planilha: { grade: [{ site: 'GGpoker', tipo: 'Semanal', regular: 'até $2,50', prog_ko: 'até $3,20', hyper: 'Até $2' }] } },
   ],
   __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'confirmada' }, conferir_abertura: null } }), async (page, escritas) => {
-  await abrirTime(page);
-  ok(/Planilhas pra conferir/.test(await page.locator('body').innerText()), 'lista de planilhas pra conferir');
+  await aba(page, 'Financeiro');
+  ok(await page.locator('[data-conferir="Maria"]').count() === 1, 'planilha da Maria pra conferir no Financeiro');
   await page.locator('[data-conferir="Maria"]').getByRole('button', { name: 'Conferir como está' }).click();
   await page.waitForTimeout(400);
   const c = rpc(escritas, 'conferir_abertura').pop();
   ok(c && c.p_pessoa === 'p3' && c.p_mu === 200 && c.p_cashout === 500, 'confere com os valores da planilha');
-  ok(/até \$3,20/.test(await page.locator('[data-grade]').innerText()), 'jogador vê a própria grade');
+  await page.locator('[data-modo-btn="jogo"]').first().click();
+  await abrirTime(page);
+  ok(/até \$3,20/.test(await page.locator('[data-grade]').innerText()), 'em Meu jogo, vê a própria grade');
   ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida');
 });
 
 // 5) gestor: visão do time por bloco (ROI ponderado, aluno parado), reloads e sininho
+const recente = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
 const RESUMO = [
-  { pessoa_id: 'p3', nome: 'Maria', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'ativo', torneios: 40, investido: 100, lucro: 20, roi: 20, abi: 2.5, ultimo_lancamento: '2026-11-17', banca: 300, mu: 100, lucro_sacado: 50, planilha: 'confirmada' },
-  { pessoa_id: 'p2', nome: 'João', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'convidado', torneios: 2, investido: 10, lucro: -10, roi: -100, abi: 5, ultimo_lancamento: '2026-11-01', banca: 50, mu: 0, lucro_sacado: 0, planilha: 'sem' },
+  { pessoa_id: 'p3', nome: 'Maria', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'ativo', torneios: 40, investido: 100, lucro: 20, roi: 20, abi: 2.5, ultimo_lancamento: recente, banca: 300, mu: 100, lucro_sacado: 50, planilha: 'confirmada' },
+  { pessoa_id: 'p4', nome: 'Ana', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'ativo', torneios: 10, investido: 100, lucro: -100, roi: -100, abi: 10, ultimo_lancamento: '2026-11-01', banca: 50, mu: 150, lucro_sacado: 0, planilha: 'sem' },
+  { pessoa_id: 'p2', nome: 'João', unidade_id: 'u3', unidade: 'Pandeiro', caminho: '/u1/u2/u3/', status: 'convidado', torneios: 0, investido: 0, lucro: 0, roi: null, abi: null, ultimo_lancamento: null, banca: 0, mu: 0, lucro_sacado: 0, planilha: 'sem' },
 ];
 await cenario('visão, reload e sininho', estrutura({
   acesso: [{ id: 'a1', pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
@@ -136,11 +154,16 @@ await cenario('visão, reload e sininho', estrutura({
   await page.waitForTimeout(400);
   ok(rpc(escritas, 'apagar_avisos').length === 1 && /Nenhum aviso/.test(await page.locator('[data-avisos]').innerText()), 'limpar tudo');
   await page.locator('[data-sininho]').click();
-  await abrirTime(page);
-  await page.locator('[data-visao-time]').waitFor({ timeout: 5000 });
-  const bloco = await page.locator('[data-bloco="Pandeiro"]').innerText();
-  ok(/2 alunos/.test(bloco) && /350,00/.test(bloco) && /9\.1%/.test(bloco), 'bloco Pandeiro: 2 alunos, banca 350, ROI ponderado 9,1% (não a média de 20% e −100%)');
-  ok(/parado há \d+ dias/.test(await page.locator('[data-aluno="João"]').innerText()), 'aluno sem lançar há mais de 7 dias aparece como parado');
+  await aba(page, 'Visão geral');
+  await page.locator('[data-por-reta]').waitFor({ timeout: 5000 });
+  const cel = (await page.locator('[data-reta="Pandeiro"] td').allInnerTexts()).map(x => x.trim());
+  ok(cel[1] === '2' && cel[2] === '50' && /^-40,0%$/.test(cel[4]) && /−US\$\s80,00/.test(cel[5]), 'Pandeiro: 2 alunos (o convidado não conta), 50 torneios, ROI pelo total investido -40% (não a média de 20% e -100%), resultado −80: ' + cel.join(' | '));
+  ok(/1 sem lançar/.test(await page.locator('[data-kpis]').innerText()), 'conta quem está sem lançar há 7+ dias');
+  await page.locator('[data-reta="Pandeiro"]').click();
+  await page.locator('[data-jogadores]').waitFor({ timeout: 5000 });
+  ok(/parado há \d+ dias/.test(await page.locator('[data-jogador="Ana"]').innerText()), 'clicar na reta abre os jogadores dela; a Ana aparece parada');
+  ok(/MK −US\$\s100,00/.test(await page.locator('[data-jogador="Ana"]').innerText()) && /\+US\$\s200,00/.test(await page.locator('[data-jogador="Maria"]').innerText()), 'make-up por jogador com sinal: Ana em MK −100, Maria +200');
+  await aba(page, 'Financeiro');
   await page.locator('[data-reload="Maria"]').getByRole('button', { name: 'Aprovar' }).click();
   await page.waitForTimeout(300);
   ok(rpc(escritas, 'decidir_reload').pop()?.p_id === 'r1', 'aprovar reload chama o servidor');
@@ -154,7 +177,7 @@ await cenario('visão, reload e sininho', estrutura({
 // 6) aluno pede reload
 await cenario('aluno pede reload', estrutura({ __rpc: { situacao_jogador: { mu: 0, lifetime: 0, contrato: CONTRATO, abertura: 'confirmada' }, pedir_reload: 'r9' } }), async (page, escritas) => {
   await abrirTime(page);
-  ok(await page.locator('[data-visao-time]').count() === 0, 'aluno não vê a visão do time');
+  ok(await page.getByRole('button', { name: /^Visão geral$/ }).count() === 0, 'aluno não vê a visão do time');
   await page.locator('[data-pedir-reload]').click();
   const c = page.locator('input');
   await page.getByPlaceholder('ex.: 100').fill('100'); await page.getByPlaceholder('ex.: GG').fill('GG');
@@ -167,7 +190,7 @@ await cenario('aluno pede reload', estrutura({ __rpc: { situacao_jogador: { mu: 
 // 3) sem estrutura (solo/pool antigo): sem aba Time
 await cenario('sem estrutura', dbBase(), async (page) => {
   await page.getByRole('button', { name: /^Ajustes$/ }).first().waitFor({ timeout: 15000 });
-  ok(await page.getByRole('button', { name: /^Time$/ }).count() === 0, 'aba Time não aparece');
+  ok(await page.getByRole('button', { name: /^(Time|Meu time|Visão geral)$/ }).count() === 0, 'conta individual: nada de time');
 });
 
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');

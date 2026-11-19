@@ -1171,6 +1171,10 @@ const IcoAlert  = p => <Svg {...p}><path d="M12 3l9 16H3l9-16z"/><path d="M12 10
 const IcoLogout = p => <Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
 const IcoMenu   = p => <Svg {...p}><path d="M4 6h16M4 12h16M4 18h16"/></Svg>;
 const IcoStats  = p => <Svg {...p}><path d="M3 20h18"/><path d="M6 20v-6M11 20V5M16 20v-9M21 20v-4"/></Svg>;
+const IcoUsers  = p => <Svg {...p}><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14a6 6 0 0 1 3.5 6"/></Svg>;
+const IcoGrid   = p => <Svg {...p}><rect x="3" y="3" width="18" height="18" rx="2.5"/><path d="M3 9h18M3 15h18M9 3v18"/></Svg>;
+const IcoHome   = p => <Svg {...p}><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></Svg>;
+const IcoUser   = p => <Svg {...p}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></Svg>;
 const IcoEye    = p => <Svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></Svg>;
 const IcoEyeOff = p => <Svg {...p}><path d="M3 3l18 18"/><path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.1 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 4.2-1"/><path d="M9.5 9.6a3 3 0 0 0 4.2 4.2"/></Svg>;
 
@@ -1751,7 +1755,9 @@ function Login({aviso}){
       {conv&&(conv.valido
         ?<div data-convite="ok" style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
           <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.time}</div>
-          <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
+          <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{(()=>{ const pap=papelDe(conv.capacidades||[]);
+            if(pap) return <>Você entra como <b>{conv.pessoa}</b>, <b>{(PAPEL_ROT[pap]||'gestão').toLowerCase()}</b> do time{conv.joga_em?<>, e também joga na <b>{conv.joga_em}</b></>:null}.</>;
+            return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
         </div>
         :<div data-convite="ruim" style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:13.5,color:C.gold}}>{conv.motivo||'Convite inválido.'}</div>
@@ -2026,7 +2032,7 @@ function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
         {per.map(x=><span key={x.p} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:99,background:C.bg,fontSize:12,fontWeight:700,color:C.ink}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[x.i]}}/>{x.p.split(' ')[0]}: {x.res>=0?'+':'−'}{fmt(Math.abs(x.res))} <span style={{color:C.inkSoft,fontWeight:600}}>({x.n})</span></span>)}
       </div>}
       {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
-      <button onClick={()=>onAdd(date)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio {today?'de hoje':`em ${dLabel(date)}`}</button>
+      {onAdd&&<button onClick={()=>onAdd(date)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio {today?'de hoje':`em ${dLabel(date)}`}</button>}
     </div>}
   </Card>;
 }
@@ -2065,7 +2071,7 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
       </div>
       <div style={{fontSize:12,color:C.inkSoft,marginBottom:4}}>Corrija editando os torneios abaixo:</div>
       {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
-      <button onClick={()=>onAdd(entry.entry_date,entry.player)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio de {entry.player.split(' ')[0]}</button>
+      {onAdd&&<button onClick={()=>onAdd(entry.entry_date,entry.player)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio de {entry.player.split(' ')[0]}</button>}
     </div>}
   </Card>;
 }
@@ -2215,22 +2221,239 @@ function faixasTexto(f){
   return o.map(x=>{ const pct=Math.round(Number(x.jogador)*1000)/10+'% pro jogador';
     const t=x.ate==null?(ant?`acima de ${fmt(ant)} sacados: ${pct}`:pct):`até ${fmt(x.ate)} sacados: ${pct}`; ant=x.ate||ant; return t; }).join(' · ');
 }
-function TimeTela({session,onVerJogador}){
+/* ---------- papéis, make-up e selos do time ---------- */
+// pacotes prontos de capacidades (o admin escolhe um; o banco guarda as capacidades)
+const PACOTES={professor:['promover','ver_desempenho','ver_financeiro'],financeiro:['aprovar_saques','ver_financeiro'],admin:['administrar']};
+const PAPEL_ROT={professor:'Professor',financeiro:'Financeiro',admin:'Admin',personalizado:'Personalizado'};
+const papelDe=caps=>{ const c=[...new Set(caps||[])].sort(); if(!c.length) return null; if(c.includes('administrar')) return 'admin';
+  for(const [k,v] of Object.entries(PACOTES)) if([...v].sort().join(',')===c.join(',')) return k; return 'personalizado'; };
+const PAPEL_DICA={professor:'vê desempenho e dinheiro das retas dele e promove',financeiro:'vê o dinheiro, aprova saques e reloads, confere planilhas',
+  admin:'tudo: estrutura, papéis, regras, grades e contrato'};
+const fmtSinal=v=>(Number(v)<0?'−':'+')+fmt(Math.abs(Number(v)||0));
+// make-up do jogador = banca − MU. Negativo: está em MK (mostra quanto). Positivo: profit.
+const mkDe=(banca,mu)=>banca==null||mu==null?null:Math.round((Number(banca)-Number(mu))*100)/100;
+const TONS={ok:[C.greenSoft,C.greenMid],warn:[C.goldSoft,'#7a5a1f'],bad:[C.redSoft,C.red],plum:[C.plumSoft,P],neutro:[C.bg,C.inkSoft]};
+const Tag=({tom='neutro',children,...r})=>{ const t=TONS[tom]||TONS.neutro;
+  return <span {...r} style={{display:'inline-block',padding:'2px 9px',borderRadius:99,fontSize:11.5,fontWeight:800,background:t[0],color:t[1],whiteSpace:'nowrap'}}>{children}</span>; };
+const MkSelo=({v})=>v==null?<span style={{color:C.inkSoft}}>—</span>
+  :v<0?<Tag tom="warn" data-mk="em">MK {fmtSinal(v)}</Tag>:<span data-mk="fora" style={{fontWeight:700,color:C.greenMid,whiteSpace:'nowrap'}}>{fmtSinal(v)}</span>;
+const diasDesde=d=>d?Math.round((Date.parse(todayISO())-Date.parse(String(d).slice(0,10)))/86400000):null;
+const linkWhats=(url,texto)=>`https://wa.me/?text=${encodeURIComponent(`${texto}\n${url}`)}`;
+const thS={textAlign:'left',padding:'8px 10px',fontSize:11,textTransform:'uppercase',letterSpacing:'.04em',color:C.inkSoft,whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`,fontWeight:700};
+const tdS={padding:'10px',fontSize:13.5,whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`};
+const btnS={padding:'8px 12px',borderRadius:11,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:13,cursor:'pointer'};
+const btnP={...btnS,background:P,color:'#fff',border:`1.5px solid ${P}`};
+const tituloS={fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 10px'};
+const Kpi=({rot,val,sub,tom,onClick,...r})=>{ const cor=tom==='ok'?C.greenMid:tom==='bad'?C.red:tom==='warn'?'#7a5a1f':C.ink;
+  const corpo=<><div style={{fontSize:11,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:C.inkSoft}}>{rot}</div>
+    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,marginTop:4,color:cor}}>{val}</div>
+    {sub&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>{sub}</div>}</>;
+  const st={background:C.surface,border:`1px solid ${C.border}`,borderRadius:18,padding:'15px 17px',textAlign:'left',minWidth:0};
+  return onClick?<button {...r} onClick={onClick} style={{...st,cursor:'pointer',font:'inherit',color:'inherit'}}>{corpo}</button>:<div {...r} style={st}>{corpo}</div>; };
+const Chip=({on,onClick,children,...r})=><button {...r} onClick={onClick} aria-pressed={!!on} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${on?P:C.border}`,background:on?C.plumSoft:C.surface,color:on?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{children}</button>;
+
+/* chave Gestão | Meu jogo: só aparece pra quem tem papel na gestão e também joga */
+function ModoSwitch({modo,onTrocar,compacto}){
+  return <div role="group" aria-label="Modo" data-modo={modo} style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',border:`1.5px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.surface,margin:compacto?0:'4px 0 8px'}}>
+    {[['gestao','Gestão'],['jogo','Meu jogo']].map(([k,r])=><button key={k} aria-pressed={modo===k} data-modo-btn={k} onClick={()=>{ if(modo!==k) onTrocar(k); }}
+      style={{padding:compacto?'7px 10px':'10px 8px',border:'none',background:modo===k?P:'transparent',color:modo===k?'#fff':C.inkSoft,fontWeight:800,fontSize:compacto?12:13,cursor:'pointer',whiteSpace:'nowrap'}}>{r}</button>)}
+  </div>;
+}
+/* link pronto de convite: copiar ou mandar no WhatsApp */
+function LinkPronto({titulo,url,texto,onFechar}){
+  const [copiou,setCopiou]=useState(false);
+  return <Card style={{padding:18}}>
+    <div style={{fontWeight:800,fontSize:15,marginBottom:6}}>{titulo}</div>
+    <input readOnly data-link-convite value={url} aria-label="Link do convite" style={{...inputStyle,fontSize:13}} onFocus={e=>e.target.select()}/>
+    <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
+      <button style={btnP} onClick={()=>{ try{ navigator.clipboard.writeText(url); setCopiou(true); }catch(e){} }}>{copiou?'Copiado':'Copiar link'}</button>
+      <a href={linkWhats(url,texto||'Teu convite pro time no GrinderBank:')} target="_blank" rel="noopener noreferrer" style={{...btnS,textDecoration:'none',display:'inline-block'}}>Mandar no WhatsApp</a>
+      {onFechar&&<button style={btnS} onClick={onFechar}>Fechar</button>}
+    </div>
+    <div style={{fontSize:12,color:C.inkSoft,marginTop:8,lineHeight:1.5}}>O link aparece só agora: mande já. Quem abrir cria a conta e entra direto no lugar certo. Vale 7 dias.</div>
+  </Card>;
+}
+
+/* convite único: quem entra, onde e que link */
+function ConviteModal({unidades,podeGerir,podeAdmin,inicial,nomeUnidade,onGerar,onClose}){
+  // onde se joga: as retas (unidades sem nada dentro); time só com a raiz joga na raiz
+  const folha=u=>!unidades.some(x=>x.mae_id===u.id);
+  const retas=unidades.filter(u=>folha(u)&&(u.mae_id||unidades.length===1)&&podeGerir(u.id));
+  const raiz=unidades.find(u=>!u.mae_id);
+  const gestaoOk=unidades.some(u=>podeAdmin(u.id));
+  const [quem,setQuem]=useState(inicial?.quem||'jogador');
+  const [reta,setReta]=useState(inicial?.unidade||(retas[0]?.id)||'');
+  const [onde,setOnde]=useState(inicial?.unidade?[inicial.unidade]:[]);
+  const [joga,setJoga]=useState(false);
+  const [jogaEm,setJogaEm]=useState(retas[0]?.id||'');
+  const [tipo,setTipo]=useState(inicial?.tipo||'pessoal');
+  const [nome,setNome]=useState('');
+  const [busy,setBusy]=useState(false); const [erro,setErro]=useState(''); const [pronto,setPronto]=useState(null);
+  const staff=quem!=='jogador';
+  const tipoEf=staff?'pessoal':tipo;
+  const ondeEf=quem==='admin'&&raiz?[raiz.id]:onde;
+  const valido=staff?(nome.trim()&&ondeEf.length&&(!joga||jogaEm)):(reta&&(tipoEf==='aberto'||nome.trim()));
+  const alterna=id=>setOnde(o=>o.includes(id)?o.filter(x=>x!==id):[...o,id]);
+  const legenda={fontSize:11,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:C.gold,marginBottom:8};
+  const opc=(on)=>({display:'flex',alignItems:'center',gap:7,padding:'9px 12px',borderRadius:99,border:`1.5px solid ${on?P:C.border}`,background:on?C.plumSoft:C.surface,color:on?P:C.ink,fontSize:13.5,fontWeight:on?700:600,cursor:'pointer'});
+  const gerar=async()=>{ setBusy(true); setErro('');
+    const r=await onGerar({quem,reta,onde:ondeEf,joga,jogaEm,tipo:tipoEf,nome:nome.trim()});
+    setBusy(false); if(r&&r.erro) setErro(r.erro); else if(r) setPronto(r); };
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-convite-modal className="ftfade" role="dialog" aria-label="Convidar" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:16,maxHeight:'92vh',overflowY:'auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:0}}>Convidar</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      {pronto?<LinkPronto titulo={pronto.titulo} url={pronto.url} texto={pronto.texto}/>:<>
+      <div>
+        <div style={legenda}>1 · Quem vai entrar</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:8}}>
+          {[['jogador','Jogador'],['professor','Professor'],['financeiro','Financeiro'],['admin','Admin']].map(([k,r])=>{ const off=k!=='jogador'&&!gestaoOk;
+            return <button key={k} data-quem={k} disabled={off} onClick={()=>setQuem(k)} style={{padding:'11px 4px',borderRadius:12,border:`1.5px solid ${quem===k?P:C.border}`,background:quem===k?C.plumSoft:C.surface,color:quem===k?P:C.inkSoft,fontWeight:quem===k?800:700,fontSize:13.5,cursor:off?'default':'pointer',opacity:off?.45:1}}>{r}</button>; })}
+        </div>
+        <div style={{fontSize:12.5,color:C.inkSoft,marginTop:6,lineHeight:1.45}}>{quem==='jogador'?'Joga numa reta e vê só os próprios dados.':`${PAPEL_ROT[quem]}: ${PAPEL_DICA[quem]}.`}</div>
+      </div>
+      <div>
+        <div style={legenda}>2 · Onde</div>
+        {!staff&&<div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {retas.map(u=><label key={u.id} style={opc(reta===u.id)}><input type="radio" name="reta" checked={reta===u.id} onChange={()=>setReta(u.id)}/>{nomeUnidade(u)}</label>)}
+          {!retas.length&&<div style={{fontSize:13,color:C.inkSoft}}>Crie uma reta em Equipe e convites → Editar estrutura.</div>}
+        </div>}
+        {staff&&quem==='admin'&&<div style={{fontSize:13.5}}>Admin cuida do time inteiro.</div>}
+        {staff&&quem!=='admin'&&<div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {unidades.filter(u=>podeAdmin(u.id)).map(u=><label key={u.id} data-onde={u.nome} style={opc(onde.includes(u.id))}><input type="checkbox" checked={onde.includes(u.id)} onChange={()=>alterna(u.id)}/>{u.mae_id?nomeUnidade(u):`${u.nome} (time inteiro)`}</label>)}
+        </div>}
+        {staff&&<label style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:12,padding:'11px 13px',borderRadius:14,background:C.warm,border:`1px solid ${C.border}`,fontSize:13.5,fontWeight:600}}>
+          <input type="checkbox" data-tambem-joga checked={joga} onChange={e=>setJoga(e.target.checked)}/> Também joga no time, na reta
+          <select aria-label="Reta em que joga" disabled={!joga} value={jogaEm} onChange={e=>setJogaEm(e.target.value)} style={{...inputStyle,width:'auto',padding:'8px 10px',fontSize:13.5,marginLeft:'auto'}}>
+            {retas.map(u=><option key={u.id} value={u.id}>{nomeUnidade(u)}</option>)}
+          </select>
+        </label>}
+      </div>
+      <div>
+        <div style={legenda}>3 · Que link</div>
+        <label style={{...opc(tipoEf==='pessoal'),borderRadius:14,alignItems:'flex-start',marginBottom:8}}>
+          <input type="radio" name="tipo" checked={tipoEf==='pessoal'} onChange={()=>setTipo('pessoal')} style={{marginTop:3}}/>
+          <span><b>Link pessoal</b><br/><span style={{fontSize:12.5,color:C.inkSoft,fontWeight:500}}>Só essa pessoa entra.</span></span>
+        </label>
+        {tipoEf==='pessoal'&&<div style={{margin:'0 0 10px 4px'}}><label style={labelStyle} htmlFor="conv-nome">Nome como vai aparecer no time</label>
+          <input id="conv-nome" data-conv-nome style={inputStyle} value={nome} placeholder={staff?'ex.: Prof. Marcos':'ex.: Bruno T. (como nos lançamentos)'} onChange={e=>setNome(e.target.value)}/></div>}
+        <label style={{...opc(tipoEf==='aberto'),borderRadius:14,alignItems:'flex-start',opacity:staff?.5:1,cursor:staff?'default':'pointer'}}>
+          <input type="radio" name="tipo" data-link-aberto disabled={staff} checked={tipoEf==='aberto'} onChange={()=>setTipo('aberto')} style={{marginTop:3}}/>
+          <span><b>Link aberto da reta</b><br/><span style={{fontSize:12.5,color:C.inkSoft,fontWeight:500}}>Várias pessoas entram como jogador. Só para jogador.</span></span>
+        </label>
+      </div>
+      {erro&&<div style={{color:C.red,fontSize:13,fontWeight:600}}>{erro}</div>}
+      <button data-gerar-link disabled={!valido||busy} onClick={gerar} style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:valido?'pointer':'default',opacity:valido&&!busy?1:.5}}>Gerar link</button>
+      </>}
+    </div>
+  </div>;
+}
+
+/* editar alguém da gestão: nome, papel e onde */
+function PessoaModal({p,unidades,podeAdmin,nomeUnidade,onSalvar,onRemover,onLink,onClose}){
+  const [nome,setNome]=useState(p.nome);
+  const [papel,setPapel]=useState(p.papel==='personalizado'?'personalizado':(p.papel||'professor'));
+  const [onde,setOnde]=useState(p.unidades);
+  const raiz=unidades.find(u=>!u.mae_id);
+  const alterna=id=>setOnde(o=>o.includes(id)?o.filter(x=>x!==id):[...o,id]);
+  const ondeEf=papel==='admin'&&raiz?[raiz.id]:onde;
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-pessoa-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:520,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:14,maxHeight:'92vh',overflowY:'auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Editar {p.nome}</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      <div><label style={labelStyle} htmlFor="ed-nome">Nome no time</label><input id="ed-nome" data-ed-nome style={inputStyle} value={nome} onChange={e=>setNome(e.target.value)}/></div>
+      <div><div style={labelStyle}>Papel</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {['professor','financeiro','admin',...(p.papel==='personalizado'?['personalizado']:[])].map(k=><Chip key={k} on={papel===k} onClick={()=>setPapel(k)}>{PAPEL_ROT[k]}</Chip>)}
+        </div>
+        {papel!=='personalizado'&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>{PAPEL_DICA[papel]}.</div>}
+      </div>
+      {papel!=='admin'&&<div><div style={labelStyle}>Cuida de</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {unidades.filter(u=>podeAdmin(u.id)).map(u=><Chip key={u.id} on={onde.includes(u.id)} onClick={()=>alterna(u.id)}>{u.mae_id?nomeUnidade(u):`${u.nome} (time inteiro)`}</Chip>)}
+        </div></div>}
+      <button disabled={!nome.trim()||!ondeEf.length} onClick={()=>onSalvar({nome:nome.trim(),caps:papel==='personalizado'?p.caps:PACOTES[papel],unidades:ondeEf})}
+        style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:nome.trim()&&ondeEf.length?1:.5}}>Salvar</button>
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        {onLink&&<button data-gerar-link-pessoal onClick={onLink} style={btnS}>Gerar link pessoal de novo</button>}
+        <button onClick={onRemover} style={{...btnS,color:C.red}}>{p.joga?'Tirar da gestão (continua jogando)':'Tirar do time'}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+/* estrutura: criar, renomear e arquivar unidades */
+function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClose}){
+  const nivel=u=>String(u.caminho).split('/').filter(Boolean).length-1;
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-estrutura-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:10,maxHeight:'92vh',overflowY:'auto'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Editar estrutura</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      {unidades.map(u=><div key={u.id} data-unidade-ed={u.nome} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderBottom:`1px solid ${C.border}`,paddingLeft:nivel(u)*16}}>
+        <div style={{flex:1,minWidth:140,fontWeight:700,fontSize:14}}>{u.nome}{u.rotulo&&<span style={{fontWeight:500,color:C.inkSoft,fontSize:12.5}}> · {u.rotulo}</span>}</div>
+        {podeAdmin(u.id)&&<button style={btnS} onClick={()=>onCriar(u)}>+ Dentro</button>}
+        {podeAdmin(u.id)&&<button style={btnS} onClick={()=>onRenomear(u)}>Renomear</button>}
+        {u.mae_id&&podeAdmin(u.mae_id)&&<button style={{...btnS,color:C.red}} onClick={()=>onArquivar(u)}>Arquivar</button>}
+      </div>)}
+      <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Arquivar só funciona com a unidade vazia (sem jogador e sem unidade dentro). O histórico fica.</div>
+    </div>
+  </div>;
+}
+
+/* contrato do time por faixas de lucro sacado */
+function ContratoModal({atual,onSalvar,onClose}){
+  const f=Array.isArray(atual)&&atual.length?[...atual].sort((a,b)=>(a.ate==null?1e15:a.ate)-(b.ate==null?1e15:b.ate)):[{ate:10000,jogador:.35},{ate:null,jogador:.4}];
+  const [lim,setLim]=useState(String(f[0].ate??10000)); const [a,setA]=useState(String(Math.round(Number(f[0].jogador)*1000)/10));
+  const [b,setB]=useState(String(Math.round(Number((f[1]||f[0]).jogador)*1000)/10)); const [ini,setIni]=useState(todayISO());
+  const L=parseValor(lim), A=parseValor(a), B=parseValor(b); const ok=L>0&&A>=0&&A<=100&&B>=0&&B<=100;
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-contrato-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Contrato do time</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      <div><label style={labelStyle} htmlFor="ct-a">% do jogador até o limite</label><input id="ct-a" data-ct-a style={inputStyle} inputMode="decimal" value={a} onChange={e=>setA(e.target.value)}/></div>
+      <div><label style={labelStyle} htmlFor="ct-lim">Limite de lucro sacado (US$)</label><input id="ct-lim" data-ct-lim style={inputStyle} inputMode="decimal" value={lim} onChange={e=>setLim(e.target.value)}/></div>
+      <div><label style={labelStyle} htmlFor="ct-b">% do jogador depois do limite</label><input id="ct-b" data-ct-b style={inputStyle} inputMode="decimal" value={b} onChange={e=>setB(e.target.value)}/></div>
+      <div><label style={labelStyle} htmlFor="ct-ini">Vale a partir de</label><input id="ct-ini" type="date" style={inputStyle} value={ini} onChange={e=>setIni(e.target.value)}/></div>
+      {ok&&<div style={{background:C.plumSoft,borderRadius:12,padding:'10px 12px',fontSize:13.5}}>{A}% pro jogador até {fmt(L)} de lucro sacado, {B}% depois. A faixa conta só o lucro sacado, não a devolução de capital.</div>}
+      <button disabled={!ok} onClick={()=>onSalvar([{ate:L,jogador:A/100},{ate:null,jogador:B/100}],ini)} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:ok?1:.5}}>Salvar contrato</button>
+    </div>
+  </div>;
+}
+
+/* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
+   Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
+function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const uid=session.user.id;
   const [d,setD]=useState(null);
-  const [aviso,setAviso]=useState(null);       // {ok|erro, texto}
-  const [link,setLink]=useState(null);         // {titulo, url}
-  const [perg,setPerg]=useState(null);         // QuickEditModal aberto: {label,hint,kind,opts,valor,onSave}
+  const [aviso,setAviso]=useState(null);       // {erro, texto}
+  const [perg,setPerg]=useState(null);         // QuickEditModal: {label,hint,kind,opts,valor,onSave}
+  const [link,setLink]=useState(null);         // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto,setSaqueAberto]=useState(false);
-  const [planilha,setPlanilha]=useState(null);    // planilha do Samba lida no aparelho, antes de enviar
+  const [planilha,setPlanilha]=useState(null);
   const [reloadAberto,setReloadAberto]=useState(false);
-  const [periodo,setPeriodo]=useState('mes');     // visão do time: mes | 30 | tudo
+  const [periodo,setPeriodo]=useState('mes');
   const [resumo,setResumo]=useState(null);
-  const [gradeAberta,setGradeAberta]=useState(null);   // id da unidade com o editor de grade aberto
-  useEffect(()=>{ (async()=>{
-    const hoje=todayISO(); const desde=periodo==='mes'?hoje.slice(0,8)+'01':periodo==='30'?new Date(Date.now()-30*86400000).toISOString().slice(0,10):null;
-    const {data,error}=await sb.rpc('resumo_time',{p_desde:desde}); setResumo(error?[]:(data||[]));
-  })(); },[periodo]);
+  const [gradeAberta,setGradeAberta]=useState(null);
+  const [gradeSel,setGradeSel]=useState(null);
+  const [versoes,setVersoes]=useState(false);
+  const [convite,setConvite]=useState(null);
+  const [pessoaEd,setPessoaEd]=useState(null);
+  const [estrutura,setEstrutura]=useState(false);
+  const [contratoAberto,setContratoAberto]=useState(false);
+  const [filtro,setFiltro]=useState({reta:null,sit:null,busca:''});
+  const [menuDe,setMenuDe]=useState(null);
+  const [ord,setOrd]=useState({k:'nome',dir:1});
+  const desdePeriodo=()=>{ const hoje=todayISO(); return periodo==='mes'?hoje.slice(0,8)+'01':periodo==='30'?addDaysISO(hoje,-29):null; };
+  const carregarResumo=async()=>{ const {data,error}=await sb.rpc('resumo_time',{p_desde:desdePeriodo()}); setResumo(error?[]:(data||[])); };
+  useEffect(()=>{ carregarResumo(); },[periodo]);
   const lerPlanilha=async file=>{
     setAviso(null);
     if(!file) return;
@@ -2252,260 +2475,516 @@ function TimeTela({session,onVerJogador}){
     let sit=null;
     if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data; }
     setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
-      acessos:a.data||[],convites:cv.data||[],saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
+      acessos:a.data||[],convites:cv.error?[]:(cv.data||[]),saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,
       grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[])});
   };
   useEffect(()=>{ carregar(); },[]);
+  useEffect(()=>{ setAviso(null); setMenuDe(null); },[secao]);
   const rodar=async(nome,args,okTexto)=>{
     setAviso(null);
     const {data,error}=await sb.rpc(nome,args);
     if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; }
     if(okTexto) setAviso({erro:false,texto:okTexto});
-    await carregar(); return data??true;
+    await Promise.all([carregar(),carregarResumo()]); return data??true;
   };
   if(!d) return <div style={{display:'grid',placeItems:'center',padding:60}}><div className="spin"/></div>;
+
+  /* ---------- quem pode o quê (o banco confere de novo em cada ação) ---------- */
   const U=Object.fromEntries(d.unidades.map(u=>[u.id,u]));
   const raiz=d.unidades.find(u=>!u.mae_id);
   const meus=d.eu?d.acessos.filter(a=>a.pessoa_id===d.eu.id):[];
   const pode=(cap,uid_)=>{ const t=U[uid_]; if(!t) return false;
     return meus.some(a=>{ const u=U[a.unidade_id]; return u&&String(t.caminho).startsWith(u.caminho)&&(a.capacidades.includes(cap)||a.capacidades.includes('administrar')); }); };
   const podeAlgum=cap=>d.unidades.some(u=>pode(cap,u.id));
+  const nomeUnidade=u=>u?`${u.nome}${u.rotulo?` · ${u.rotulo}`:''}`:'—';
   const caminhoNome=u=>{ const ids=String(u.caminho).split('/').filter(Boolean); return ids.map(i=>U[i]?.nome).filter(Boolean).slice(1).join(' › ')||u.nome; };
   const ativo=pid=>d.vinculos.find(v=>v.pessoa_id===pid&&!v.fim);
-  const jogadoresDe=uid_=>d.pessoas.filter(p=>p.status!=='saiu'&&ativo(p.id)?.unidade_id===uid_).sort((a,b)=>a.nome.localeCompare(b.nome));
   const nomeDe=pid=>d.pessoas.find(p=>p.id===pid)?.nome||'—';
+  const pessoaPorNome=n=>d.pessoas.find(p=>p.status!=='saiu'&&nomeIgual(p.nome,n));
   const urlConvite=t=>`${window.location.origin}/?convite=${t}`;
-  const novoLink=async(unidade,pessoa,titulo)=>{ const t=await rodar('criar_convite',{p_unidade:unidade,p_pessoa:pessoa||null,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo,url:urlConvite(t)}); };
-  const btn={padding:'7px 11px',borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:12.5,cursor:'pointer'};
-  const tit={fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 10px'};
-  const meusSaques=d.eu?d.saques.filter(s=>s.pessoa_id===d.eu.id):[];
-  const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
-  const paraConferir=d.aberturas.filter(a=>a.status==='enviada'&&(!d.eu||a.pessoa_id!==d.eu.id)&&pode('aprovar_saques',a.unidade_id));
-  const minhaGrade=(minhaAbertura?.planilha?.grade)||[];
-  const hoje=todayISO();
+  const hoje=todayISO(), semana=addDaysISO(hoje,-6);
   const gradeEf=uid_=>gradeDoTorneio({unidade_id:uid_,entry_date:hoje},d.unidades,d.grades);
   const regraEf=(uid_,chave)=>{ const t=U[uid_]; if(!t) return null;
     const r=d.regras.filter(x=>x.chave===chave&&String(x.vigente_desde)<=hoje&&U[x.unidade_id]&&String(t.caminho).startsWith(U[x.unidade_id].caminho))
       .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1))[0];
     return r?r.valor:null; };
-  const minhaUnidade=d.eu?ativo(d.eu.id)?.unidade_id:null;
-  const minhaGradeReta=minhaUnidade?gradeEf(minhaUnidade):null;
-  const emMk=pid=>{ const r=(resumo||[]).find(x=>x.pessoa_id===pid); return r&&r.banca!=null&&r.mu!=null&&Number(r.banca)<Number(r.mu)?Number(r.banca)-Number(r.mu):null; };
-  const meusReloads=d.eu?d.reloads.filter(r=>r.pessoa_id===d.eu.id):[];
+  const linhas=resumo||[];
+  const linhaDe=pid=>linhas.find(l=>l.pessoa_id===pid);
+  const unidadeDoTorneio=t=>t.unidade_id||GRADE_CTX.unidadeDe[String(t.player||'').trim().toLowerCase()]||null;
+  // grade dos últimos 7 dias, por jogador: quantos fora / atenção
+  const toursSemana=(tours||[]).filter(t=>String(t.entry_date)>=semana&&String(t.entry_date)<=hoje);
+  const gradePorPessoa={}; const conferidos=[];
+  toursSemana.forEach(t=>{ const sg=statusGrade(t,config); const p=t.pessoa_id||pessoaPorNome(t.player)?.id; if(!p) return;
+    const g=gradePorPessoa[p]||(gradePorPessoa[p]={fora:0,atencao:0,n:0}); g.n++; if(sg.status==='fora') g.fora++; if(sg.status==='atencao') g.atencao++;
+    if(sg.status!=='dentro') conferidos.push({t,sg,pessoa:p}); });
+  const header=(titulo,acoes)=><div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    <h2 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,margin:0,flex:1,minWidth:180}}>{titulo}</h2>{acoes}</div>;
+  const periodoChips=<div role="group" aria-label="Período" style={{display:'flex',gap:6}}>{[['mes','Este mês'],['30','30 dias'],['tudo','Tudo']].map(([k,r])=><Chip key={k} on={periodo===k} onClick={()=>setPeriodo(k)}>{r}</Chip>)}</div>;
+  const podeConvidar=podeAlgum('gerir_pessoas');
+  const btnConvidar=(ctx)=>podeConvidar&&<button data-convidar style={btnP} onClick={()=>setConvite(ctx||{})}>+ Convidar</button>;
+  const avisoBox=aviso&&<div data-time-aviso={aviso.erro?'erro':'ok'} role="status" style={{background:aviso.erro?C.redSoft:C.greenSoft,color:aviso.erro?C.red:C.greenMid,borderRadius:12,padding:'11px 14px',fontSize:13.5,fontWeight:600}}>{aviso.texto}</div>;
+
+  /* ---------- listas usadas em mais de uma tela ---------- */
+  const paraDecidir=d.saques.filter(s=>['solicitado','aprovado'].includes(s.status)&&(!d.eu||s.pessoa_id!==d.eu.id)&&pode('aprovar_saques',s.unidade_id));
   const reloadsParaDecidir=d.reloads.filter(r=>['solicitado','aprovado'].includes(r.status)&&(!d.eu||r.pessoa_id!==d.eu.id)&&pode('aprovar_saques',r.unidade_id));
-  const gestor=meus.some(a=>a.capacidades.some(c=>['ver_desempenho','ver_financeiro','administrar'].includes(c)));
-  const RELOAD_ROTULO={solicitado:'aguardando aprovação',aprovado:'aprovado · aguardando o envio',recusado:'recusado',cancelado:'cancelado',enviado:'enviado'};
-  const paraDecidir=d.saques.filter(s=>(!d.eu||s.pessoa_id!==d.eu.id)&&pode('aprovar_saques',s.unidade_id));
+  const paraConferir=d.aberturas.filter(a=>a.status==='enviada'&&(!d.eu||a.pessoa_id!==d.eu.id)&&pode('aprovar_saques',a.unidade_id));
+  const parados=linhas.filter(l=>l.status==='ativo'&&l.torneios!=null&&(l.ultimo_lancamento==null||diasDesde(l.ultimo_lancamento)>7));
+  const convidados=linhas.filter(l=>l.status==='convidado');
+  const RELOAD_ROTULO={solicitado:'aguardando aprovação',aprovado:'aprovado · falta mandar',recusado:'recusado',cancelado:'cancelado',enviado:'enviado'};
   const contratoRaiz=raiz?d.contratos.filter(c=>c.unidade_id===raiz.id&&!c.pessoa_id).sort((a,b)=>String(b.criado_em).localeCompare(String(a.criado_em)))[0]:null;
 
-  const Unidade=({u,nivel})=>{
-    const filhas=d.unidades.filter(x=>x.mae_id===u.id); const js=jogadoresDe(u.id);
-    return <div style={{marginLeft:nivel?14:0,borderLeft:nivel?`2px solid ${C.border}`:'none',paddingLeft:nivel?12:0,marginTop:10}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <div style={{fontWeight:800,fontSize:15}}>{u.nome}{u.rotulo&&<span style={{fontWeight:600,fontSize:12,color:C.inkSoft}}> · {u.rotulo}</span>}</div>
-        {pode('gerir_pessoas',u.id)&&<button style={btn} onClick={()=>setPerg({label:'Convidar jogador',hint:`Nome do jogador (como ele aparece nos lançamentos). Entra em ${u.nome}; depois é só mandar o link pessoal.`,kind:'text',valor:'',
-          onSave:async nome=>{ setPerg(null); if(!nome) return; const p=await rodar('convidar_jogador',{p_unidade:u.id,p_nome:nome,p_nick_ps:null,p_id_gg:null}); if(p&&typeof p==='string') await novoLink(u.id,p,`Link pessoal de ${nome}`); }})}>+ Jogador</button>}
-        {pode('gerir_pessoas',u.id)&&<button style={btn} onClick={()=>novoLink(u.id,null,`Link de ${u.nome} (vale 7 dias, várias pessoas)`)}>Link da reta</button>}
-        {(()=>{ const g=gradeEf(u.id); const propria=g&&g.unidade_id===u.id;
-          return <>{propria&&<span data-grade-selo={g.simulada?'simulada':'propria'} style={{fontSize:11,fontWeight:800,padding:'2px 8px',borderRadius:99,background:g.simulada?C.goldSoft:C.greenSoft,color:g.simulada?C.gold:C.greenMid}}>{g.simulada?'grade simulada':'grade'}</span>}
-            {(pode('configurar_regras',u.id)||(g&&(pode('ver_desempenho',u.id)||pode('promover',u.id))))&&<button style={btn} data-abrir-grade={u.nome} onClick={()=>setGradeAberta(u.id)}>Grade</button>}</>; })()}
-        {pode('administrar',u.id)&&<button style={btn} onClick={()=>setPerg({label:`Nova unidade dentro de ${u.nome}`,hint:'Ex.: Pandeiro, Reco-reco, Turma A.',kind:'text',valor:'',
-          onSave:async nome=>{ setPerg(null); if(nome) await rodar('criar_unidade',{p_mae:u.id,p_nome:nome,p_rotulo:null,p_ordem:0},`${nome} criada.`); }})}>+ Unidade</button>}
-      </div>
-      {js.map(p=><div key={p.id} data-jogador={p.nome} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderBottom:`1px solid ${C.border}`}}>
-        <div style={{flex:1,minWidth:140,fontSize:14,fontWeight:600}}>{p.nome}{p.status==='convidado'&&<span style={{fontSize:11.5,fontWeight:700,color:C.gold}}> · sem conta ainda</span>}</div>
-        {p.status==='convidado'&&pode('gerir_pessoas',u.id)&&<button style={btn} onClick={()=>novoLink(u.id,p.id,`Link pessoal de ${p.nome}`)}>Link pessoal</button>}
-        {pode('aprovar_saques',u.id)&&<button style={btn} onClick={()=>setPerg({label:`Capital mandado pra ${p.nome}`,hint:'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',kind:'money',valor:0,
-          onSave:async v=>{ setPerg(null); if(v) await rodar('registrar_aporte',{p_pessoa:p.id,p_valor:v,p_data:todayISO(),p_obs:null},`Capital de ${fmt(v)} registrado pra ${p.nome}.`); }})}>Capital</button>}
-        {pode('promover',u.id)&&<button style={btn} onClick={()=>{ const destinos=d.unidades.filter(x=>x.id!==u.id&&pode('promover',x.id));
-          if(!destinos.length) return setAviso({erro:true,texto:'Você não tem outra unidade pra onde mover.'});
-          const mk=emMk(p.id);
-          setPerg({label:`Mover ${p.nome}`,hint:(mk!=null?`Atenção: ${p.nome} está em MK (${fmt(mk)}).${regraEf(u.id,'bloquear_promocao_com_mk')===true?' Este time não promove com MK: o servidor vai recusar.':''} `:'')+'O histórico até hoje fica na unidade atual; daqui pra frente conta na nova.',kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
-            onSave:async nome=>{ setPerg(null); const alvo=destinos.find(x=>caminhoNome(x)===nome); if(alvo) await rodar('mover_jogador',{p_alvo:p.id,p_destino:alvo.id,p_motivo:'promocao'},`${p.nome} agora está em ${alvo.nome}.`); }}); }}>Mover</button>}
-        {pode('gerir_pessoas',u.id)&&p.user_id!==uid&&<button style={{...btn,color:C.red}} onClick={()=>setPerg({label:`Saída de ${p.nome}`,hint:'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',kind:'text',valor:'',
-          onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='SAIU') await rodar('registrar_saida',{p_alvo:p.id},`Saída de ${p.nome} registrada.`); }})}>Saída</button>}
-      </div>)}
-      {filhas.map(f=><Unidade key={f.id} u={f} nivel={nivel+1}/>)}
-    </div>;
+  /* ---------- ações reaproveitadas ---------- */
+  const moverJogador=(p,uAtual)=>{ const destinos=d.unidades.filter(x=>x.id!==uAtual&&x.mae_id&&pode('promover',x.id));
+    if(!destinos.length) return setAviso({erro:true,texto:'Você não tem outra reta pra onde mover.'});
+    const l=linhaDe(p.id), mk=l?mkDe(l.banca,l.mu):null, bloqueia=regraEf(uAtual,'bloquear_promocao_com_mk')===true;
+    setPerg({label:`Mover ${p.nome}`,hint:(mk!=null&&mk<0?`Atenção: ${p.nome} está em MK (${fmtSinal(mk)}).${bloqueia?' Este time não promove com MK: o servidor vai recusar.':''} `:'')+'O histórico até hoje fica na reta atual; daqui pra frente conta na nova.',
+      kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
+      onSave:async nome=>{ setPerg(null); const alvo=destinos.find(x=>caminhoNome(x)===nome); if(alvo) await rodar('mover_jogador',{p_alvo:p.id,p_destino:alvo.id,p_motivo:'promocao'},`${p.nome} agora está em ${alvo.nome}.`); }}); };
+  const capital=p=>setPerg({label:`Capital mandado pra ${p.nome}`,hint:'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',kind:'money',valor:0,
+    onSave:async v=>{ setPerg(null); if(v) await rodar('registrar_aporte',{p_pessoa:p.id,p_valor:v,p_data:todayISO(),p_obs:null},`Capital de ${fmt(v)} registrado pra ${p.nome}.`); }});
+  const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, teu convite pro time no GrinderBank:`}); };
+  const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',kind:'text',valor:p.nome,
+    onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(nn&&nn!==p.nome) await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nn},`Agora é ${nn}.`); }});
+  const saida=p=>setPerg({label:`Saída de ${p.nome}`,hint:'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',kind:'text',valor:'',
+    onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='SAIU') await rodar('registrar_saida',{p_alvo:p.id},`Saída de ${p.nome} registrada.`); }});
+  const gerarConvite=async({quem,reta,onde,joga,jogaEm,tipo,nome})=>{
+    const chama=async(fn,args)=>{ const {data,error}=await sb.rpc(fn,args); if(error) throw new Error(error.message||'Não deu certo.'); return data; };
+    try{
+      let tok, titulo, texto, pessoa=null;
+      if(quem==='jogador'&&tipo==='aberto'){ tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:null,p_dias:7,p_usos:null});
+        titulo=`Link aberto da ${U[reta]?.nome}`; texto=`Convite pra jogar na ${U[reta]?.nome} pelo GrinderBank:`; }
+      else if(quem==='jogador'){ pessoa=await chama('convidar_jogador',{p_unidade:reta,p_nome:nome,p_nick_ps:null,p_id_gg:null});
+        tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Link pessoal de ${nome}`; texto=`${nome}, teu convite pro time no GrinderBank:`; }
+      else { pessoa=await chama('convidar_equipe',{p_nome:nome,p_unidades:onde,p_caps:PACOTES[quem],p_joga_em:joga?jogaEm:null});
+        tok=await chama('criar_convite',{p_unidade:onde[0],p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`; texto=`${nome}, teu convite pra gestão do time no GrinderBank:`; }
+      await Promise.all([carregar(),carregarResumo()]);
+      return {titulo,url:urlConvite(tok),texto};
+    }catch(e){ return {erro:e.message}; }
   };
 
-  return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-    {aviso&&<div data-time-aviso={aviso.erro?'erro':'ok'} style={{background:aviso.erro?C.redSoft:C.greenSoft,color:aviso.erro?C.red:C.greenMid,borderRadius:12,padding:'11px 14px',fontSize:13.5,fontWeight:600}}>{aviso.texto}</div>}
-    {link&&<Card style={{padding:18}}>
-      <div style={{fontWeight:800,fontSize:15,marginBottom:6}}>{link.titulo}</div>
-      <input readOnly data-link-convite value={link.url} style={{...inputStyle,fontSize:13}} onFocus={e=>e.target.select()}/>
-      <div style={{display:'flex',gap:8,marginTop:10}}>
-        <button style={{...btn,background:P,color:'#fff',border:'none'}} onClick={()=>{ try{ navigator.clipboard.writeText(link.url); setAviso({erro:false,texto:'Link copiado. Manda pro jogador pelo Discord ou WhatsApp.'}); }catch(e){} }}>Copiar link</button>
-        <button style={btn} onClick={()=>setLink(null)}>Fechar</button>
-      </div>
-      <div style={{fontSize:12,color:C.inkSoft,marginTop:8,lineHeight:1.5}}>O link aparece só agora: guarde ou mande já. Quem abrir cria a conta e entra direto no time.</div>
-    </Card>}
-
-    {d.sit&&<Card style={{padding:20}}>
-      <h3 style={tit}>Minha conta no time</h3>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
-        <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
-        <div><div style={labelStyle}>Lucro já sacado</div><div style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.lifetime)}</div></div>
-      </div>
-      <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
-      {minhaAbertura?.status==='confirmada'
-        ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha do Samba conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
-        :<div style={{marginTop:10}}>
-          {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
-          <label style={{...btn,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar minha planilha do Samba'}
-            <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
-        </div>}
-      <button disabled={meusSaques.some(s=>['solicitado','aprovado'].includes(s.status))||!d.sit.contrato} onClick={()=>setSaqueAberto(true)}
-        style={{marginTop:14,padding:'12px 18px',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer',opacity:meusSaques.some(s=>['solicitado','aprovado'].includes(s.status))||!d.sit.contrato?.5:1}}>Pedir saque</button>
-      <button data-pedir-reload disabled={meusReloads.some(r=>['solicitado','aprovado'].includes(r.status))} onClick={()=>setReloadAberto(true)}
-        style={{marginTop:14,marginLeft:8,padding:'12px 18px',borderRadius:13,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer',opacity:meusReloads.some(r=>['solicitado','aprovado'].includes(r.status))?.5:1}}>Pedir reload</button>
-      {meusReloads.slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
-        <div style={{flex:1,minWidth:160}}>{dataBR(r.solicitado_em)} · reload {fmt(r.status==='enviado'?r.enviado_valor:r.valor)}{r.sala?` · ${r.sala}`:''}</div>
-        <span style={{fontWeight:700,color:r.status==='enviado'?C.greenMid:r.status==='recusado'?C.red:C.gold}}>{RELOAD_ROTULO[r.status]}{r.motivo_recusa?` · ${r.motivo_recusa}`:''}</span>
-        {r.status==='solicitado'&&<button style={btn} onClick={()=>rodar('cancelar_reload',{p_id:r.id},'Pedido de reload cancelado.')}>Cancelar</button>}
-      </div>)}
-      {meusSaques.length>0&&<div style={{marginTop:14}}>{meusSaques.slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
-        <div style={{flex:1,minWidth:160}}>{dataBR(s.solicitado_em)} · MU {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → time {fmt(s.total_time)}, você {fmt(s.parte_jogador)}</div>
-        <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}{s.motivo?` · ${s.motivo}`:''}</span>
-        {s.status==='solicitado'&&<button style={btn} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
-      </div>)}</div>}
-    </Card>}
-
-    {reloadsParaDecidir.length>0&&<Card style={{padding:20}}>
-      <h3 style={tit}>Reloads pedidos</h3>
-      {reloadsParaDecidir.map(r=><div key={r.id} data-reload={nomeDe(r.pessoa_id)} style={{padding:'10px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-        <div style={{fontWeight:700}}>{nomeDe(r.pessoa_id)} · {fmt(r.valor)}{r.sala?` · ${r.sala}`:''} · <span style={{color:C.gold}}>{RELOAD_ROTULO[r.status]}</span></div>
-        <div style={{color:C.inkSoft,marginTop:2}}>{dataBR(r.solicitado_em)}{r.motivo?` · "${r.motivo}"`:''}</div>
-        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-          {r.status==='solicitado'&&<button style={{...btn,background:P,color:'#fff',border:'none'}} onClick={()=>rodar('decidir_reload',{p_id:r.id,p_aprovar:true,p_motivo:null},'Reload aprovado. Quando mandar o dinheiro, confirme o envio.')}>Aprovar</button>}
-          {r.status==='solicitado'&&<button style={{...btn,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_reload',{p_id:r.id,p_aprovar:false,p_motivo:m},'Reload recusado.'); }})}>Recusar</button>}
-          {r.status==='aprovado'&&<button style={btn} onClick={()=>setPerg({label:'Quanto foi enviado?',hint:`Pedido: ${fmt(r.valor)}. O valor enviado entra no MU de ${nomeDe(r.pessoa_id)}.`,kind:'money',valor:r.valor,
-            onSave:async v=>{ setPerg(null); if(v>0) await rodar('confirmar_envio_reload',{p_id:r.id,p_valor:v},`Reload de ${fmt(v)} registrado no MU de ${nomeDe(r.pessoa_id)}.`); }})}>Confirmar envio</button>}
+  /* ================= MEU TIME (jogador) ================= */
+  if(secao==='meu'){
+    const meusSaques=d.eu?d.saques.filter(s=>s.pessoa_id===d.eu.id):[];
+    const meusReloads=d.eu?d.reloads.filter(r=>r.pessoa_id===d.eu.id):[];
+    const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
+    const minhaGrade=(minhaAbertura?.planilha?.grade)||[];
+    const minhaUnidade=d.eu?ativo(d.eu.id)?.unidade_id:null;
+    const minhaGradeReta=minhaUnidade?gradeEf(minhaUnidade):null;
+    const mk=d.sit?mkDe(banca,d.sit.mu):null;
+    const saqueAberto_=meusSaques.some(s=>['solicitado','aprovado'].includes(s.status)), reloadAberto_=meusReloads.some(r=>['solicitado','aprovado'].includes(r.status));
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header('Meu time')}
+      {avisoBox}
+      {!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
+      {d.sit&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Minha conta no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
+          <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
+          <div><div style={labelStyle}>{mk!=null&&mk<0?'Make-up':'Profit'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
+          <div><div style={labelStyle}>Lucro já sacado</div><div style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.lifetime)}</div></div>
         </div>
-      </div>)}
-    </Card>}
-
-    {gestor&&<VisaoTime linhas={resumo} unidades={d.unidades} periodo={periodo} setPeriodo={setPeriodo} onVerJogador={onVerJogador}/>}
-
-    {paraDecidir.length>0&&<Card style={{padding:20}}>
-      <h3 style={tit}>Saques do time</h3>
-      {paraDecidir.slice(0,30).map(s=><div key={s.id} data-saque={nomeDe(s.pessoa_id)} style={{padding:'10px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-        <div style={{fontWeight:700}}>{nomeDe(s.pessoa_id)} · {dataBR(s.solicitado_em)} · <span style={{color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}</span></div>
-        <div style={{color:C.inkSoft,marginTop:3,lineHeight:1.5}}>Banca {fmt(s.banca)} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b> · banca depois {fmt(s.banca_depois)}{s.observacao?` · "${s.observacao}"`:''}</div>
-        {s.status==='pago'&&Number(s.diferenca)!==0&&<div style={{color:C.red,fontWeight:700,marginTop:3}}>Recebido {fmt(s.recebido)}: diferença de {fmt(s.diferenca)}</div>}
-        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-          {s.status==='solicitado'&&<button style={{...btn,background:P,color:'#fff',border:'none'}} onClick={()=>rodar('decidir_saque',{p_id:s.id,p_aprovar:true,p_motivo:null},'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')}>Aprovar</button>}
-          {s.status==='solicitado'&&<button style={{...btn,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_saque',{p_id:s.id,p_aprovar:false,p_motivo:m},'Saque recusado.'); }})}>Recusar</button>}
-          {s.status==='aprovado'&&<button style={btn} onClick={()=>setPerg({label:'Quanto o time recebeu?',hint:`Esperado: ${fmt(s.total_time)}. Some tudo que chegou (todas as carteiras).`,kind:'money',valor:s.total_time,
-            onSave:async v=>{ setPerg(null); const r=await rodar('confirmar_recebimento',{p_id:s.id,p_recebido:v}); if(r&&typeof r==='object') setAviso({erro:Number(r.diferenca)!==0,texto:Number(r.diferenca)===0?'Recebimento confirmado, sem diferença.':`Recebimento confirmado com diferença de ${fmt(r.diferenca)} (esperado ${fmt(r.total_time)}, recebido ${fmt(r.recebido)}).`}); }})}>Confirmar recebimento</button>}
+        {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: dá pra pedir saque.'}</div>}
+        <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
+        {minhaAbertura?.status==='confirmada'
+          ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha do Samba conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
+          :<div style={{marginTop:10}}>
+            {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
+            <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar minha planilha do Samba'}
+              <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
+          </div>}
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:14}}>
+          <button disabled={saqueAberto_||!d.sit.contrato} onClick={()=>setSaqueAberto(true)} style={{...btnP,padding:'12px 18px',fontSize:14.5,opacity:saqueAberto_||!d.sit.contrato?.5:1}}>Pedir saque</button>
+          <button data-pedir-reload disabled={reloadAberto_} onClick={()=>setReloadAberto(true)} style={{...btnS,padding:'12px 18px',fontSize:14.5,opacity:reloadAberto_?.5:1}}>Pedir reload</button>
         </div>
-      </div>)}
-    </Card>}
+        {meusReloads.slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
+          <div style={{flex:1,minWidth:160}}>{dataBR(r.solicitado_em)} · reload {fmt(r.status==='enviado'?r.enviado_valor:r.valor)}{r.sala?` · ${r.sala}`:''}</div>
+          <span style={{fontWeight:700,color:r.status==='enviado'?C.greenMid:r.status==='recusado'?C.red:C.gold}}>{RELOAD_ROTULO[r.status]}{r.motivo_recusa?` · ${r.motivo_recusa}`:''}</span>
+          {r.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_reload',{p_id:r.id},'Pedido de reload cancelado.')}>Cancelar</button>}
+        </div>)}
+        {meusSaques.length>0&&<div style={{marginTop:10}}>{meusSaques.slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
+          <div style={{flex:1,minWidth:160}}>{dataBR(s.solicitado_em)} · MU {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → time {fmt(s.total_time)}, você {fmt(s.parte_jogador)}</div>
+          <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}{s.motivo?` · ${s.motivo}`:''}</span>
+          {s.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
+        </div>)}</div>}
+      </Card>}
+      {minhaGradeReta&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'} {minhaGradeReta.simulada?<Tag tom="warn">simulada</Tag>:<Tag tom="ok">oficial</Tag>}</h3>
+        {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
+        <GradeTabela celulas={minhaGradeReta.celulas||[]}/>
+        <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(minhaGradeReta.vigente_desde)}{minhaGradeReta.unidade_id!==minhaUnidade?` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})`:''}. Cada torneio lançado é conferido com ela.</div>
+      </Card>}
+      {!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Minha grade</h3>
+        <GradeTabela celulas={minhaGrade}/>
+        <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
+      </Card>}
+      {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+      {reloadAberto&&<ReloadModal onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
+      {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
+      {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
+    </div>;
+  }
 
-    {paraConferir.length>0&&<Card style={{padding:20}}>
-      <h3 style={tit}>Planilhas pra conferir</h3>
-      {paraConferir.map(a=>{ const pl=a.planilha||{}; return <div key={a.id} data-conferir={nomeDe(a.pessoa_id)} style={{padding:'10px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-        <div style={{fontWeight:700}}>{nomeDe(a.pessoa_id)} · enviada {dataBR(a.enviado_em)}{pl.atualizado_em?` · planilha de ${dataBR(pl.atualizado_em)}`:''}</div>
-        <div style={{color:C.inkSoft,marginTop:3,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
-        {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
-        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-          <button style={{...btn,background:P,color:'#fff',border:'none'}} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
-          <button style={btn} onClick={()=>setPerg({label:`MakeUp de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU (capital do time com o jogador).',kind:'money',valor:a.mu,
-            onSave:mu=>setPerg({label:`Cashout de ${nomeDe(a.pessoa_id)}`,hint:'Lucro que ele já sacou no time (conta pra faixa do contrato).',kind:'money',valor:a.cashout,
-              onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
-        </div>
-      </div>; })}
-    </Card>}
-
-    {minhaGradeReta&&<Card style={{padding:20}}>
-      <h3 style={tit}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'}</h3>
-      {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:C.gold,borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
-      <GradeTabela celulas={minhaGradeReta.celulas||[]}/>
-      <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(minhaGradeReta.vigente_desde)}{minhaGradeReta.unidade_id!==minhaUnidade?` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})`:''}. Cada torneio lançado é conferido com ela.</div>
-    </Card>}
-    {!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
-      <h3 style={tit}>Minha grade</h3>
-      <div style={{overflowX:'auto'}}><table data-grade style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
-        <thead><tr>{['Sala','Tipo','Regular','Prog KO','Hyper'].map(h=><th key={h} style={{textAlign:'left',padding:'6px 6px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
-        <tbody>{minhaGrade.map((g,i)=><tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
-          <td style={{padding:'6px',fontWeight:700}}>{i===0||minhaGrade[i-1].site!==g.site?g.site:''}</td><td style={{padding:'6px'}}>{g.tipo}</td>
-          <td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.regular||'—'}</td><td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.prog_ko||'—'}</td><td style={{padding:'6px',whiteSpace:'pre-line'}}>{g.hyper||'—'}</td></tr>)}</tbody>
-      </table></div>
-      <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
-    </Card>}
-
-    {raiz&&<Card style={{padding:20}}>
-      <h3 style={tit}>Estrutura do time</h3>
-      {meus.length>0&&<div style={{fontSize:12.5,color:C.inkSoft,marginBottom:4}}>Seu acesso: {meus.map(a=>`${U[a.unidade_id]?.nome||'?'} (${a.capacidades.map(c=>CAPS_ROTULO[c]||c).join(', ')})`).join(' · ')}</div>}
-      <Unidade u={raiz} nivel={0}/>
-    </Card>}
-
-    {raiz&&pode('configurar_regras',raiz.id)&&<Card style={{padding:20}}>
-      <h3 style={tit}>Contrato do time</h3>
-      <div data-contrato style={{fontSize:13.5,marginBottom:10}}>{faixasTexto(contratoRaiz?.faixas)}</div>
-      <button style={btn} onClick={()=>setPerg({label:'Contrato: % do jogador',hint:'Formato: limite;%até;%acima — ex.: 10000;35;40 = 35% pro jogador até 10 mil sacados de lucro, 40% depois. A faixa conta só o lucro já sacado (não a devolução de capital).',kind:'text',valor:'10000;35;40',
-        onSave:async t=>{ setPerg(null); const [lim,a,b]=String(t).split(';').map(x=>parseValor(x));
-          if(!(lim>0&&a>=0&&a<=100&&b>=0&&b<=100)) return setAviso({erro:true,texto:'Use o formato 10000;35;40.'});
-          await rodar('definir_contrato',{p_unidade:raiz.id,p_pessoa:null,p_faixas:[{ate:lim,jogador:a/100},{ate:null,jogador:b/100}],p_inicio:todayISO()},'Contrato salvo.'); }})}>Definir contrato</button>
-    </Card>}
-
+  /* ================= GESTÃO ================= */
+  const souAdmin=!!(raiz&&pode('administrar',raiz.id));
+  const modais=<>
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+    {convite&&<ConviteModal unidades={d.unidades} podeGerir={u=>pode('gerir_pessoas',u)} podeAdmin={u=>pode('administrar',u)} inicial={convite} nomeUnidade={nomeUnidade} onGerar={gerarConvite} onClose={()=>setConvite(null)}/>}
     {gradeAberta&&U[gradeAberta]&&(()=>{ const u=U[gradeAberta], g=gradeEf(u.id);
       const planilhas=d.aberturas.filter(a=>a.planilha&&Array.isArray(a.planilha.grade)&&a.planilha.grade.length&&U[a.unidade_id]&&String(U[a.unidade_id].caminho).startsWith(u.caminho))
         .map(a=>({nome:nomeDe(a.pessoa_id),grade:a.planilha.grade}));
       return <GradeModal u={u} efetiva={g} origem={g?U[g.unidade_id]:null} podeEditar={pode('configurar_regras',u.id)} planilhas={planilhas}
-        historico={d.grades.filter(x=>x.unidade_id===u.id).sort((a,b)=>String(b.vigente_desde).localeCompare(String(a.vigente_desde)))}
-        regraMk={regraEf(u.id,'bloquear_promocao_com_mk')===true} onClose={()=>setGradeAberta(null)}
+        historico={d.grades.filter(x=>x.unidade_id===u.id).sort((a,b)=>String(b.vigente_desde).localeCompare(String(a.vigente_desde)))} onClose={()=>setGradeAberta(null)}
         onSalvar={async({desde,simulada,celulas,obs})=>{ const r=await rodar('salvar_grade',{p_unidade:u.id,p_desde:desde,p_simulada:simulada,p_celulas:celulas,p_obs:obs||null},`Grade de ${u.nome} salva. Os jogadores dela foram avisados.`); if(r) setGradeAberta(null); }}
-        onApagar={async h=>{ await rodar('apagar_grade',{p_id:h.id},'Versão da grade apagada.'); }}
-        onRegra={async v=>{ await rodar('definir_regra',{p_unidade:u.id,p_chave:'bloquear_promocao_com_mk',p_valor:v,p_desde:null},v?`${u.nome}: promoção com MK bloqueada no servidor.`:`${u.nome}: promoção com MK liberada (a tela só avisa).`); }}/>; })()}
-    {reloadAberto&&<ReloadModal onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
-    {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
-    {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
-  </div>;
-}
-/* visão do time: blocos por unidade (com o total de tudo que está abaixo dela) e uma linha por aluno.
-   ROI do bloco é PONDERADO (lucro ÷ investido), não média de ROIs: aluno com 5 torneios não pesa igual a um com 500. */
-function VisaoTime({linhas,unidades,periodo,setPeriodo,onVerJogador}){
-  if(linhas==null) return <Card style={{padding:20}}><div className="spin"/></Card>;
-  const hoje=Date.parse(todayISO());
-  const dias=d=>d?Math.round((hoje-Date.parse(d))/86400000):null;
-  const soma=(ls,k)=>{ const v=ls.map(l=>l[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+Number(b),0):null; };
-  const blocoDe=u=>linhas.filter(l=>String(l.caminho||'').startsWith(u.caminho));
-  const ordem=[...unidades].sort((a,b)=>String(a.caminho).localeCompare(String(b.caminho)));
-  const nivel=u=>String(u.caminho).split('/').filter(Boolean).length-1;
-  const v=x=>x==null?'—':fmt(x);
-  const th={textAlign:'left',padding:'6px 8px',fontSize:10.5,textTransform:'uppercase',color:C.inkSoft,whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`};
-  const td={padding:'7px 8px',fontSize:13,whiteSpace:'nowrap',borderBottom:`1px solid ${C.border}`};
-  return <Card style={{padding:20}}>
-    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:10}}>
-      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Visão do time</h3>
-      <div style={{display:'flex',gap:6}}>{[['mes','Este mês'],['30','30 dias'],['tudo','Tudo']].map(([k,r])=><button key={k} onClick={()=>setPeriodo(k)}
-        style={{padding:'6px 11px',borderRadius:10,border:`1.5px solid ${periodo===k?P:C.border}`,background:periodo===k?C.plumSoft:'transparent',color:periodo===k?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{r}</button>)}</div>
-    </div>
-    <div style={{fontSize:12,color:C.inkSoft,marginBottom:8,lineHeight:1.5}}>Lucro, torneios, ROI e ABI são do período; banca, MU e lucro sacado são de agora. "—" = sem permissão pra ver. Banca só fica certa se o aluno lança os torneios: olhe o último lançamento.</div>
-    {linhas.length===0&&<Empty>Nenhum aluno com vínculo ainda.</Empty>}
-    {linhas.length>0&&<div style={{overflowX:'auto'}}><table data-visao-time style={{width:'100%',borderCollapse:'collapse'}}>
-      <thead><tr>{['Aluno','Banca','Lucro','Torneios','ROI','ABI','MU','Sacado','Último lançamento'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-      <tbody>{ordem.map(u=>{ const bloco=blocoDe(u); if(!bloco.length) return null; const diretos=bloco.filter(l=>l.unidade_id===u.id).sort((a,b)=>a.nome.localeCompare(b.nome));
-        const inv=soma(bloco,'investido'), luc=soma(bloco,'lucro');
-        return <React.Fragment key={u.id}>
-          <tr data-bloco={u.nome} style={{background:C.warm}}>
-            <td style={{...td,fontWeight:800,paddingLeft:8+nivel(u)*14}}>{u.nome} <span style={{fontWeight:600,color:C.inkSoft,fontSize:12}}>· {bloco.length} aluno{bloco.length>1?'s':''}</span></td>
-            <td style={{...td,fontWeight:700}}>{v(soma(bloco,'banca'))}</td><td style={{...td,fontWeight:700,color:luc>0?C.greenMid:luc<0?C.red:C.ink}}>{v(luc)}</td>
-            <td style={{...td,fontWeight:700}}>{soma(bloco,'torneios')??'—'}</td><td style={{...td,fontWeight:700}}>{inv>0?`${Math.round(luc/inv*1000)/10}%`:'—'}</td>
-            <td style={td}></td><td style={{...td,fontWeight:700}}>{v(soma(bloco,'mu'))}</td><td style={{...td,fontWeight:700}}>{v(soma(bloco,'lucro_sacado'))}</td><td style={td}></td>
-          </tr>
-          {diretos.map(l=>{ const dd=dias(l.ultimo_lancamento); return <tr key={l.pessoa_id} data-aluno={l.nome}>
-            <td style={{...td,paddingLeft:22+nivel(u)*14}}>{onVerJogador?<button onClick={()=>onVerJogador(l.nome)} style={{border:'none',background:'transparent',color:P,fontWeight:700,cursor:'pointer',padding:0,fontSize:13}}>{l.nome}</button>:<b>{l.nome}</b>}{l.status==='convidado'&&<span style={{color:C.gold,fontSize:11.5}}> · sem conta</span>}</td>
-            <td style={td}>{v(l.banca)}</td><td style={{...td,color:l.lucro>0?C.greenMid:l.lucro<0?C.red:C.ink}}>{v(l.lucro)}</td><td style={td}>{l.torneios??'—'}</td>
-            <td style={td}>{l.roi==null?'—':`${l.roi}%`}</td><td style={td}>{v(l.abi)}</td><td style={td}>{v(l.mu)}</td><td style={td}>{v(l.lucro_sacado)}</td>
-            <td style={{...td,color:dd!=null&&dd>7?C.red:C.ink,fontWeight:dd!=null&&dd>7?700:400}}>{l.ultimo_lancamento?`${dataBR(l.ultimo_lancamento)}${dd>7?` · parado há ${dd} dias`:''}`:(l.torneios==null?'—':'nunca lançou')}</td>
-          </tr>; })}
-        </React.Fragment>; })}</tbody>
-    </table></div>}
-  </Card>;
+        onApagar={async h=>{ await rodar('apagar_grade',{p_id:h.id},'Versão da grade apagada.'); }}/>; })()}
+    {pessoaEd&&<PessoaModal p={pessoaEd} unidades={d.unidades} podeAdmin={u=>pode('administrar',u)} nomeUnidade={nomeUnidade} onClose={()=>setPessoaEd(null)}
+      onLink={pessoaEd.status==='convidado'?()=>{ const p=pessoaEd; setPessoaEd(null); linkPessoal(p,p.unidades[0]); }:null}
+      onSalvar={async({nome,caps,unidades})=>{ const p=pessoaEd; setPessoaEd(null);
+        if(nome!==p.nome){ const r=await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nome}); if(!r) return; }
+        await rodar('definir_papel',{p_alvo:p.id,p_unidades:unidades,p_caps:caps},`${nome}: ${PAPEL_ROT[papelDe(caps)]||'papel'} salvo.`); }}
+      onRemover={()=>{ const p=pessoaEd; setPessoaEd(null); setPerg({label:p.joga?`Tirar ${p.nome} da gestão`:`Tirar ${p.nome} do time`,hint:p.joga?'Ele continua jogando na reta dele, só perde o papel na gestão. Digite TIRAR pra confirmar.':'Ele perde o acesso ao time. Digite TIRAR pra confirmar.',kind:'text',valor:'',
+        onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='TIRAR') await rodar('definir_papel',{p_alvo:p.id,p_unidades:null,p_caps:null},`${p.nome} saiu da gestão.`); }}); }}/>}
+    {estrutura&&<EstruturaModal unidades={d.unidades} podeAdmin={u=>pode('administrar',u)} onClose={()=>setEstrutura(false)}
+      onCriar={u=>setPerg({label:`Nova unidade dentro de ${u.nome}`,hint:'Ex.: Pandeiro, Reco-reco, Turma A.',kind:'text',valor:'',
+        onSave:async nome=>{ setPerg(null); if(nome) await rodar('criar_unidade',{p_mae:u.id,p_nome:nome,p_rotulo:null,p_ordem:0},`${nome} criada.`); }})}
+      onRenomear={u=>setPerg({label:`Renomear ${u.nome}`,hint:'Nome e, se quiser, o rótulo depois de ";" (ex.: Banjo;Reta 3).',kind:'text',valor:u.rotulo?`${u.nome};${u.rotulo}`:u.nome,
+        onSave:async t=>{ setPerg(null); const [n,r]=String(t||'').split(';'); if(n&&n.trim()) await rodar('renomear_unidade',{p_alvo:u.id,p_nome:n.trim(),p_rotulo:(r||'').trim()||null},'Unidade renomeada.'); }})}
+      onArquivar={u=>setPerg({label:`Arquivar ${u.nome}`,hint:'Só funciona com a unidade vazia. Digite ARQUIVAR pra confirmar.',kind:'text',valor:'',
+        onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='ARQUIVAR') await rodar('arquivar_unidade',{p_alvo:u.id},`${u.nome} arquivada.`); }})}/>}
+    {contratoAberto&&raiz&&<ContratoModal atual={contratoRaiz?.faixas} onClose={()=>setContratoAberto(false)}
+      onSalvar={async(faixas,ini)=>{ const r=await rodar('definir_contrato',{p_unidade:raiz.id,p_pessoa:null,p_faixas:faixas,p_inicio:ini||todayISO()},'Contrato salvo.'); if(r) setContratoAberto(false); }}/>}
+  </>;
+  const linkBox=link&&<LinkPronto titulo={link.titulo} url={link.url} texto={link.texto} onFechar={()=>setLink(null)}/>;
+
+  /* ---------- VISÃO GERAL ---------- */
+  if(secao==='g_visao'){
+    const vis=linhas.filter(l=>l.status!=='convidado');
+    const soma=(ls,k)=>{ const v=ls.map(l=>l[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+Number(b),0):null; };
+    const temPerf=vis.some(l=>l.torneios!=null);
+    const torn=soma(vis,'torneios'), inv=soma(vis,'investido'), luc=soma(vis,'lucro');
+    const abiPond=(()=>{ const ls=vis.filter(l=>l.abi!=null&&l.torneios); const n=ls.reduce((a,l)=>a+l.torneios,0); return n?ls.reduce((a,l)=>a+Number(l.abi)*l.torneios,0)/n:null; })();
+    const foraTot=Object.values(gradePorPessoa).reduce((a,g)=>a+g.fora,0), foraAlunos=Object.values(gradePorPessoa).filter(g=>g.fora>0).length;
+    const porReta=Object.values(vis.reduce((m,l)=>{ const k=l.unidade_id; (m[k]||(m[k]={u:U[k],ls:[]})).ls.push(l); return m; },{}))
+      .filter(x=>x.u).sort((a,b)=>String(a.u.caminho).localeCompare(String(b.u.caminho)));
+    const pend=[
+      ...(paraDecidir.filter(s=>s.status==='solicitado').length?[{n:paraDecidir.filter(s=>s.status==='solicitado').length,t:'Saques para aprovar',ir:'g_financeiro',tom:'warn'}]:[]),
+      ...(paraDecidir.filter(s=>s.status==='aprovado').length?[{n:paraDecidir.filter(s=>s.status==='aprovado').length,t:'Saques aprovados esperando o dinheiro chegar',ir:'g_financeiro',tom:'warn'}]:[]),
+      ...(reloadsParaDecidir.length?[{n:reloadsParaDecidir.length,t:'Reloads pedidos',ir:'g_financeiro',tom:'warn'}]:[]),
+      ...(paraConferir.length?[{n:paraConferir.length,t:'Planilhas para conferir',ir:'g_financeiro',tom:'warn'}]:[]),
+      ...(parados.length?[{n:parados.length,t:'Alunos sem lançar há mais de 7 dias',ir:'g_jogadores',sit:'parados',tom:'bad'}]:[]),
+      ...(convidados.length&&podeConvidar?[{n:convidados.length,t:'Convites ainda não aceitos',ir:'g_jogadores',sit:'convidados',tom:'plum'}]:[]),
+    ];
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header(raiz&&meus.some(a=>a.unidade_id===raiz.id)?'Visão geral':'Minhas retas',<>{periodoChips}{btnConvidar()}</>)}
+      {avisoBox}{linkBox}
+      {resumo==null?<Card style={{padding:30,display:'grid',placeItems:'center'}}><div className="spin"/></Card>:<>
+      <div data-kpis style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12}}>
+        <Kpi rot="Alunos ativos" val={vis.length} sub={parados.length?`${parados.length} sem lançar há 7+ dias`:'todos lançando'}/>
+        {temPerf&&<Kpi rot="Torneios" val={(torn||0).toLocaleString('pt-BR')} sub={abiPond!=null?`ABI médio ${fmt(abiPond)}`:null}/>}
+        {temPerf&&<Kpi rot="Resultado" val={luc==null?'—':fmtSinal(luc)} tom={luc>0?'ok':luc<0?'bad':null} sub={inv>0?`ROI ${pctFmt(luc/inv*100)}`:null}/>}
+        <Kpi data-kpi-fora rot="Fora da grade · 7 dias" val={`${foraTot} torneio${foraTot!==1?'s':''}`} tom={foraTot?'bad':'ok'} sub={foraTot?`de ${foraAlunos} aluno${foraAlunos!==1?'s':''} · ver quais`:'tudo dentro'} onClick={foraTot?()=>onIr('g_grades'):null}/>
+      </div>
+      <Card style={{padding:20}}>
+        <h3 style={tituloS}>Pendências</h3>
+        {pend.length===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada pendente agora.</div>}
+        {pend.length>0&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:10}}>
+          {pend.map((p,i)=><button key={i} data-pendencia={p.t} onClick={()=>{ if(p.sit) setFiltro(f=>({...f,sit:p.sit,reta:null})); onIr(p.ir); }} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:14,border:`1px solid ${C.border}`,background:C.warm,cursor:'pointer',textAlign:'left',font:'inherit',color:C.ink}}>
+            <Tag tom={p.tom}>{p.n}</Tag><span style={{flex:1,fontSize:14,lineHeight:1.35}}>{p.t}</span><span aria-hidden="true" style={{color:P,fontWeight:800}}>›</span></button>)}
+        </div>}
+      </Card>
+      <div>
+        <Card style={{padding:20,minWidth:0}}>
+          <h3 style={tituloS}>Por reta</h3>
+          {!porReta.length&&<div style={{fontSize:14,color:C.inkSoft}}>Nenhum aluno com vínculo ainda. Use <b>+ Convidar</b> pra chamar os jogadores.</div>}
+          {porReta.length>0&&<div style={{overflowX:'auto'}}><table data-por-reta style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Reta','Alunos',...(temPerf?['Torneios','ABI','ROI','Resultado']:[]),'Fora da grade'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+            <tbody>{porReta.map(({u,ls})=>{ const i_=soma(ls,'investido'), l_=soma(ls,'lucro'), n_=soma(ls,'torneios');
+              const ab=(()=>{ const x=ls.filter(l=>l.abi!=null&&l.torneios); const n=x.reduce((a,l)=>a+l.torneios,0); return n?x.reduce((a,l)=>a+Number(l.abi)*l.torneios,0)/n:null; })();
+              const fora=ls.reduce((a,l)=>a+(gradePorPessoa[l.pessoa_id]?.fora||0),0); const g=gradeEf(u.id);
+              return <tr key={u.id} data-reta={u.nome} onClick={()=>{ setFiltro({reta:u.id,sit:null,busca:''}); onIr('g_jogadores'); }} style={{cursor:'pointer'}}>
+                <td style={tdS}><b>{u.nome}</b>{u.rotulo&&<span style={{color:C.inkSoft}}> · {u.rotulo}</span>} {g&&g.simulada&&<Tag tom="warn">grade simulada</Tag>}</td>
+                <td style={tdS}>{ls.length}</td>
+                {temPerf&&<><td style={tdS}>{n_??'—'}</td><td style={tdS}>{ab!=null?fmt(ab):'—'}</td>
+                  <td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{i_>0?pctFmt(l_/i_*100):'—'}</td><td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{l_==null?'—':fmtSinal(l_)}</td></>}
+                <td style={{...tdS,color:fora?C.red:C.ink,fontWeight:fora?700:400}}>{fora}</td></tr>; })}
+              {porReta.length>1&&<tr><td style={{...tdS,fontWeight:800}}>Total</td><td style={{...tdS,fontWeight:800}}>{vis.length}</td>
+                {temPerf&&<><td style={{...tdS,fontWeight:800}}>{torn??'—'}</td><td style={{...tdS,fontWeight:800}}>{abiPond!=null?fmt(abiPond):'—'}</td>
+                  <td style={{...tdS,fontWeight:800}}>{inv>0?pctFmt(luc/inv*100):'—'}</td><td style={{...tdS,fontWeight:800}}>{luc==null?'—':fmtSinal(luc)}</td></>}
+                <td style={{...tdS,fontWeight:800}}>{foraTot}</td></tr>}
+            </tbody></table></div>}
+          <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Clique na reta pra ver os jogadores dela. ROI do bloco é pelo total investido. Fora da grade: últimos 7 dias.</div>
+        </Card>
+      </div></>}
+      {modais}
+    </div>;
+  }
+
+  /* ---------- JOGADORES ---------- */
+  if(secao==='g_jogadores'){
+    const retasComJogador=[...new Set(linhas.map(l=>l.unidade_id))].map(id=>U[id]).filter(Boolean).sort((a,b)=>String(a.caminho).localeCompare(String(b.caminho)));
+    const busca=filtro.busca.trim().toLowerCase();
+    const lista=linhas.filter(l=>(!filtro.reta||String(l.caminho||U[l.unidade_id]?.caminho||'').startsWith(U[filtro.reta]?.caminho||'§'))
+      &&(!busca||l.nome.toLowerCase().includes(busca))
+      &&(!filtro.sit||(filtro.sit==='fora'&&gradePorPessoa[l.pessoa_id]?.fora>0)||(filtro.sit==='mk'&&mkDe(l.banca,l.mu)<0)
+         ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='convidados'&&l.status==='convidado')));
+    const chave={nome:l=>l.nome.toLowerCase(),torneios:l=>l.torneios??-1,lucro:l=>l.lucro??-1e9,banca:l=>l.banca??-1e9,mk:l=>mkDe(l.banca,l.mu)??-1e9,
+      grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||''}[ord.k]||(l=>l.nome);
+    lista.sort((a,b)=>{ const x=chave(a), y=chave(b); return (x<y?-1:x>y?1:0)*ord.dir; });
+    const temDin=linhas.some(l=>l.banca!=null), temPerf=linhas.some(l=>l.torneios!=null);
+    const col=(k,r)=><th key={k} style={thS}><button onClick={()=>setOrd(o=>({k,dir:o.k===k?-o.dir:(k==='nome'?1:-1)}))} style={{border:'none',background:'transparent',padding:0,font:'inherit',color:ord.k===k?P:C.inkSoft,cursor:'pointer',fontWeight:700,textTransform:'uppercase',fontSize:11,letterSpacing:'.04em'}}>{r}{ord.k===k?(ord.dir>0?' ↑':' ↓'):''}</button></th>;
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
+      {header(<>Jogadores <span style={{fontSize:15,color:C.inkSoft,fontWeight:500}}>{linhas.filter(l=>l.status==='ativo').length} ativos</span></>,<>
+        <input aria-label="Buscar jogador" data-busca value={filtro.busca} placeholder="Buscar jogador" onChange={e=>setFiltro(f=>({...f,busca:e.target.value}))} style={{...inputStyle,width:220,padding:'10px 12px',fontSize:14}}/>
+        {btnConvidar({quem:'jogador',unidade:filtro.reta&&U[filtro.reta]?.mae_id?filtro.reta:undefined})}</>)}
+      {avisoBox}{linkBox}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+        <Chip on={!filtro.reta} onClick={()=>setFiltro(f=>({...f,reta:null}))}>Todas as retas</Chip>
+        {retasComJogador.map(u=><Chip key={u.id} data-filtro-reta={u.nome} on={filtro.reta===u.id} onClick={()=>setFiltro(f=>({...f,reta:f.reta===u.id?null:u.id}))}>{u.nome}</Chip>)}
+        <span style={{width:1,height:22,background:C.border,margin:'0 4px'}}/>
+        {[['fora','Fora da grade'],...(temDin?[['mk','Em MK']]:[]),['parados','Sem lançar'],['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
+        {periodoChips}
+      </div>
+      <Card style={{padding:'6px 10px'}}>
+        {resumo==null&&<div style={{padding:30,display:'grid',placeItems:'center'}}><div className="spin"/></div>}
+        {resumo!=null&&!lista.length&&<Empty>{linhas.length?'Ninguém com esse filtro.':'Nenhum jogador no time ainda. Use + Convidar.'}</Empty>}
+        {lista.length>0&&<div style={{overflowX:'auto'}}><table data-jogadores style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{col('nome','Jogador')}{temPerf&&col('torneios','Torneios')}{temPerf&&col('lucro','Resultado')}
+            {temDin&&col('banca','Banca')}{temDin&&col('mk','Make-up')}{col('grade','Grade 7 dias')}{col('ultimo','Último lançamento')}<th style={thS}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
+          <tbody>{lista.map(l=>{ const p=d.pessoas.find(x=>x.id===l.pessoa_id)||{id:l.pessoa_id,nome:l.nome}; const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado';
+            const acoes=[
+              ...(l.status==='ativo'&&onVerJogador?[['Ver painel do aluno',()=>onVerJogador(l.nome)]]:[]),
+              ...(pode('promover',l.unidade_id)&&l.status==='ativo'?[['Mover de reta (promover)',()=>moverJogador(p,l.unidade_id)]]:[]),
+              ...(pode('aprovar_saques',l.unidade_id)&&l.status==='ativo'?[['Capital mandado (MU)',()=>capital(p)]]:[]),
+              ...(l.status==='convidado'&&pode('gerir_pessoas',l.unidade_id)?[['Link pessoal',()=>linkPessoal(p,l.unidade_id)]]:[]),
+              ...((pode('gerir_pessoas',l.unidade_id)||souAdmin)?[['Renomear',()=>renomear(p)]]:[]),
+              ...(pode('gerir_pessoas',l.unidade_id)&&p.user_id!==uid?[['Registrar saída',()=>saida(p),true]]:[]),
+            ];
+            return <tr key={l.pessoa_id} data-jogador={l.nome}>
+              <td style={tdS}>{l.status==='ativo'&&onVerJogador?<button onClick={()=>onVerJogador(l.nome)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
+                {l.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}<div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></td>
+              {temPerf&&<td style={tdS}>{conv?'—':(l.torneios??'—')}{!conv&&l.abi!=null&&l.torneios?<div style={{fontSize:12,color:C.inkSoft}}>ABI {fmt(l.abi)}</div>:null}</td>}
+              {temPerf&&<td style={{...tdS,color:l.lucro>0?C.greenMid:l.lucro<0?C.red:C.ink}}>{conv||l.lucro==null||!l.torneios?'—':fmtSinal(l.lucro)}
+                {!conv&&l.roi!=null&&l.torneios?<div style={{fontSize:12,color:l.roi<0?C.red:C.inkSoft}}>ROI {pctFmt(l.roi)}</div>:null}</td>}
+              {temDin&&<td style={tdS}>{conv||l.banca==null?'—':fmt(l.banca)}{!conv&&l.mu!=null&&<div style={{fontSize:12,color:C.inkSoft}}>MU {fmt(l.mu)}</div>}</td>}
+              {temDin&&<td style={tdS}>{conv?<span style={{color:C.inkSoft}}>—</span>:<MkSelo v={mkDe(l.banca,l.mu)}/>}</td>}
+              <td style={tdS}>{!g?<span style={{color:C.inkSoft}}>—</span>:g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</td>
+              <td style={tdS}>{l.ultimo_lancamento?dLabel(l.ultimo_lancamento):(conv?'—':'nunca lançou')}{dd!=null&&dd>7&&<div data-parado style={{fontSize:12,color:C.red,fontWeight:700}}>parado há {dd} dias</div>}</td>
+              <td style={{...tdS,position:'relative'}}>{acoes.length>0&&<button aria-label={`Ações de ${l.nome}`} aria-expanded={menuDe===l.pessoa_id} data-acoes={l.nome} onClick={()=>setMenuDe(m=>m===l.pessoa_id?null:l.pessoa_id)}
+                  style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${menuDe===l.pessoa_id?P:C.border}`,background:menuDe===l.pessoa_id?C.plumSoft:C.surface,color:menuDe===l.pessoa_id?P:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>}
+                {menuDe===l.pessoa_id&&<div role="menu" style={{position:'absolute',right:8,top:48,zIndex:5,width:230,background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,boxShadow:'0 16px 40px -18px rgba(25,35,29,.45)',padding:6,whiteSpace:'normal'}}>
+                  {acoes.map(([r,fn,perigo])=><button key={r} role="menuitem" onClick={()=>{ setMenuDe(null); fn(); }} style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',borderRadius:10,border:'none',background:'transparent',color:perigo?C.red:C.ink,fontWeight:600,fontSize:13.5,cursor:'pointer'}}>{r}</button>)}
+                </div>}</td>
+            </tr>; })}</tbody></table></div>}
+      </Card>
+      <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5}}>Make-up = banca − MU: <b>MK</b> com o valor quando a banca está abaixo do capital do time; positivo é profit. Resultado e ROI são do período; banca e make-up são de agora.</div>
+      {modais}
+    </div>;
+  }
+
+  /* ---------- GRADES ---------- */
+  if(secao==='g_grades'){
+    const nivel=u=>String(u.caminho).split('/').filter(Boolean).length-1;
+    const lista=d.unidades.filter(u=>u.mae_id);
+    const comGrade=lista.find(u=>d.grades.some(g=>g.unidade_id===u.id));
+    const sel=U[gradeSel]||comGrade||lista.find(u=>!d.unidades.some(x=>x.mae_id===u.id))||lista[0];
+    const g=sel?gradeEf(sel.id):null; const propria=g&&g.unidade_id===sel.id;
+    const hist=sel?d.grades.filter(x=>x.unidade_id===sel.id).sort((a,b)=>String(b.vigente_desde).localeCompare(String(a.vigente_desde))):[];
+    const conf=sel?conferidos.filter(c=>{ const uid_=unidadeDoTorneio(c.t); return uid_&&U[uid_]&&String(U[uid_].caminho).startsWith(sel.caminho); })
+      .sort((a,b)=>(a.sg.status==='fora'?0:1)-(b.sg.status==='fora'?0:1)||String(b.t.entry_date).localeCompare(String(a.t.entry_date))):[];
+    const podeVerDesempenho=podeAlgum('ver_desempenho');
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
+      {header('Grades')}
+      {avisoBox}
+      {!lista.length&&<Card style={{padding:20}}><Empty>Crie as retas em Equipe e convites → Editar estrutura.</Empty></Card>}
+      {lista.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:16,alignItems:'flex-start'}}>
+        <div role="list" aria-label="Retas" style={{flex:'0 1 250px',display:'flex',flexDirection:'column',gap:8,minWidth:200}}>
+          {lista.map(u=>{ const gu=gradeEf(u.id), pr=gu&&gu.unidade_id===u.id, on=sel&&sel.id===u.id;
+            return <button key={u.id} role="listitem" data-grade-reta={u.nome} onClick={()=>{ setGradeSel(u.id); setVersoes(false); }} style={{textAlign:'left',padding:'12px 14px',marginLeft:Math.max(0,nivel(u)-1)*12,borderRadius:14,border:`1.5px solid ${on?P:C.border}`,background:on?C.plumSoft:C.surface,cursor:'pointer',font:'inherit',color:C.ink}}>
+              <div style={{fontWeight:800,fontSize:14.5}}>{u.nome}{u.rotulo&&<span style={{fontWeight:600,color:C.inkSoft,fontSize:12.5}}> · {u.rotulo}</span>}</div>
+              <div style={{marginTop:5,display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}>
+                {pr?<><Tag tom={gu.simulada?'warn':'ok'}>{gu.simulada?'simulada':'oficial'}</Tag><span style={{fontSize:12,color:C.inkSoft}}>desde {dataBR(gu.vigente_desde)}</span></>
+                  :gu?<span style={{fontSize:12,color:C.inkSoft}}>usa a da {U[gu.unidade_id]?.nome}</span>:<span style={{fontSize:12,color:C.inkSoft}}>sem grade</span>}
+              </div></button>; })}
+          <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5,padding:'2px 4px'}}>Reta sem grade própria usa a de cima. Sem nenhuma, vale o teto de ABI das Regras do time.</div>
+        </div>
+        {sel&&<div style={{flex:'1 1 540px',minWidth:0,display:'flex',flexDirection:'column',gap:14}}>
+          <Card style={{padding:20}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <h3 style={{...tituloS,margin:0,flex:1}}>Grade da {sel.nome} {g&&(propria?<Tag tom={g.simulada?'warn':'ok'}>{g.simulada?'simulada':'oficial'}</Tag>:<Tag>da {U[g.unidade_id]?.nome}</Tag>)}</h3>
+              {hist.length>0&&<button style={btnS} onClick={()=>setVersoes(v=>!v)}>Versões ({hist.length})</button>}
+              {pode('configurar_regras',sel.id)&&<button data-editar-grade style={btnP} onClick={()=>setGradeAberta(sel.id)}>{propria?'Editar grade':'Criar grade'}</button>}
+            </div>
+            {g&&g.simulada&&<div data-grade-simulada style={{marginTop:12,background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:600,lineHeight:1.5}}>Simulada: montada sem a planilha oficial. Os alunos desta reta veem este aviso até alguém salvar a grade real.</div>}
+            {g&&g.observacao&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>{g.observacao}</div>}
+            {versoes&&<div style={{marginTop:10,borderTop:`1px solid ${C.border}`}}>{hist.map(h=><div key={h.id} style={{display:'flex',gap:8,alignItems:'center',padding:'8px 0',borderBottom:`1px solid ${C.border}`,fontSize:13}}>
+              <span style={{flex:1}}>Desde {dataBR(h.vigente_desde)}{h.simulada?' · simulada':''}{h.observacao?` · ${h.observacao}`:''}</span>
+              {pode('configurar_regras',sel.id)&&<button style={{...btnS,color:C.red}} onClick={()=>rodar('apagar_grade',{p_id:h.id},'Versão da grade apagada.')}>Apagar</button>}</div>)}</div>}
+            <div style={{marginTop:12}}>{g?<GradeTabela celulas={g.celulas||[]}/>:<Empty>Sem grade. Os torneios desta reta são conferidos só pelo teto de ABI das Regras do time.</Empty>}</div>
+            {g&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(g.vigente_desde)}. Escrita como na planilha; o app lê cada célula e confere cada torneio.</div>}
+          </Card>
+          <Card style={{padding:20}}>
+            <h3 style={tituloS}>Conferência dos últimos 7 dias · {sel.nome}</h3>
+            {!podeVerDesempenho?<div style={{fontSize:13.5,color:C.inkSoft}}>Seu papel não vê os torneios dos alunos.</div>
+              :!conf.length?<div data-conferencia-vazia style={{fontSize:13.5,color:C.inkSoft}}>Nenhum torneio fora ou em atenção nos últimos 7 dias.</div>
+              :<div style={{overflowX:'auto'}}><table data-conferencia style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead><tr>{['Aluno','Dia','Torneio','Buy-in','Status','Motivo'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+                <tbody>{conf.slice(0,60).map(({t,sg,pessoa},i)=><tr key={t.id||i}>
+                  <td style={{...tdS,fontWeight:700}}>{nomeDe(pessoa)}</td><td style={tdS}>{dLabel(t.entry_date)}</td>
+                  <td style={{...tdS,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'}</td><td style={tdS}>{fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}</td>
+                  <td style={tdS}><Tag tom={sg.status==='fora'?'bad':'warn'}>{sg.status==='fora'?'fora':'atenção'}</Tag></td>
+                  <td style={{...tdS,whiteSpace:'normal',minWidth:220}}>{sg.motivo}{sg.simulada?' · grade simulada':''}</td></tr>)}</tbody></table></div>}
+          </Card>
+        </div>}
+      </div>}
+      {modais}
+    </div>;
+  }
+
+  /* ---------- FINANCEIRO ---------- */
+  if(secao==='g_financeiro'){
+    const din=linhas.filter(l=>l.banca!=null&&l.status!=='convidado');
+    const soma=k=>din.reduce((a,l)=>a+Number(l[k]||0),0);
+    const aReceber=paraDecidir.filter(s=>s.status==='aprovado').reduce((a,s)=>a+Number(s.total_time||0),0);
+    const historico=d.saques.filter(s=>['pago','recusado'].includes(s.status)&&pode('ver_financeiro',s.unidade_id)).slice(0,10);
+    const itens=paraDecidir.length+reloadsParaDecidir.length+paraConferir.length;
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header('Financeiro')}
+      {avisoBox}
+      {din.length>0&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12}}>
+        <Kpi rot="Banca somada" val={fmt(soma('banca'))} sub={`${din.length} aluno${din.length!==1?'s':''}, todas as salas`}/>
+        <Kpi rot="Capital do time (MU)" val={fmt(soma('mu'))}/>
+        <Kpi rot="Profit (banca − MU)" val={fmtSinal(soma('banca')-soma('mu'))} tom={soma('banca')-soma('mu')>=0?'ok':'bad'}/>
+        <Kpi rot="A receber" val={fmt(aReceber)} sub="saques aprovados, dinheiro ainda não chegou"/>
+      </div>}
+      <Card style={{padding:20}}>
+        <h3 style={tituloS}>Para resolver {itens>0&&<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{itens}</span>}</h3>
+        {itens===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada para resolver agora.</div>}
+        {paraDecidir.map(s=><div key={s.id} data-saque={nomeDe(s.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="plum">saque</Tag><b>{nomeDe(s.pessoa_id)}</b><span style={{color:C.inkSoft}}>· {dataBR(s.solicitado_em)} ·</span><span style={{color:C.gold,fontWeight:700}}>{SAQUE_ROTULO[s.status]}</span></div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca {fmt(s.banca)} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b>{s.observacao?` · "${s.observacao}"`:''}</div>
+          <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+            {s.status==='solicitado'&&<button style={btnP} onClick={()=>rodar('decidir_saque',{p_id:s.id,p_aprovar:true,p_motivo:null},'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')}>Aprovar</button>}
+            {s.status==='solicitado'&&<button style={{...btnS,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_saque',{p_id:s.id,p_aprovar:false,p_motivo:m},'Saque recusado.'); }})}>Recusar</button>}
+            {s.status==='aprovado'&&<button style={btnS} onClick={()=>setPerg({label:'Quanto o time recebeu?',hint:`Esperado: ${fmt(s.total_time)}. Some tudo que chegou (todas as carteiras).`,kind:'money',valor:s.total_time,
+              onSave:async v=>{ setPerg(null); const r=await rodar('confirmar_recebimento',{p_id:s.id,p_recebido:v}); if(r&&typeof r==='object') setAviso({erro:Number(r.diferenca)!==0,texto:Number(r.diferenca)===0?'Recebimento confirmado, sem diferença.':`Recebimento confirmado com diferença de ${fmt(r.diferenca)} (esperado ${fmt(r.total_time)}, recebido ${fmt(r.recebido)}).`}); }})}>Confirmar recebimento</button>}
+          </div></div>)}
+        {reloadsParaDecidir.map(r=><div key={r.id} data-reload={nomeDe(r.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="warn">reload</Tag><b>{nomeDe(r.pessoa_id)}</b><span>{fmt(r.valor)}{r.sala?` · ${r.sala}`:''}</span><span style={{color:C.gold,fontWeight:700}}>· {RELOAD_ROTULO[r.status]}</span></div>
+          <div style={{color:C.inkSoft,marginTop:4}}>{dataBR(r.solicitado_em)}{r.motivo?` · "${r.motivo}"`:''}</div>
+          <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+            {r.status==='solicitado'&&<button style={btnP} onClick={()=>rodar('decidir_reload',{p_id:r.id,p_aprovar:true,p_motivo:null},'Reload aprovado. Quando mandar o dinheiro, confirme o envio.')}>Aprovar</button>}
+            {r.status==='solicitado'&&<button style={{...btnS,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_reload',{p_id:r.id,p_aprovar:false,p_motivo:m},'Reload recusado.'); }})}>Recusar</button>}
+            {r.status==='aprovado'&&<button style={btnS} onClick={()=>setPerg({label:'Quanto foi enviado?',hint:`Pedido: ${fmt(r.valor)}. O valor enviado entra no MU de ${nomeDe(r.pessoa_id)}.`,kind:'money',valor:r.valor,
+              onSave:async v=>{ setPerg(null); if(v>0) await rodar('confirmar_envio_reload',{p_id:r.id,p_valor:v},`Reload de ${fmt(v)} registrado no MU de ${nomeDe(r.pessoa_id)}.`); }})}>Confirmar envio</button>}
+          </div></div>)}
+        {paraConferir.map(a=>{ const pl=a.planilha||{}; return <div key={a.id} data-conferir={nomeDe(a.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="ok">planilha</Tag><b>{nomeDe(a.pessoa_id)}</b><span style={{color:C.inkSoft}}>· enviada {dataBR(a.enviado_em)}{pl.atualizado_em?` · planilha de ${dataBR(pl.atualizado_em)}`:''}</span></div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
+          {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
+          <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+            <button style={btnP} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
+            <button style={btnS} onClick={()=>setPerg({label:`MakeUp de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU (capital do time com o jogador).',kind:'money',valor:a.mu,
+              onSave:mu=>setPerg({label:`Cashout de ${nomeDe(a.pessoa_id)}`,hint:'Lucro que ele já sacou no time (conta pra faixa do contrato).',kind:'money',valor:a.cashout,
+                onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
+          </div></div>; })}
+      </Card>
+      {din.length>0&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Dinheiro por jogador</h3>
+        <div style={{overflowX:'auto'}}><table data-dinheiro style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lucro já sacado'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          <tbody>{[...din].sort((a,b)=>(mkDe(a.banca,a.mu)??0)-(mkDe(b.banca,b.mu)??0)).map(l=><tr key={l.pessoa_id} data-dinheiro-de={l.nome}>
+            <td style={{...tdS,fontWeight:700}}>{l.nome}</td><td style={tdS}>{U[l.unidade_id]?.nome||l.unidade}</td><td style={tdS}>{fmt(l.banca)}</td><td style={tdS}>{l.mu==null?'—':fmt(l.mu)}</td>
+            <td style={tdS}><MkSelo v={mkDe(l.banca,l.mu)}/></td><td style={tdS}>{l.lucro_sacado==null?'—':fmt(l.lucro_sacado)}</td></tr>)}</tbody></table></div>
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Contrato do time: {faixasTexto(contratoRaiz?.faixas)}{souAdmin?' · muda em Regras do time':''}</div>
+      </Card>}
+      {historico.length>0&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Últimos saques</h3>
+        {historico.map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
+          <span style={{flex:1,minWidth:200}}><b>{nomeDe(s.pessoa_id)}</b> · {dataBR(s.pago_em||s.solicitado_em)} · time {fmt(s.recebido??s.total_time)} · jogador {fmt(s.parte_jogador)}</span>
+          <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:C.red}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}</span></div>)}
+      </Card>}
+      {modais}
+    </div>;
+  }
+
+  /* ---------- EQUIPE E CONVITES ---------- */
+  if(secao==='g_equipe'){
+    const nivel=u=>String(u.caminho).split('/').filter(Boolean).length-1;
+    const alunosEm=u=>linhas.filter(l=>l.status==='ativo'&&String(l.caminho||'').startsWith(u.caminho)).length;
+    const porPessoa={}; d.acessos.forEach(a=>{ const x=porPessoa[a.pessoa_id]||(porPessoa[a.pessoa_id]={caps:new Set(),unidades:[]}); a.capacidades.forEach(c=>x.caps.add(c)); x.unidades.push(a.unidade_id); });
+    const gestao=Object.entries(porPessoa).map(([pid,x])=>{ const p=d.pessoas.find(y=>y.id===pid); if(!p||p.status==='saiu') return null; const caps=[...x.caps];
+      const v=ativo(pid); return {...p,caps,papel:papelDe(caps),unidades:x.unidades,joga:v?v.unidade_id:null}; }).filter(Boolean).sort((a,b)=>a.nome.localeCompare(b.nome));
+    const agora=Date.now();
+    const convAtivos=d.convites.filter(c=>!c.revogado&&Date.parse(c.expira_em)>agora&&(c.usos_max==null||c.usos<c.usos_max)).sort((a,b)=>String(b.criado_em).localeCompare(String(a.criado_em)));
+    const tipoConvite=c=>{ if(!c.pessoa_id) return 'Link aberto · jogador'; const g=porPessoa[c.pessoa_id]; return `Link pessoal · ${g?PAPEL_ROT[papelDe([...g.caps])]?.toLowerCase()||'gestão':'jogador'}`; };
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header('Equipe e convites',btnConvidar())}
+      {avisoBox}{linkBox}
+      <div style={{display:'flex',flexWrap:'wrap',gap:16,alignItems:'flex-start'}}>
+        <Card style={{padding:20,flex:'1 1 280px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}><h3 style={{...tituloS,margin:0,flex:1}}>Estrutura</h3>
+            {podeAlgum('administrar')&&<button data-editar-estrutura style={btnS} onClick={()=>setEstrutura(true)}>Editar</button>}</div>
+          <div data-estrutura style={{marginTop:12,display:'flex',flexDirection:'column',gap:7}}>
+            {d.unidades.map(u=><div key={u.id} style={{paddingLeft:nivel(u)*16,fontSize:14}}><span style={{fontWeight:nivel(u)<2?800:600}}>{u.nome}</span>
+              {u.rotulo&&<span style={{color:C.inkSoft,fontSize:12.5}}> · {u.rotulo}</span>}<span style={{color:C.inkSoft,fontSize:12.5}}> · {alunosEm(u)} aluno{alunosEm(u)!==1?'s':''}</span></div>)}
+          </div>
+        </Card>
+        {souAdmin&&<Card style={{padding:20,flex:'2 1 480px',minWidth:0}}>
+          <h3 style={tituloS}>Pessoas da gestão</h3>
+          <div style={{overflowX:'auto'}}><table data-gestao style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Nome','Papel','Cuida de','Também joga',''].map((h,i)=><th key={i} style={thS}>{h}</th>)}</tr></thead>
+            <tbody>{gestao.map(p=><tr key={p.id} data-gestor={p.nome}>
+              <td style={{...tdS,fontWeight:700}}>{p.nome}{p.user_id===uid&&<span style={{color:C.inkSoft,fontWeight:500}}> (você)</span>}{p.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}</td>
+              <td style={tdS}><Tag tom={p.papel==='admin'?'plum':p.papel==='financeiro'?'warn':'ok'}>{PAPEL_ROT[p.papel]||'—'}</Tag></td>
+              <td style={{...tdS,whiteSpace:'normal'}}>{p.unidades.map(id=>U[id]?(U[id].mae_id?U[id].nome:'time inteiro'):null).filter(Boolean).join(', ')}</td>
+              <td style={tdS}>{p.joga?U[p.joga]?.nome:<span style={{color:C.inkSoft}}>não</span>}</td>
+              <td style={{...tdS,display:'flex',gap:6}}>
+                <button data-editar-gestor={p.nome} style={btnS} onClick={()=>setPessoaEd(p)}>Editar</button></td></tr>)}</tbody></table></div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:10,marginTop:12}}>
+            {['professor','financeiro','admin'].map(k=><div key={k} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',fontSize:12.5,lineHeight:1.5}}><b>{PAPEL_ROT[k]}</b><br/>{PAPEL_DICA[k]}.</div>)}
+          </div>
+        </Card>}
+      </div>
+      {podeConvidar&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Convites ativos</h3>
+        {!convAtivos.length&&<div style={{fontSize:14,color:C.inkSoft}}>Nenhum convite aberto.</div>}
+        {convAtivos.length>0&&<div style={{overflowX:'auto'}}><table data-convites style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Para','Tipo','Onde','Usos','Vence',''].map((h,i)=><th key={i} style={thS}>{h}</th>)}</tr></thead>
+          <tbody>{convAtivos.map(c=><tr key={c.id}>
+            <td style={{...tdS,fontWeight:700}}>{c.pessoa_id?nomeDe(c.pessoa_id):'Qualquer jogador'}</td><td style={tdS}>{tipoConvite(c)}</td>
+            <td style={tdS}>{U[c.unidade_id]?.nome||'—'}</td><td style={tdS}>{c.usos}{c.usos_max?` de ${c.usos_max}`:''}</td><td style={tdS}>{dataBR(c.expira_em)}</td>
+            <td style={tdS}>{pode('gerir_pessoas',c.unidade_id)&&<button style={{...btnS,color:C.red}} onClick={()=>rodar('revogar_convite',{p_id:c.id},'Convite cancelado.')}>Cancelar</button>}</td></tr>)}</tbody></table></div>}
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>O link só aparece na hora de gerar. Perdeu? Cancele e gere outro.</div>
+      </Card>}
+      {modais}
+    </div>;
+  }
+
+  /* ---------- REGRAS DO TIME (contrato e promoção; as regras de jogo ficam logo abaixo, nos Ajustes do time) ---------- */
+  if(secao==='g_regras'){
+    const mkBloq=raiz?regraEf(raiz.id,'bloquear_promocao_com_mk')===true:false;
+    const podeRegras=raiz&&pode('configurar_regras',raiz.id);
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header('Regras do time')}
+      {avisoBox}
+      <Card style={{padding:20}}>
+        <h3 style={tituloS}>Contrato</h3>
+        <div data-contrato style={{fontSize:14,marginBottom:12,lineHeight:1.5}}>{faixasTexto(contratoRaiz?.faixas)}</div>
+        {podeRegras&&<button data-editar-contrato style={btnS} onClick={()=>setContratoAberto(true)}>{contratoRaiz?'Mudar contrato':'Definir contrato'}</button>}
+      </Card>
+      <Card style={{padding:20}}>
+        <h3 style={tituloS}>Promoção</h3>
+        <label style={{display:'flex',gap:10,alignItems:'center',fontSize:14,fontWeight:600,cursor:podeRegras?'pointer':'default'}}>
+          <input type="checkbox" data-regra-mk-time disabled={!podeRegras} checked={mkBloq} onChange={e=>rodar('definir_regra',{p_unidade:raiz.id,p_chave:'bloquear_promocao_com_mk',p_valor:e.target.checked,p_desde:null},e.target.checked?'Promoção com MK bloqueada no servidor.':'Promoção com MK liberada (a tela só avisa).')}/>
+          Não promover quem está em MK</label>
+        <div style={{fontSize:12.5,color:C.inkSoft,marginTop:6,lineHeight:1.5}}>{mkBloq?'Ligado: o servidor recusa promover jogador com make-up negativo.':'Desligado: dá pra promover, a tela só avisa que o jogador está em MK.'}</div>
+      </Card>
+      <div style={{fontSize:12.5,color:C.inkSoft}}>A grade de cada reta fica na aba <button onClick={()=>onIr('g_grades')} style={{border:'none',background:'transparent',color:P,fontWeight:700,padding:0,cursor:'pointer',font:'inherit'}}>Grades</button>.</div>
+      {modais}
+    </div>;
+  }
+  return null;
 }
 function ReloadModal({onClose,onPedir}){
   const [f,setF]=useState({valor:'',sala:'',motivo:''});
@@ -2612,10 +3091,10 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
           <input type="checkbox" data-grade-simulada-check checked={simulada} onChange={e=>setSimulada(e.target.checked)}/> Grade simulada (montada sem a planilha oficial; os jogadores veem o aviso)</label>
         <button disabled={busy||!prontas.length} onClick={async()=>{ setBusy(true); await onSalvar({desde,simulada,celulas:prontas,obs}); setBusy(false); }}
           style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:busy||!prontas.length?.5:1}}>Salvar grade de {u.nome}</button>
-        <div style={{borderTop:`1px solid ${C.border}`,paddingTop:12}}>
+        {onRegra&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:12}}>
           <label style={{display:'flex',gap:8,alignItems:'center',fontSize:13.5,fontWeight:600,cursor:'pointer'}}>
             <input type="checkbox" data-regra-mk checked={!!regraMk} onChange={e=>onRegra(e.target.checked)}/> Não promover quem está em MK (vale pra {u.nome} e o que está abaixo)</label>
-        </div>
+        </div>}
       </>}
       {historico.length>0&&<div style={{borderTop:`1px solid ${C.border}`,paddingTop:10}}>
         <div style={labelStyle}>Versões desta unidade</div>
@@ -2701,6 +3180,16 @@ function Dashboard({session,profile}){
   // modo time: quem o usuário pode ver e de quem são os dados na tela
   const [timeGente,setTimeGente]=useState({jogadores:[],eu:null,podeConfigurar:false,saquesPagos:[]});
   const [jogadorSel,setJogadorSel]=useState(null);
+  // gestão x jogo: quem tem papel na gestão E joga escolhe o modo (lembrado no aparelho)
+  const [modoSel,setModoSel]=useState(()=>{ try{ return localStorage.getItem('gb_modo')||'gestao'; }catch(e){ return 'gestao'; } });
+  const [alunoAberto,setAlunoAberto]=useState(null);   // gestor olhando o painel de um aluno (só leitura)
+  const [sitSel,setSitSel]=useState(null);             // MU do jogador na tela (make-up no Início)
+  const gestaoAtiva=modoTime&&!!timeGente.temGestao&&!alunoAberto&&(modoSel!=='jogo'||!timeGente.joga);
+  const podeTrocarModo=modoTime&&!!timeGente.temGestao&&!!timeGente.joga&&!alunoAberto;
+  const somenteLeitura=modoTime&&!!alunoAberto;
+  const trocarModo=m=>{ setModoSel(m); try{ localStorage.setItem('gb_modo',m); }catch(e){} setView(m==='gestao'?'g_visao':'painel'); };
+  const abrirAluno=n=>{ setAlunoAberto(n); setView('painel'); };
+  const fecharAluno=()=>{ setAlunoAberto(null); setView('g_jogadores'); };
   const doJogador=arr=>modoTime?(arr||[]).filter(r=>nomeIgual(r.player,jogadorSel)):arr;
   const tours=useMemo(()=>doJogador(toursRaw),[toursRaw,modoTime,jogadorSel]);
   const ledger=useMemo(()=>doJogador(ledgerRaw),[ledgerRaw,modoTime,jogadorSel]);
@@ -2712,6 +3201,17 @@ function Dashboard({session,profile}){
   // banca inicial e make-up inicial da config são coisa do pool de 2: no time a banca do aluno começa pelas salas dele
   const config=useMemo(()=>modoTime&&configRaw?{...configRaw,player1_name:jogadorSel||'',player2_name:'',
     banca_inicial:Math.round(wallets.reduce((a,w)=>a+num(w.saldo_inicial),0)*100)/100,makeup_inicial_player1:0,makeup_inicial_player2:0}:configRaw,[configRaw,modoTime,jogadorSel,wallets]);
+  // no time, de quem são os dados na tela: o aluno aberto pelo gestor, ou o próprio jogador
+  useEffect(()=>{ if(!modoTime) return; setJogadorSel(alunoAberto||(timeGente.joga&&timeGente.eu?timeGente.eu.nome:null)); },[modoTime,alunoAberto,timeGente]);
+  // cada modo tem as suas abas: gestão só g_* (e Minha conta); jogo nenhuma g_*
+  useEffect(()=>{ if(!modoTime||!timeGente.carregado) return;
+    if(gestaoAtiva&&!String(viewSel).startsWith('g_')&&viewSel!=='config') setView('g_visao');
+    if(!gestaoAtiva&&String(viewSel).startsWith('g_')) setView('painel'); },[gestaoAtiva,modoTime,timeGente.carregado]);
+  // MU do jogador na tela: make-up = banca − MU
+  useEffect(()=>{ if(!modoTime||!jogadorSel){ setSitSel(null); return; }
+    const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); if(!pp){ setSitSel(null); return; }
+    let vivo=true; sb.rpc('situacao_jogador',{p_pessoa:pp.id}).then(({data,error})=>{ if(vivo) setSitSel(error?null:data); }).catch(()=>{});
+    return ()=>{ vivo=false; }; },[modoTime,jogadorSel,timeGente]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
@@ -2796,8 +3296,13 @@ function Dashboard({session,profile}){
       const nomePorId=Object.fromEntries((pe.data||[]).map(x=>[x.id,x.nome]));
       const saquesPagos=(sq.data||[]).map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
         week_ending_date:weekEnding(String(x.pago_em||'').slice(0,10)),wallet:null,observacoes:'saque do time'}));
-      setTimeGente({jogadores,eu,podeConfigurar,saquesPagos});
-      setJogadorSel(sel=>sel&&jogadores.some(n=>nomeIgual(n,sel))?sel:(eu&&jogadores.some(n=>nomeIgual(n,eu.nome))?eu.nome:(jogadores[0]||null)));
+      const meusAc=eu?(ac.data||[]).filter(a=>a.pessoa_id===eu.id):[];
+      const caps=[...new Set(meusAc.flatMap(a=>a.capacidades||[]))];
+      const joga=!!(eu&&ativos.has(eu.id));
+      const souAdmin=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id&&(a.capacidades||[]).includes('administrar')));
+      const naRaiz=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id));
+      setTimeGente({jogadores,eu,podeConfigurar,saquesPagos,caps,temGestao:meusAc.length>0,joga,souAdmin,naRaiz,carregado:true,
+        pessoas:pessoas.map(x=>({id:x.id,nome:x.nome}))});
     }catch(e){ console.error(e); }
   };
   const loadAll=async()=>{
@@ -3434,8 +3939,8 @@ function Dashboard({session,profile}){
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
-  const MAIN_TABS=['painel','torneios','diario','stats'];
-  const nav=[
+  let MAIN_TABS=['painel','torneios','diario','stats'];
+  let nav=[
     {id:'painel',label:'Painel',Icon:IcoPanel},
     {id:'torneios',label:'Torneios',Icon:IcoTrophy},
     {id:'diario',label:'Diário',Icon:IcoDaily},
@@ -3448,7 +3953,26 @@ function Dashboard({session,profile}){
     {id:'banca',label:'Banca',Icon:IcoStack},
     {id:'config',label:'Ajustes',Icon:IcoGear},
   ].filter(n=>!solo||n.id!=='saques');
-  if(temTime) nav.splice(nav.length-1,0,{id:'time',label:'Time',Icon:IcoShield});  // solo: some só Saques (make-up/split é coisa de pool); Mensal vale pra todos
+  // time de staking: o menu é o do papel. Gestão: telas do time. Jogo (ou gestor olhando um aluno): telas de um jogador.
+  const GRUPO_TORNEIOS=['torneios','diario','semanal','mensal'];
+  if(modoTime){
+    const cs=new Set(timeGente.caps||[]), tem=c=>cs.has(c)||cs.has('administrar');
+    if(gestaoAtiva){
+      nav=[{id:'g_visao',label:timeGente.naRaiz?'Visão geral':'Minhas retas',Icon:IcoPanel},
+        ...((tem('ver_desempenho')||tem('ver_financeiro')||tem('gerir_pessoas')||tem('promover')||tem('aprovar_saques'))?[{id:'g_jogadores',label:'Jogadores',Icon:IcoUsers}]:[]),
+        {id:'g_grades',label:'Grades',Icon:IcoGrid},
+        ...((tem('ver_financeiro')||tem('aprovar_saques'))?[{id:'g_financeiro',label:'Financeiro',Icon:IcoCashOut}]:[]),
+        ...(tem('gerir_pessoas')?[{id:'g_equipe',label:'Equipe e convites',Icon:IcoShield}]:[]),
+        ...(tem('configurar_regras')?[{id:'g_regras',label:'Regras do time',Icon:IcoGear}]:[]),
+        {id:'config',label:'Minha conta',Icon:IcoUser}];
+      MAIN_TABS=nav.slice(0,4).map(n=>n.id);
+    } else {
+      nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},{id:'banca',label:'Banca',Icon:IcoStack},
+        ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Ajustes',Icon:IcoGear}])];
+      MAIN_TABS=alunoAberto?['painel','torneios','stats','banca']:['painel','torneios','stats','time'];
+    }
+  }
+  const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
 
   /* ---------- mensal ---------- */
   // O mês é o mês do CALENDÁRIO em que o dia foi jogado: lançou dia 28/07, conta em julho.
@@ -3544,12 +4068,16 @@ function Dashboard({session,profile}){
     {/* sidebar desktop */}
     <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
       <Brand team={!solo}/><div style={{height:6}}/>
-      {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>setView(n.id)}/>)}
+      {podeTrocarModo&&<ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo}/>}
+      {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>setView(n.id)}/>)}
       <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
-        <div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
-          <div style={{fontSize:12.5,color:P,fontWeight:700}}>Banca atual</div>
+        {gestaoAtiva?<div style={{padding:14,borderRadius:16,background:C.plumSoft,fontSize:12.5,color:P,lineHeight:1.45}}>
+          <div style={{fontWeight:800}}>{ws?.name||'Time'} · {timeGente.souAdmin?'admin':PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase()||'gestão'}</div>
+          <div style={{color:C.inkSoft,marginTop:2}}>{timeGente.joga?'Também joga: troque em Meu jogo.':'Esta conta só gere o time.'}</div></div>
+        :<div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
+          <div style={{fontSize:12.5,color:P,fontWeight:700}}>{somenteLeitura?`Banca de ${alunoAberto}`:'Banca atual'}</div>
           <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
-        </div>
+        </div>}
         <button onClick={sair} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
       </div>
     </aside>
@@ -3568,20 +4096,27 @@ function Dashboard({session,profile}){
               setAvisos(a=>a.filter(x=>x.id!==av.id)); try{ await sb.rpc('apagar_aviso',{p_id:av.id}); }catch(e){} }}
             onLimpar={async()=>{ setAvApagados(l=>[...l,...alertasPainel.map(x=>x.key)]); setAvLocais([]);
               if(avisos.length){ setAvisos([]); try{ await sb.rpc('apagar_avisos'); }catch(e){} } }}
-            onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel) setView('time'); }}/>
+            onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel){
+              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
+              else setView('time'); } }}/>
           <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
         </div>
       </div>
-      {/* time: o gestor escolhe de qual aluno são os dados na tela (o aluno só vê os dele) */}
-      {modoTime&&view!=='time'&&(timeGente.jogadores.length>1||(timeGente.jogadores.length===1&&!(timeGente.eu&&nomeIgual(timeGente.eu.nome,timeGente.jogadores[0]))))&&
-        <div data-seletor-jogador style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
-          <span style={{fontSize:13,fontWeight:700,color:P}}>Vendo os dados de</span>
-          <select value={jogadorSel||''} onChange={e=>setJogadorSel(e.target.value)} style={{...inputStyle,width:'auto',minWidth:160,padding:'8px 12px',fontSize:14,background:C.surface}}>
-            {timeGente.jogadores.map(n=><option key={n} value={n}>{n}{timeGente.eu&&nomeIgual(n,timeGente.eu.nome)?' (você)':''}</option>)}
-          </select>
-        </div>}
-      {modoTime&&view!=='time'&&!jogadorSel&&<Card style={{padding:20,marginBottom:16}}><div style={{fontWeight:700}}>Nenhum jogador no time ainda.</div>
-        <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Convide os jogadores pela aba Time. Quando eles entrarem, os dados de cada um aparecem aqui.</div></Card>}
+      {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
+      {/* time: carregando quem é quem (evita piscar a tela de jogador pra quem só gere) */}
+      {modoTime&&!timeGente.carregado&&<div style={{display:'grid',placeItems:'center',padding:60}}><div className="spin"/></div>}
+      {/* gestor olhando o painel de um aluno: faixa fixa com o nome e o caminho de volta */}
+      {somenteLeitura&&<div data-aluno-aberto style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
+        <span style={{fontSize:14,color:P,flex:1,minWidth:180}}>Painel de <b>{alunoAberto}</b> · só leitura</span>
+        <button onClick={fecharAluno} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>Voltar para a gestão</button>
+      </div>}
+      {modoTime&&timeGente.carregado&&!gestaoAtiva&&!jogadorSel&&view!=='config'&&<Card style={{padding:20,marginBottom:16}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div>
+        <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
+      {/* jogador do time: Diário, Semana e Mês ficam dentro de Torneios */}
+      {modoTime&&!gestaoAtiva&&GRUPO_TORNEIOS.includes(view)&&<div role="tablist" aria-label="Torneios" data-sub-torneios style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+        {[['torneios','Lista'],['diario','Diário'],['semanal','Semana'],['mensal','Mês']].map(([k,r])=><button key={k} role="tab" aria-selected={view===k} onClick={()=>setView(k)}
+          style={{padding:'8px 14px',borderRadius:99,border:`1.5px solid ${view===k?P:C.border}`,background:view===k?C.plumSoft:C.surface,color:view===k?P:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>{r}</button>)}
+      </div>}
 
       {/* ---------------- PAINEL ---------------- */}
       {/* ---------------- CONVIDADO: tela de acesso restrito ---------------- */}
@@ -3614,11 +4149,14 @@ function Dashboard({session,profile}){
             {movimentosTotal!==0&&<span>Aportes {movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</span>}
             {sacadoTotal>0&&<span>Saques −{fmt(sacadoTotal)}</span>}
           </div>
-          <div style={{marginTop:12}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
+          {!(modoTime&&!(piso>0))&&<><div style={{marginTop:12}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
           <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}>
             <span>Piso mínimo {fmt(piso)}</span>
             <span>{bancaAtual>=piso?`${fmt(bancaAtual-piso)} acima do piso`:'abaixo do piso!'}</span>
-          </div>
+          </div></>}
+          {modoTime&&sitSel&&sitSel.mu!=null&&(()=>{ const mk=mkDe(bancaAtual,sitSel.mu); return <div data-painel-mk style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600,display:'flex',gap:'4px 14px',flexWrap:'wrap'}}>
+            <span>MU {fmt(sitSel.mu)}</span><span>{mk<0?`MK ${fmtSinal(mk)}`:`Profit ${fmtSinal(mk)}`}</span>
+            <span style={{opacity:.85}}>{mk<0?'saque só depois de sair do MK':'fora de MK: dá pra pedir saque'}</span></div>; })()}
         </Card>
 
         {/* avisos como pop-up: aparecem uma vez e somem (nada de card fixo poluindo o Painel) */}
@@ -3698,12 +4236,12 @@ function Dashboard({session,profile}){
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12}}>
             <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>O Diário e a banca se ajustam sozinhos</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Torneios</div></div>
-            <button onClick={()=>addTourOn(today)} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>
+            {!somenteLeitura&&<button onClick={()=>addTourOn(today)} style={{display:'flex',alignItems:'center',gap:6,background:P,color:'#fff',border:'none',padding:'11px 16px',borderRadius:13,fontWeight:700,fontSize:14.5,cursor:'pointer',flexShrink:0,boxShadow:'0 6px 16px -8px rgba(91,75,138,.7)'}}><IcoPlus s={18}/>Adicionar</button>}
           </div>
           <ResumoTorneios tours={tours} players={players} solo={solo}/>
           {/* import de resumos: o jeito preguiçoso (e mais fiel) de lançar o dia inteiro.
               O passo a passo fica recolhido — quem já sabe só toca no botão. */}
-          <Card style={{padding:18}}>
+          {!somenteLeitura&&<><Card style={{padding:18}}>
             <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600}}>Importar do site</div>
@@ -3731,10 +4269,10 @@ function Dashboard({session,profile}){
               O sistema lê nome, buy-in, re-entries, field, colocação e premiação — você <b>confere antes de salvar</b> e reimportar a mesma pasta não duplica nada.<br/>
               Os arquivos de <b>mãos</b> (hand history) vão na aba <b>Stats</b>, não aqui.
             </div>
-          </Recolhivel>
-          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>
+          </Recolhivel></>}
+          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>
           {past.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.inkSoft,margin:'4px 2px 0'}}>Dias anteriores</div>}
-          {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>)}
           <VerMais resta={past.length-pastN} bloco={10} rotulo="dias" onClick={()=>setPastN(n=>n+10)}/>
         </div>;
       })()}
@@ -3783,7 +4321,7 @@ function Dashboard({session,profile}){
         </Card>}
 
         {diaryDaily.length?<>
-          {diaryDaily.slice(0,diaryN).map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {diaryDaily.slice(0,diaryN).map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>)}
           <VerMais resta={diaryDaily.length-diaryN} bloco={12} rotulo="dias" onClick={()=>setDiaryN(n=>n+12)}/>
         </>:<Empty>{diFiltroAtivo?'Nenhum torneio nesse filtro/período.':'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.'}</Empty>}
       </div>}
@@ -4297,18 +4835,20 @@ function Dashboard({session,profile}){
       </div>}
 
       {/* ---------------- CONFIG ---------------- */}
-      {view==='time'&&temTime&&<TimeTela session={session} onVerJogador={modoTime?(n=>{ setJogadorSel(n); setView('painel'); }):null}/>}
-      {view==='config'&&<div className="ftfade">
+      {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+      {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}/>}
+      {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
+        {!(gestaoAtiva&&view==='config')&&<>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{modoTime?'Configurações do time':'Configurações da pool'}</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{modoTime?(view==='g_regras'?'Regras de jogo':'Configurações do time'):'Configurações da pool'}</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
           {modoTime&&<div data-ajustes-time style={{fontSize:12.5,color:C.inkSoft,marginTop:-6,marginBottom:8}}>{timeGente.podeConfigurar?'Regras do time inteiro: valem pra todos os jogadores.':'Regras do time: só quem configura o time altera.'}</div>}
           {(solo?[
             ...(modoTime?[]:[{label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'}]),
-            {label:'ABI máximo',val:config.abi_max_player1,kind:'money',key:'abi_max_player1',show:fmt(config.abi_max_player1)},
+            {label:modoTime?'ABI máximo (reta sem grade)':'ABI máximo',val:config.abi_max_player1,kind:'money',key:'abi_max_player1',show:fmt(config.abi_max_player1)},
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
-            {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
+            ...(modoTime?[]:[{label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)}]),
             {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
@@ -4335,13 +4875,15 @@ function Dashboard({session,profile}){
         </Card>
         <Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Histórico de alterações</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>Toda mudança nos Ajustes fica registrada aqui e o outro jogador é avisado na hora. A grade ("fora da grade") julga cada torneio pelo ABI que valia <b>na data dele</b>.</div>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:10}}>{modoTime?<>Toda mudança nas regras fica registrada aqui. Reta sem grade é julgada pelo ABI máximo que valia <b>na data</b> de cada torneio.</>:<>Toda mudança nos Ajustes fica registrada aqui e o outro jogador é avisado na hora. A grade ("fora da grade") julga cada torneio pelo ABI que valia <b>na data dele</b>.</>}</div>
           {chgs.length===0&&<Empty>Nenhuma alteração registrada ainda.</Empty>}
           {chgs.slice(0,12).map(c=><div key={c.id} style={{padding:'10px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{fontWeight:700,fontSize:13.5}}>{c.resumo}</div>
             <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>{c.changed_by_name||'—'} · {dLabel(String(c.created_at).slice(0,10))}</div>
           </div>)}
         </Card>
+        </>}
+        {view!=='g_regras'&&<>
         {soloConta&&<Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Seu plano</h3>
           <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b>{trialDaysLeft!=null&&<span style={{marginLeft:8,padding:'3px 9px',borderRadius:99,fontSize:11.5,fontWeight:800,color:trialDaysLeft<=3?C.gold:P,background:trialDaysLeft<=3?C.goldSoft:C.plumSoft}}>teste grátis · {trialDaysLeft===0?'último dia':`${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</span>}</div>
@@ -4374,13 +4916,14 @@ function Dashboard({session,profile}){
               <button key={file} disabled={!rows.length} onClick={()=>downloadCSV(`pool-${file}`,rows)} style={{padding:'10px 16px',borderRadius:12,border:`1px solid ${C.border}`,background:rows.length?C.surface:C.bg,color:rows.length?P:'#C3BBA9',fontWeight:700,fontSize:13.5,cursor:rows.length?'pointer':'default'}}>{label} ({rows.length})</button>)}
           </div>
         </Card>
+        </>}
       </div>}
     </main>
 
     {/* nav mobile: só o essencial + "Mais" */}
     <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
-      {nav.filter(n=>MAIN_TABS.includes(n.id)).map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={view===n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
-      <NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!MAIN_TABS.includes(view)} onClick={()=>setMenuOpen(true)} mobile/>
+      {nav.filter(n=>MAIN_TABS.includes(n.id)).map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
+      <NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!nav.filter(n=>MAIN_TABS.includes(n.id)).some(n=>navAtiva(n.id))} onClick={()=>setMenuOpen(true)} mobile/>
     </nav>
 
     {/* gaveta "Mais" (demais telas) */}

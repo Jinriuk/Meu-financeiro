@@ -29,7 +29,7 @@ select teste.erro('jogador NÃO cria convite', $q$select public.criar_convite('e
 
 -- ---------- quem abre o link sem conta ----------
 reset role; set role anon;
-select teste.igual('sem login, o link mostra time e unidade', $q$select (public.ver_convite((select t from tok where nome='retaA')) - 'expira_em')::text$q$,
+select teste.igual('sem login, o link mostra time e unidade', $q$select (public.ver_convite((select t from tok where nome='retaA')) - 'expira_em' - 'capacidades' - 'joga_em')::text$q$,
   '{"time": "Time F", "motivo": null, "pessoa": null, "valido": true, "unidade": "Reta A"}');
 select teste.igual('link quebrado', $q$select (public.ver_convite('abc')->>'valido')$q$, 'false');
 select teste.erro('sem login não aceita', $q$select public.aceitar_convite((select t from tok where nome='retaA'))$q$);
