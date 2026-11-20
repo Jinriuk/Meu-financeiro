@@ -21,7 +21,8 @@ create table public.workspace_members (workspace_id uuid references public.works
 create table public.player_profiles (user_id uuid primary key references auth.users(id) on delete cascade, email text not null, nickname text, cpf text, whatsapp text,
   password_changed boolean not null default false, role text, created_at timestamptz not null default now());
 create table public.tournaments (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), entry_date date not null, player text not null, buyin numeric not null default 0, prize numeric not null default 0,
-  reentries int not null default 0, ticket boolean not null default false, bounty numeric not null default 0, tournament_name text);
+  reentries int not null default 0, ticket boolean not null default false, bounty numeric not null default 0, tournament_name text,
+  site text, site_tournament_id text);
 create table public.hh_tournament_stats (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), player text not null, site text not null, site_tournament_id text not null, entry_date date, hands int not null default 0,
   unique (workspace_id, player, site, site_tournament_id));
 create table public.bankroll_ledger (id uuid primary key default gen_random_uuid(), workspace_id uuid references public.workspaces(id), entry_date date not null, wallet text not null, entrada numeric not null default 0, saida numeric not null default 0, player text);

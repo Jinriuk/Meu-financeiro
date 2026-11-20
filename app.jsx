@@ -21,6 +21,14 @@ const LINK_EMAIL=(()=>{ try{
 const CONVITE_KEY='gb_convite';
 const conviteGuardado=()=>{ try{ return localStorage.getItem(CONVITE_KEY)||null; }catch(e){ return null; } };
 const esquecerConvite=()=>{ try{ localStorage.removeItem(CONVITE_KEY); }catch(e){} };
+// código do time digitado no cadastro: guardado até a conta existir (sobrevive à confirmação do e-mail)
+const CODIGO_KEY='gb_codigo_time';
+const codigoGuardado=()=>{ try{ return localStorage.getItem(CODIGO_KEY)||''; }catch(e){ return ''; } };
+const guardarCodigo=c=>{ try{ if(c) localStorage.setItem(CODIGO_KEY,c); }catch(e){} };
+const esquecerCodigo=()=>{ try{ localStorage.removeItem(CODIGO_KEY); }catch(e){} };
+// "samba 36510", "SAMBA36510" e "Samba-36510" viram SAMBA-36510
+const normCodigo=c=>String(c||'').toUpperCase().replace(/\s+/g,'').replace(/^([A-Z0-9]+?)-?(\d{5})$/,'$1-$2');
+const codigoValido=c=>/^[A-Z0-9]{2,10}-\d{5}$/.test(c);
 (()=>{ try{
   const u=new URL(window.location.href); const t=(u.searchParams.get('convite')||'').trim().toLowerCase();
   if(!u.searchParams.has('convite')) return;
@@ -1684,6 +1692,7 @@ function Login({aviso}){
   const largarConvite=()=>{ esquecerConvite(); setConv(null); };
   const [nNome,setNNome]=useState(''); const [nMail,setNMail]=useState(''); const [nZap,setNZap]=useState(''); const [nP1,setNP1]=useState(''); const [nP2,setNP2]=useState('');
   const [nPlan,setNPlan]=useState('pro');   // plano escolhido pro teste grátis de 15 dias
+  const [nCod,setNCod]=useState('');         // código do time (opcional): a conta já pede pra entrar no time
   const criar=async()=>{
     setErr(''); setOk('');
     const nome=nNome.trim();
@@ -1698,7 +1707,10 @@ function Login({aviso}){
     if(zap&&(zap.length<10||zap.length>13)) return setErr('WhatsApp incompleto — usa DDD + número (ou deixa em branco).');
     { const fr=senhaFraca(nP1,[nome,mail]); if(fr) return setErr(fr); }
     if(nP1!==nP2) return setErr('As duas senhas não conferem.');
+    const cod=normCodigo(nCod);
+    if(nCod.trim()&&!codigoValido(cod)) return setErr('Código do time inválido: é tipo SAMBA-36510 (confira com o time).');
     setBusy(true);
+    if(cod) guardarCodigo(cod);   // o pedido de entrada vai assim que a conta existir (o painel manda ao carregar)
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
     try{ const {data:livre}=await sb.rpc('nickname_disponivel',{nick:nome});
       if(livre===false){ setBusy(false); return setErr('Esse apelido já está em uso — escolhe outro (é único, como numa sala de poker).'); } }catch(e){}
@@ -1803,6 +1815,7 @@ function Login({aviso}){
         <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nNome} autoCapitalize="none" placeholder="Ex: rafa_grinder" onChange={e=>setNNome(e.target.value)}/></div>
         <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" autoCapitalize="none" autoComplete="email" value={nMail} onChange={e=>setNMail(e.target.value)}/></div>
         <div><label style={labelStyle}>WhatsApp (opcional)</label><input style={inputStyle} inputMode="tel" placeholder="DDD + número" value={nZap} onChange={e=>setNZap(e.target.value)}/></div>
+        {!comConvite&&<div><label style={labelStyle}>Código do time (opcional)</label><input data-cadastro-codigo style={inputStyle} autoCapitalize="characters" placeholder="Ex: SAMBA-36510, se o seu time te passou" value={nCod} onChange={e=>setNCod(e.target.value)}/></div>}
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
         {/* escolha de plano: o teste grátis de 15 dias é do plano escolhido (quem entra por convite usa o plano do time) */}
@@ -2427,7 +2440,7 @@ function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClos
   </div>;
 }
 
-/* contrato do time por faixas de lucro sacado */
+/* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
 function ContratoModal({atual,onSalvar,onClose}){
   const f=Array.isArray(atual)&&atual.length?[...atual].sort((a,b)=>(a.ate==null?1e15:a.ate)-(b.ate==null?1e15:b.ate)):[{ate:10000,jogador:.35},{ate:null,jogador:.4}];
   const [lim,setLim]=useState(String(f[0].ate??10000)); const [a,setA]=useState(String(Math.round(Number(f[0].jogador)*1000)/10));
@@ -2440,10 +2453,10 @@ function ContratoModal({atual,onSalvar,onClose}){
         <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
       </div>
       <div><label style={labelStyle} htmlFor="ct-a">% do jogador até o limite</label><input id="ct-a" data-ct-a style={inputStyle} inputMode="decimal" value={a} onChange={e=>setA(e.target.value)}/></div>
-      <div><label style={labelStyle} htmlFor="ct-lim">Limite de lucro sacado (US$)</label><input id="ct-lim" data-ct-lim style={inputStyle} inputMode="decimal" value={lim} onChange={e=>setLim(e.target.value)}/></div>
+      <div><label style={labelStyle} htmlFor="ct-lim">Limite do lifetime (US$)</label><input id="ct-lim" data-ct-lim style={inputStyle} inputMode="decimal" value={lim} onChange={e=>setLim(e.target.value)}/></div>
       <div><label style={labelStyle} htmlFor="ct-b">% do jogador depois do limite</label><input id="ct-b" data-ct-b style={inputStyle} inputMode="decimal" value={b} onChange={e=>setB(e.target.value)}/></div>
       <div><label style={labelStyle} htmlFor="ct-ini">Vale a partir de</label><input id="ct-ini" type="date" style={inputStyle} value={ini} onChange={e=>setIni(e.target.value)}/></div>
-      {ok&&<div style={{background:C.plumSoft,borderRadius:12,padding:'10px 12px',fontSize:13.5}}>{A}% pro jogador até {fmt(L)} de lucro sacado, {B}% depois. A faixa conta só o lucro sacado, não a devolução de capital.</div>}
+      {ok&&<div style={{background:C.plumSoft,borderRadius:12,padding:'10px 12px',fontSize:13.5}}>{A}% pro jogador com lifetime abaixo de {fmt(L)}, {B}% a partir daí. Vale a faixa do lifetime no dia do saque (já sacado + profit), pro saque inteiro; devolução de capital não conta.</div>}
       <button disabled={!ok} onClick={()=>onSalvar([{ate:L,jogador:A/100},{ate:null,jogador:B/100}],ini)} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:ok?1:.5}}>Salvar contrato</button>
     </div>
   </div>;
@@ -2455,6 +2468,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const uid=session.user.id;
   const [d,setD]=useState(null);
   const [cortes,setCortes]=useState({});       // conferência da planilha: até que dia os saldos dela valem (por planilha)
+  const [pedEsc,setPedEsc]=useState({});       // pedido de entrada: reta e nome escolhidos antes de aprovar
   const corteDe=a=>{ const pl=a.planilha||{}; return cortes[a.id]||(/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em||''))?pl.atualizado_em:String(a.enviado_em||'').slice(0,10))||null; };
   const [aviso,setAviso]=useState(null);       // {erro, texto}
   const [perg,setPerg]=useState(null);         // QuickEditModal: {label,hint,kind,opts,valor,onSave}
@@ -2491,8 +2505,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   };
   const carregar=async()=>{
     const q=(t,cols='*')=>lerTudo(()=>sb.from(t).select(cols).order('id'));   // paginado: o servidor corta em 1.000 linhas
-    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
-      q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade')]);
+    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
+      q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade'),
+      sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
@@ -2500,7 +2515,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
     setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
       acessos:a.data||[],convites:cv.error?[]:(cv.data||[]),saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,
-      grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[])});
+      grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[]),
+      codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em)))});
   };
   useEffect(()=>{ carregar(); },[]);
   useEffect(()=>{ setAviso(null); setMenuDe(null); },[secao]);
@@ -2703,6 +2719,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
       ...(paraConferir.length?[{n:paraConferir.length,t:'Planilhas para conferir',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(parados.length?[{n:parados.length,t:'Alunos sem lançar há mais de 7 dias',ir:'g_jogadores',sit:'parados',tom:'bad'}]:[]),
       ...(convidados.length&&podeConvidar?[{n:convidados.length,t:'Convites ainda não aceitos',ir:'g_jogadores',sit:'convidados',tom:'plum'}]:[]),
+      ...((d.pedidos||[]).length&&podeAlgum('gerir_pessoas')?[{n:d.pedidos.length,t:'Pedidos pra entrar no time',ir:'g_equipe',tom:'plum'}]:[]),
     ];
     return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
       {header(raiz&&meus.some(a=>a.unidade_id===raiz.id)?'Visão geral':'Minhas retas',<>{periodoChips}{btnConvidar()}</>)}
@@ -2986,6 +3003,34 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           </div>
         </Card>}
       </div>
+      {(d.pedidos||[]).length>0&&podeAlgum('gerir_pessoas')&&<Card data-pedidos style={{padding:20}}>
+        <h3 style={tituloS}>Pedidos pra entrar <span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{d.pedidos.length}</span></h3>
+        {d.pedidos.map(pd=>{ const esc=pedEsc[pd.id]||{}; const raizU=d.unidades.find(u=>!u.mae_id);
+          const retas=d.unidades.filter(u=>u.mae_id&&!d.unidades.some(f=>f.mae_id===u.id)&&pode('gerir_pessoas',u.id));
+          const reta=esc.unidade??(retas[0]?retas[0].id:(raizU?raizU.id:''));
+          return <div key={pd.id} data-pedido={pd.nome} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+            <div style={{flex:'1 1 180px',minWidth:0}}><b>{pd.nome}</b><div style={{fontSize:12.5,color:C.inkSoft}}>pediu pelo código em {dataBR(pd.criado_em)}</div></div>
+            <input data-pedido-nome aria-label={`Nome de ${pd.nome} no time`} style={{...inputStyle,width:160,padding:'8px 10px'}} value={esc.nome??pd.nome} onChange={e=>setPedEsc(x=>({...x,[pd.id]:{...esc,nome:e.target.value}}))}/>
+            <select data-pedido-reta aria-label="Reta" style={{...inputStyle,width:'auto',padding:'8px 10px'}} value={reta} onChange={e=>setPedEsc(x=>({...x,[pd.id]:{...esc,unidade:e.target.value}}))}>
+              {retas.map(u=><option key={u.id} value={u.id}>{nomeUnidade(u)}</option>)}
+              {raizU&&pode('gerir_pessoas',raizU.id)&&<option value={raizU.id}>Escolher a reta depois</option>}
+            </select>
+            <button style={btnP} onClick={()=>rodar('decidir_entrada',{p_pedido:pd.id,p_aprovar:true,p_unidade:reta||null,p_nome:(esc.nome??pd.nome).trim()||null,p_motivo:null},`${(esc.nome??pd.nome).trim()} entrou no time.`)}>Aprovar</button>
+            <button style={{...btnS,color:C.red}} onClick={()=>setPerg({label:`Recusar o pedido de ${pd.nome}`,hint:'Diga o motivo (a pessoa vê).',kind:'text',valor:'',onSave:async m=>{ setPerg(null); await rodar('decidir_entrada',{p_pedido:pd.id,p_aprovar:false,p_unidade:null,p_nome:null,p_motivo:m||null},'Pedido recusado.'); }})}>Recusar</button>
+          </div>; })}
+      </Card>}
+      {(()=>{ const raizU=d.unidades.find(u=>!u.mae_id); if(!raizU||!pode('gerir_pessoas',raizU.id)) return null; const cod=d.codigo&&d.codigo.ativo?d.codigo.codigo:null;
+        const msg=cod?`Entre no time ${raizU.nome} no GrinderBank: crie sua conta em https://grinderbank.com e use o código ${cod}.`:'';
+        return <Card data-codigo-card style={{padding:20}}>
+          <h3 style={tituloS}>Código do time</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Quem tem o código pede pra entrar (no cadastro ou em Ajustes, se já tem conta). O pedido aparece aqui e só vale depois que alguém da gestão aprova e escolhe a reta.</div>
+          {cod?<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span data-codigo style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:22,letterSpacing:1,color:P}}>{cod}</span>
+            <button style={btnS} onClick={()=>{ try{ navigator.clipboard.writeText(cod); setAviso({erro:false,texto:'Código copiado.'}); }catch(e){} }}>Copiar</button>
+            <a style={{...btnS,textDecoration:'none'}} target="_blank" rel="noreferrer" href={'https://wa.me/?text='+encodeURIComponent(msg)}>Mandar no WhatsApp</a>
+            <button style={btnS} onClick={()=>setPerg({label:'Trocar o código do time?',hint:'O código atual para de valer na hora. Digite TROCAR pra confirmar.',kind:'text',valor:'',onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='TROCAR') await rodar('gerar_codigo_time',{},'Código novo gerado. O anterior não vale mais.'); }})}>Trocar código</button>
+          </div>:<button data-gerar-codigo style={btnP} onClick={()=>rodar('gerar_codigo_time',{},'Código do time gerado.')}>Gerar código do time</button>}
+        </Card>; })()}
       {podeConvidar&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Convites ativos</h3>
         {!convAtivos.length&&<div style={{fontSize:14,color:C.inkSoft}}>Nenhum convite aberto.</div>}
@@ -3169,6 +3214,7 @@ function SaqueModal({pessoa,onClose,onPedir}){
       {prev&&<div data-saque-previa style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',fontSize:13.5,lineHeight:1.6}}>
         Você fica com <b>{fmt(prev.parte_jogador)}</b> · time recebe <b>{fmt(prev.total_time)}</b> ({fmt(prev.devolucao)} de MU + {fmt(prev.parte_time)} do cashout)<br/>
         Banca depois: {fmt(prev.banca_depois)} · MU depois: {fmt(prev.mu_depois)}
+        {prev.divisao&&prev.divisao.faixas&&prev.divisao.faixas[0]&&<><br/><span data-saque-faixa>Faixa de {Math.round(Number(prev.divisao.faixas[0].jogador_pct)*1000)/10}% pro saque inteiro (lifetime de {fmt(prev.divisao.faixas[0].lifetime)} hoje)</span></>}
       </div>}
       <button disabled={!prev} onClick={()=>onPedir({p_banca:parseValor(f.banca),p_devolucao:parseValor(f.devolucao)||0,p_cashout:parseValor(f.cashout)||0,p_carteiras:null,p_obs:f.obs.trim()||null})}
         style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:prev?'pointer':'default',opacity:prev?1:.5}}>Pedir saque</button>
@@ -3200,6 +3246,9 @@ function Dashboard({session,profile}){
   const [wdsRaw,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
   const [erroCarga,setErroCarga]=useState(false);    // alguma tabela não veio: mantém o que já estava na tela e avisa
+  const [meusPedidos,setMeusPedidos]=useState([]);    // conta individual: pedidos pra entrar num time pelo código
+  const [avisoPedido,setAvisoPedido]=useState(null);  // {erro,texto} do último pedido pelo código
+  const [codTime,setCodTime]=useState('');
   const [viewSel,setView]=useState('painel');
   const view=viewSel;
   const [modal,setModal]=useState(null);       // string type | {type, initial}
@@ -3362,9 +3411,13 @@ function Dashboard({session,profile}){
       const tk=conviteGuardado();
       if(tk){
         const {error:ce}=await sb.rpc('aceitar_convite',{p_token:tk});
-        if(ce){ setConviteErro(ce.message||'Não consegui aceitar o convite.'); return; }
+        if(ce){ registrarErro('app','convite não aceito: '+(ce.message||''),{codigo:ce.code||null}); setConviteErro(ce.message||'Não consegui aceitar o convite.'); return; }
         esquecerConvite();
       }
+      // código do time digitado no cadastro: manda o pedido de entrada (a gestão aprova e escolhe a reta)
+      const cod=codigoGuardado();
+      if(cod){ const {error:pe}=await sb.rpc('pedir_entrada_time',{p_codigo:cod}); esquecerCodigo();
+        if(pe){ registrarErro('app','pedido pelo código não foi: '+(pe.message||''),{}); setAvisoPedido({erro:true,texto:pe.message||'Não consegui mandar o pedido pro time.'}); } }
       // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
       try{ await sb.rpc('aplicar_ativacao'); }catch(e){}
       // status calculado com o relógio do servidor; sem a função (banco antigo) cai na conta local
@@ -3390,6 +3443,8 @@ function Dashboard({session,profile}){
       setErroCarga(falhas.length>0);
       if(falhas.length) registrarErro('carga','lista não carregou: '+falhas.map(([r])=>r.error.message).join(' | '),{tabelas:falhas.length});
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
+      // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
+      if(myWs&&myWs.kind==='solo'){ try{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); }catch(e){} }
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
       try{ const {data:un}=await sb.from('unidade').select('id').limit(1); const tem=!!(un&&un.length); setTemTime(tem);
         if(tem){ const {data:av}=await sb.from('aviso').select('*').order('criado_em',{ascending:false}).limit(50); setAvisos(av||[]); } }catch(e){}
@@ -4201,6 +4256,10 @@ function Dashboard({session,profile}){
       </div>
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
       {/* time: carregando quem é quem (evita piscar a tela de jogador pra quem só gere) */}
+      {soloConta&&meusPedidos.filter(x=>x.status==='pendente').slice(0,1).map(x=><div key={x.id} data-pedido-pendente style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.plumSoft,border:`1.5px solid ${P}`,fontSize:13.5,color:C.ink,lineHeight:1.5}}>
+        Pedido pra entrar no time <b>{x.time_nome||''}</b> enviado em {dataBR(x.criado_em)}. Quando a gestão aprovar, esta conta entra no time e o seu histórico vai junto.</div>)}
+      {avisoPedido&&avisoPedido.erro&&<div data-pedido-erro role="alert" style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.redSoft,border:`1.5px solid ${C.red}`,fontSize:13.5,color:C.ink}}>
+        <b>O pedido pro time não foi:</b> {avisoPedido.texto}</div>}
       {erroCarga&&<div data-erro-carga role="alert" style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.goldSoft,border:`1.5px solid ${C.gold}`,fontSize:13.5,color:C.ink}}>
         <span style={{flex:1,minWidth:200}}><b>Não consegui atualizar tudo do servidor.</b> Os números abaixo podem estar desatualizados.</span>
         <button onClick={()=>loadAll()} style={{padding:'7px 13px',borderRadius:10,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>Tentar de novo</button>
@@ -5015,6 +5074,23 @@ function Dashboard({session,profile}){
         </Card>
         </>}
         {view!=='g_regras'&&<>
+        {soloConta&&<Card data-entrar-time style={{padding:20,marginTop:16}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Entrar num time</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Seu time te passou um código (ex.: SAMBA-36510)? Peça pra entrar. Quando a gestão aprovar, esta conta vira do time e o seu histórico vai junto.</div>
+          {(()=>{ const pend=meusPedidos.find(x=>x.status==='pendente'); const rec=!pend&&meusPedidos[0]&&meusPedidos[0].status==='recusado'?meusPedidos[0]:null;
+            const recarregar=async()=>{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); };
+            if(pend) return <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <span style={{fontSize:14}}>Pedido pro time <b>{pend.time_nome}</b> enviado em {dataBR(pend.criado_em)}: aguardando a gestão.</span>
+              <button onClick={async()=>{ const {error}=await sb.rpc('cancelar_pedido_entrada',{p_pedido:pend.id}); if(error) setAvisoPedido({erro:true,texto:error.message}); await recarregar(); }}
+                style={{padding:'8px 13px',borderRadius:11,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>Cancelar pedido</button></div>;
+            return <>{rec&&<div style={{fontSize:13,color:C.red,fontWeight:600,marginBottom:8}}>O time {rec.time_nome} recusou o pedido{rec.motivo?`: ${rec.motivo}`:'.'}</div>}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <input data-codigo-time aria-label="Código do time" style={{...inputStyle,flex:'1 1 180px',width:'auto'}} autoCapitalize="characters" placeholder="SAMBA-36510" value={codTime} onChange={e=>setCodTime(e.target.value)}/>
+                <button data-pedir-entrada onClick={async()=>{ const c=normCodigo(codTime); if(!codigoValido(c)){ setAvisoPedido({erro:true,texto:'Código inválido: é tipo SAMBA-36510 (confira com o time).'}); return; }
+                  const {error}=await sb.rpc('pedir_entrada_time',{p_codigo:c}); if(error){ setAvisoPedido({erro:true,texto:error.message}); return; } setAvisoPedido(null); setCodTime(''); await recarregar(); }}
+                  style={{padding:'11px 16px',borderRadius:12,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Pedir pra entrar</button>
+              </div></>; })()}
+        </Card>}
         {soloConta&&<Card style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Seu plano</h3>
           <div style={{fontSize:13.5,marginBottom:8}}>Plano atual: <b style={{color:P}}>{PLAN_LABEL[plan]||plan}</b>{trialDaysLeft!=null&&<span style={{marginLeft:8,padding:'3px 9px',borderRadius:99,fontSize:11.5,fontWeight:800,color:trialDaysLeft<=3?C.gold:P,background:trialDaysLeft<=3?C.goldSoft:C.plumSoft}}>teste grátis · {trialDaysLeft===0?'último dia':`${trialDaysLeft} dia${trialDaysLeft!==1?'s':''}`}</span>}</div>

@@ -38,8 +38,11 @@ select teste.como('dd000000-0000-0000-0000-000000000001');
 select teste.erro_qualquer('faixa sem a última aberta', $q$select public.definir_contrato('df000000-0000-0000-0000-000000000001', null, '[{"ate":10000,"jogador":0.35}]')$q$);
 select teste.erro_qualquer('percentual escrito como 35 (e não 0.35)', $q$select public.definir_contrato('df000000-0000-0000-0000-000000000001', null, '[{"ate":null,"jogador":35}]')$q$);
 select teste.ok('admin define o contrato do time: 35% até 10 mil, 40% depois', $q$select public.definir_contrato('df000000-0000-0000-0000-000000000001', null, '[{"ate":10000,"jogador":0.35},{"ate":null,"jogador":0.40}]', current_date-90)$q$);
-select teste.igual('faixa cruzada é dividida nas duas (9.900 + 200: 100×35% + 100×40%)',
-  $q$select (public.dividir_cashout('[{"ate":10000,"jogador":0.35},{"ate":null,"jogador":0.40}]', 9900, 200)->>'jogador')$q$, '75.00');
+select teste.igual('o saque inteiro vai na faixa do lifetime do dia (plano 3.3): lifetime 9.900 está abaixo de 10k, então 35% de 200',
+  $q$select (public.dividir_cashout('[{"ate":10000,"jogador":0.35},{"ate":null,"jogador":0.40}]', 9900, 200)->>'jogador')$q$, '70.00');
+select teste.igual('…a partir de 10k (inclusive), 40% do saque inteiro',
+  $q$select (public.dividir_cashout('[{"ate":10000,"jogador":0.35},{"ate":null,"jogador":0.40}]', 10000, 200)->>'jogador')||'/'||
+            (public.dividir_cashout('[{"ate":10000,"jogador":0.35},{"ate":null,"jogador":0.40}]', 12000, 200)->>'jogador')$q$, '80.00/80.00');
 
 -- ---------- capital ----------
 select teste.como('dd000000-0000-0000-0000-000000000004');
