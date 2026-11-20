@@ -8642,12 +8642,18 @@ function TimeApp({
       }
     }, mk == null ? '—' : mk < 0 ? `MK ${fmtSinal(mk)}` : fmtSinal(mk))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: labelStyle
-    }, "Lucro j\xE1 sacado"), /*#__PURE__*/React.createElement("div", {
+    }, "Lifetime no time"), /*#__PURE__*/React.createElement("div", {
+      "data-lifetime": true,
       style: {
         fontWeight: 800,
         fontSize: 20
       }
-    }, fmt(d.sit.lifetime)))), mk != null && /*#__PURE__*/React.createElement("div", {
+    }, mk == null ? fmt(d.sit.lifetime) : fmtSinal(cent(num(d.sit.lifetime) + mk))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft
+      }
+    }, "j\xE1 sacado ", fmt(d.sit.lifetime), mk != null ? ` · profit agora ${fmtSinal(mk)}` : ''))), mk != null && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: mk < 0 ? '#7a5a1f' : C.greenMid,
@@ -10223,7 +10229,7 @@ function TimeApp({
         width: '100%',
         borderCollapse: 'collapse'
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lucro já sacado'].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lifetime'].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thS
     }, h)))), /*#__PURE__*/React.createElement("tbody", null, [...din].sort((a, b) => (mkDe(a.banca, a.mu) ?? 0) - (mkDe(b.banca, b.mu) ?? 0)).map(l => /*#__PURE__*/React.createElement("tr", {
@@ -10245,8 +10251,20 @@ function TimeApp({
     }, /*#__PURE__*/React.createElement(MkSelo, {
       v: mkDe(l.banca, l.mu)
     })), /*#__PURE__*/React.createElement("td", {
-      style: tdS
-    }, l.lucro_sacado == null ? '—' : fmt(l.lucro_sacado))))))), /*#__PURE__*/React.createElement("div", {
+      style: tdS,
+      "data-lifetime-de": l.nome
+    }, l.lucro_sacado == null ? '—' : /*#__PURE__*/React.createElement(React.Fragment, null, mkDe(l.banca, l.mu) == null ? fmt(l.lucro_sacado) : fmtSinal(cent(num(l.lucro_sacado) + mkDe(l.banca, l.mu))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft
+      }
+    }, "sacado ", fmt(l.lucro_sacado))))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        marginTop: 4
+      }
+    }, "Lifetime = o que j\xE1 sacou + o profit de agora (como na planilha)."), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.inkSoft,

@@ -100,6 +100,9 @@ await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id:
   ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
   ok(await page.locator('[data-salas-travadas]').count() === 1 && await page.locator('[data-sala="GG Poker"]').isDisabled() && /US\$\s80,00/.test(await page.locator('[data-sala="GG Poker"]').innerText()),
     'BUG-10 salas travadas depois do reload: mostram o saldo da foto e não abrem pra editar');
+  await irPara(page, 'Meu time');
+  await page.locator('[data-lifetime]').waitFor({ timeout: 8000 });
+  ok(/−US\$\s49,50/.test(await page.locator('[data-lifetime]').innerText()), 'Meu time: lifetime = já sacado 0 + profit agora −49,50');
 });
 
 // 3) pool de 2 ('team'): nada muda

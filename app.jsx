@@ -2606,7 +2606,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
           <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
           <div><div style={labelStyle}>{mk!=null&&mk<0?'Make-up':'Profit'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
-          <div><div style={labelStyle}>Lucro já sacado</div><div style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.lifetime)}</div></div>
+          {/* lifetime como na planilha do Samba: o que já sacou + o profit de agora (a relação total com o time) */}
+          <div><div style={labelStyle}>Lifetime no time</div><div data-lifetime style={{fontWeight:800,fontSize:20}}>{mk==null?fmt(d.sit.lifetime):fmtSinal(cent(num(d.sit.lifetime)+mk))}</div>
+            <div style={{fontSize:12,color:C.inkSoft}}>já sacado {fmt(d.sit.lifetime)}{mk!=null?` · profit agora ${fmtSinal(mk)}`:''}</div></div>
         </div>
         {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: dá pra pedir saque.'}</div>}
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
@@ -2926,10 +2928,13 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
       {din.length>0&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Dinheiro por jogador</h3>
         <div style={{overflowX:'auto'}}><table data-dinheiro style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lucro já sacado'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lifetime'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
           <tbody>{[...din].sort((a,b)=>(mkDe(a.banca,a.mu)??0)-(mkDe(b.banca,b.mu)??0)).map(l=><tr key={l.pessoa_id} data-dinheiro-de={l.nome}>
             <td style={{...tdS,fontWeight:700}}>{l.nome}</td><td style={tdS}>{U[l.unidade_id]?.nome||l.unidade}</td><td style={tdS}>{fmt(l.banca)}</td><td style={tdS}>{l.mu==null?'—':fmt(l.mu)}</td>
-            <td style={tdS}><MkSelo v={mkDe(l.banca,l.mu)}/></td><td style={tdS}>{l.lucro_sacado==null?'—':fmt(l.lucro_sacado)}</td></tr>)}</tbody></table></div>
+            <td style={tdS}><MkSelo v={mkDe(l.banca,l.mu)}/></td>
+            <td style={tdS} data-lifetime-de={l.nome}>{l.lucro_sacado==null?'—':<>{mkDe(l.banca,l.mu)==null?fmt(l.lucro_sacado):fmtSinal(cent(num(l.lucro_sacado)+mkDe(l.banca,l.mu)))}
+              <div style={{fontSize:12,color:C.inkSoft}}>sacado {fmt(l.lucro_sacado)}</div></>}</td></tr>)}</tbody></table></div>
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:4}}>Lifetime = o que já sacou + o profit de agora (como na planilha).</div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Contrato do time: {faixasTexto(contratoRaiz?.faixas)}{souAdmin?' · muda em Regras do time':''}</div>
       </Card>}
       {historico.length>0&&<Card style={{padding:20}}>
