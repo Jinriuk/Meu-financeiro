@@ -1056,6 +1056,12 @@ function lerCelulaGrade(txt){
 const gradeSala=s=>{ const k=String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
   if(/^gg/.test(k)) return 'gg'; if(k==='pses'||k==='pokerstarses') return 'pses'; if(k==='ps'||/stars/.test(k)) return 'ps';
   if(/^acr|americas|winning/.test(k)) return 'acr'; if(/^wpn/.test(k)) return 'wpn'; if(/party/.test(k)) return 'party'; return k; };
+// sala do DINHEIRO numa chave só (igual a sala_chave do servidor): "GG" = "GG Poker", "PS" = "PokerStars", "WPN" = "ACR"
+// (a grade separa ACR de WPN; o dinheiro do ACR sai da conta WPN)
+const salaChave=s=>{ const k=String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); if(!k) return null;
+  if(/^gg/.test(k)||k==='natural8'||k==='n8') return 'gg'; if(k==='pses'||k==='pokerstarses'||k==='starses') return 'pses';
+  if(k==='ps'||/stars/.test(k)) return 'ps'; if(/^(acr|americas|winning|wpn)/.test(k)) return 'wpn'; if(/party/.test(k)) return 'party';
+  if(/^888/.test(k)) return '888'; return k; };
 // garantido pelo nome: "$5K", "100k GTD", "$100,000" (número com k/m, ou 1.000+ com $)
 function gtdDoNome(nome){
   const n=String(nome||''); let m=n.match(/\$?\s?(\d+(?:[.,]\d+)?)\s?([km])\b/i);
@@ -2547,6 +2553,71 @@ function PlataformaApp(){
   </div>;
 }
 
+// escolhe a sala: uma das que o jogador já tem, ou outra pelo nome (capital, reload)
+function SalaCampo({salas,valor,onChange,rotulo='Sala'}){
+  const nomes=[...new Set((salas||[]).filter(s=>s.chave).map(s=>s.sala))];
+  const [outra,setOutra]=useState(!nomes.length||(!!valor&&!nomes.includes(valor)));
+  return <div><label style={labelStyle}>{rotulo}</label>
+    {nomes.length>0&&<select data-sala-escolha value={outra?'__outra':(valor||'')} onChange={e=>{ if(e.target.value==='__outra'){ setOutra(true); onChange(''); } else { setOutra(false); onChange(e.target.value); } }} style={inputStyle}>
+      <option value="">Escolha a sala</option>{nomes.map(n=><option key={n} value={n}>{n}</option>)}<option value="__outra">Outra sala…</option></select>}
+    {outra&&<input data-sala-outra style={{...inputStyle,marginTop:nomes.length?8:0}} value={valor||''} placeholder="ex.: GG, PokerStars, WPN" onChange={e=>onChange(e.target.value)}/>}
+  </div>;
+}
+const fundoModal={position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50};
+const caixaModal={background:C.surface,width:'100%',maxWidth:500,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12};
+const topoModal=(titulo,onClose)=><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+  <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{titulo}</h3>
+  <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button></div>;
+// capital mandado pelo time: valor e sala (cada sala tem o seu jeito de depósito)
+function CapitalModal({nome,salas,onSalvar,onClose}){
+  const [valor,setValor]=useState(''); const [sala,setSala]=useState(''); const [indo,setIndo]=useState(false);
+  const v=parseValor(valor), ok=v!==0&&String(sala).trim().length>0&&!indo;
+  return <div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-capital-modal className="ftfade" style={caixaModal}>
+    {topoModal(`Capital mandado pra ${nome}`,onClose)}
+    <div><label style={labelStyle} htmlFor="cap-v">Quanto (US$)</label><input id="cap-v" data-capital-valor style={inputStyle} inputMode="decimal" value={valor} placeholder="ex.: 200" onChange={e=>setValor(e.target.value)}/></div>
+    <SalaCampo salas={salas} valor={sala} onChange={setSala} rotulo="Em qual sala"/>
+    <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Entra no MU e na banca dessa sala. Negativo corrige um lançamento.</div>
+    <button disabled={!ok} onClick={async()=>{ setIndo(true); await onSalvar({valor:v,sala:String(sala).trim()}); setIndo(false); }} style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:ok?1:.5}}>Registrar capital</button>
+  </div></div>;
+}
+// as salas de um jogador pelo sistema, a soma (= banca) e a última conferência dele
+function SalasModal({nome,dados,onClose}){
+  const salas=(dados&&dados.salas)||[], conf=dados&&dados.ultima_conferencia;
+  const difDe=ch=>{ const l=conf&&(conf.salas||[]).find(x=>x.chave===ch); return l&&l.diferenca!=null?Number(l.diferenca):null; };
+  return <div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-salas-modal className="ftfade" style={caixaModal}>
+    {topoModal(`Salas de ${nome}`,onClose)}
+    {salas.length===0?<div style={{fontSize:14,color:C.inkSoft}}>Nenhuma sala ainda.</div>:salas.map(s=>{ const dif=s.chave?difDe(s.chave):null;
+      return <div key={s.chave||'sem'} data-sala-linha={s.sala} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'6px 0',borderBottom:`1px solid ${C.border}`,fontSize:13.5}}>
+        <span style={{color:s.chave?C.ink:C.inkSoft}}>{s.chave?s.sala:'Sem sala (capital ou saque antigo sem a sala)'}</span>
+        <span><b>{fmt(s.saldo)}</b>{dif!=null&&Math.abs(dif)>1?<span style={{color:C.red,fontWeight:700}}> · lançado {fmtSinal(dif)}</span>:null}</span></div>; })}
+    <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:800,paddingTop:4}}><span>Total (banca)</span><span>{fmt(dados?.total)}</span></div>
+    <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>{conf?`Última conferência do jogador: ${dataBR(conf.criado_em)} · ${conf.diverge?`diverge ${fmtSinal(Number(conf.diferenca))} no total`:'bateu'}.`:'O jogador ainda não conferiu os saldos das salas.'}</div>
+  </div></div>;
+}
+// abertura sem planilha: o jogador preenche o que a planilha do time diria (serve pra qualquer time)
+function PlanilhaManualModal({nome,salas,onPronto,onClose}){
+  const base=(salas||[]).filter(s=>s.chave).map(s=>s.sala);
+  const [mk,setMk]=useState(''); const [co,setCo]=useState(''); const [data,setData]=useState(todayISO());
+  const [ls,setLs]=useState(()=>(base.length?base:['GG Poker','PokerStars']).map(sala=>({sala,saldo:''})));
+  const saldos=ls.filter(l=>String(l.sala).trim()).map(l=>({sala:String(l.sala).trim(),saldo:cent(parseValor(l.saldo))}));
+  const banca=cent(saldos.reduce((a,s)=>a+s.saldo,0)), makeup=cent(parseValor(mk)), cashout=cent(parseValor(co));
+  const ok=makeup>=0&&cashout>=0&&saldos.length>0&&!!data;
+  return <div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-planilha-manual className="ftfade" style={caixaModal}>
+    {topoModal('Abertura sem planilha',onClose)}
+    <div style={{fontSize:13,color:C.inkSoft,lineHeight:1.5}}>Os números de hoje com o time (os mesmos da planilha). O time confere antes de valer.</div>
+    {ls.map((l,i)=><div key={i} style={{display:'grid',gridTemplateColumns:'1fr 120px',gap:8}}>
+      <input data-manual-sala={i} style={inputStyle} value={l.sala} placeholder="Sala" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,sala:e.target.value}:y))}/>
+      <input data-manual-saldo={i} style={inputStyle} inputMode="decimal" value={l.saldo} placeholder="Saldo" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,saldo:e.target.value}:y))}/></div>)}
+    <button style={{...btnS,alignSelf:'flex-start'}} onClick={()=>setLs(x=>[...x,{sala:'',saldo:''}])}>+ sala</button>
+    <div><label style={labelStyle} htmlFor="pm-mk">MakeUp (capital do time com você)</label><input id="pm-mk" data-manual-makeup style={inputStyle} inputMode="decimal" value={mk} onChange={e=>setMk(e.target.value)}/></div>
+    <div><label style={labelStyle} htmlFor="pm-co">Cashout (lucro que você já sacou no time)</label><input id="pm-co" data-manual-cashout style={inputStyle} inputMode="decimal" value={co} onChange={e=>setCo(e.target.value)}/></div>
+    <div><label style={labelStyle} htmlFor="pm-dt">Saldos de que dia</label><input id="pm-dt" type="date" style={inputStyle} value={data} max={todayISO()} onChange={e=>setData(e.target.value)}/></div>
+    <div style={{fontSize:13.5}}>Banca (soma das salas): <b>{fmt(banca)}</b> · profit {fmtSinal(cent(banca-makeup))}</div>
+    <button disabled={!ok} onClick={()=>onPronto({nome,atualizado_em:data,saldos,banca,makeup,cashout,lucro:cent(banca-makeup),lifetime:cent(cashout+banca-makeup),grade:[],avisos:[]})}
+      style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:ok?1:.5}}>Conferir e enviar</button>
+  </div></div>;
+}
+
 // regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
 const REGRAS_RETA=[
   {k:'abi_max',rot:'ABI máximo (reta sem grade)',kind:'money',padrao:c=>num(c.abi_max_player1)||num(c.abi_max)||2,txt:v=>fmt(v)},
@@ -2625,6 +2696,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const [regraSel,setRegraSel]=useState(null); // regras por reta: a unidade aberta no cartão
   const [planilha,setPlanilha]=useState(null);
   const [reloadAberto,setReloadAberto]=useState(false);
+  const [capitalDe,setCapitalDe]=useState(null);   // capital com a sala: {p, salas}
+  const [salasDe,setSalasDe]=useState(null);       // gestor olhando as salas de um jogador: {p, dados}
+  const [conf,setConf]=useState(null);             // conferência de saldos do jogador: {valores, resultado}
+  const [manualAberta,setManualAberta]=useState(false);   // abertura sem planilha
   const [periodo,setPeriodo]=useState('mes');
   const [resumo,setResumo]=useState(null);
   const [gradeAberta,setGradeAberta]=useState(null);
@@ -2654,16 +2729,19 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   };
   const carregar=async()=>{
     const q=(t,cols='*')=>lerTudo(()=>sb.from(t).select(cols).order('id'));   // paginado: o servidor corta em 1.000 linhas
-    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd,acs]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
+    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd,acs,cfs]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
       q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade'),
-      sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida')]);
+      sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida'),q('conferencia_saldo')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
-    if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data; }
+    let salasEu=null;
+    if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data;
+      const r2=await sb.rpc('salas_jogador',{p_pessoa:eu.id}); if(!r2.error&&r2.data) salasEu=r2.data; }
     setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
       acessos:a.data||[],convites:cv.error?[]:(cv.data||[]),saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
-      contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,
+      contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,salasEu,
+      conferencias:cfs.error?[]:(cfs.data||[]).sort((x,y)=>String(y.criado_em).localeCompare(String(x.criado_em))),
       grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[]),
       codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em))),
       acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em)))});
@@ -2736,8 +2814,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
     setPerg({label:`Mover ${p.nome}`,hint:(mk!=null&&mk<0?`Atenção: ${p.nome} está em MK (${fmtSinal(mk)}).${bloqueia?' Este time não promove com MK: o servidor vai recusar.':''} `:'')+'O histórico até hoje fica na reta atual; daqui pra frente conta na nova.',
       kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
       onSave:async nome=>{ setPerg(null); const alvo=destinos.find(x=>caminhoNome(x)===nome); if(alvo) await rodar('mover_jogador',{p_alvo:p.id,p_destino:alvo.id,p_motivo:'promocao'},`${p.nome} agora está em ${alvo.nome}.`); }}); };
-  const capital=p=>setPerg({label:`Capital mandado pra ${p.nome}`,hint:'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',kind:'money',valor:0,
-    onSave:async v=>{ setPerg(null); if(v) await rodar('registrar_aporte',{p_pessoa:p.id,p_valor:v,p_data:todayISO(),p_obs:null},`Capital de ${fmt(v)} registrado pra ${p.nome}.`); }});
+  const salasDoJogador=async p=>{ const {data,error}=await sb.rpc('salas_jogador',{p_pessoa:p.id}); if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; } return data; };
+  const capital=async p=>{ setAviso(null); const dados=await salasDoJogador(p); setCapitalDe({p,salas:(dados&&dados.salas)||[]}); };
+  const verSalas=async p=>{ setAviso(null); const dados=await salasDoJogador(p); if(dados) setSalasDe({p,dados}); };
   const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, teu convite pro time no GrinderBank:`}); };
   const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',kind:'text',valor:p.nome,
     onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(nn&&nn!==p.nome) await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nn},`Agora é ${nn}.`); }});
@@ -2785,11 +2864,13 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
         {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: dá pra pedir saque.'}</div>}
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
         {minhaAbertura?.status==='confirmada'
-          ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha do Samba conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
+          ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
           :<div style={{marginTop:10}}>
             {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
-            <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar minha planilha do Samba'}
-              <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar planilha (modelo Samba)'}
+                <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
+              <button data-abertura-manual style={btnS} onClick={()=>setManualAberta(true)}>Preencher à mão</button></div>
           </div>}
         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:14}}>
           <button disabled={saqueAberto_||!d.sit.contrato} onClick={()=>setSaqueAberto(true)} style={{...btnP,padding:'12px 18px',fontSize:14.5,opacity:saqueAberto_||!d.sit.contrato?.5:1}}>Pedir saque</button>
@@ -2805,6 +2886,31 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}{s.motivo?` · ${s.motivo}`:''}</span>
           {s.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
         </div>)}</div>}
+      </Card>}
+      {d.salasEu&&<Card style={{padding:20}} data-minhas-salas>
+        <h3 style={tituloS}>Minhas salas</h3>
+        {(d.salasEu.salas||[]).length===0&&<div style={{fontSize:13.5,color:C.inkSoft}}>Nenhuma sala ainda. Elas aparecem com a planilha conferida, com o capital do time ou com os torneios de cada site.</div>}
+        {(d.salasEu.salas||[]).map(s=>{ const r=conf&&conf.resultado&&(conf.resultado.salas||[]).find(x=>x.chave===s.chave);
+          return <div key={s.chave||'sem'} data-minha-sala={s.sala} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+            <span style={{flex:1,color:s.chave?C.ink:C.inkSoft}}>{s.chave?s.sala:'Sem sala (capital ou saque antigo)'}</span>
+            <span style={{color:C.inkSoft,fontSize:12}}>sistema</span><b style={{minWidth:90,textAlign:'right'}}>{fmt(s.saldo)}</b>
+            {conf&&!conf.resultado&&s.chave&&<input data-conferir-sala={s.sala} aria-label={`Saldo agora em ${s.sala}`} style={{...inputStyle,width:110,padding:'7px 10px'}} inputMode="decimal" placeholder="saldo agora"
+              value={conf.valores[s.chave]??''} onChange={e=>{ const v=e.target.value; setConf(c=>({...c,valores:{...c.valores,[s.chave]:v}})); }}/>}
+            {r&&r.diferenca!=null&&<span data-sala-diferenca={s.sala} style={{fontWeight:700,color:Math.abs(Number(r.diferenca))>1?C.red:C.greenMid,minWidth:80,textAlign:'right'}}>{Math.abs(Number(r.diferenca))>1?fmtSinal(Number(r.diferenca)):'bateu'}</span>}
+          </div>; })}
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:800,padding:'8px 0 0'}}><span>Total (banca)</span><span>{fmt(d.salasEu.total)}</span></div>
+        {conf&&conf.resultado&&<div data-conferencia-resultado style={{marginTop:8,fontSize:13,fontWeight:600,color:conf.resultado.diverge?C.red:C.greenMid}}>
+          {conf.resultado.diverge?`Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.`:'Bateu com o sistema.'}</div>}
+        {!conf&&d.salasEu.ultima_conferencia&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>Última conferência: {dataBR(d.salasEu.ultima_conferencia.criado_em)} · {d.salasEu.ultima_conferencia.diverge?'não bateu':'bateu'}.</div>}
+        <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
+          {!conf&&(d.salasEu.salas||[]).some(s=>s.chave)&&<button data-conferir-saldos style={btnS} onClick={()=>setConf({valores:{},resultado:null})}>Conferir saldos</button>}
+          {conf&&!conf.resultado&&<button data-enviar-conferencia style={btnP} onClick={async()=>{
+            const saldos=(d.salasEu.salas||[]).filter(s=>s.chave&&String(conf.valores[s.chave]??'').trim()!=='').map(s=>({sala:s.sala,saldo:cent(parseValor(conf.valores[s.chave]))}));
+            if(!saldos.length) return setAviso({erro:true,texto:'Lance o saldo de pelo menos uma sala.'});
+            setAviso(null); const {data,error}=await sb.rpc('conferir_saldos',{p_saldos:saldos});
+            if(error) return setAviso({erro:true,texto:error.message||'Não deu certo.'}); setConf(c=>({...c,resultado:data})); }}>Comparar com o sistema</button>}
+          {conf&&<button style={btnS} onClick={()=>{ setConf(null); carregar(); }}>{conf.resultado?'Fechar':'Cancelar'}</button>}
+        </div>
       </Card>}
       {minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
         <h3 style={tituloS}>Regras da sua reta</h3>
@@ -2823,15 +2929,19 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
         <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
       </Card>}
       {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
-      {reloadAberto&&<ReloadModal onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
+      {reloadAberto&&<ReloadModal salas={d.salasEu?.salas} onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
       {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
-      {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
+      {manualAberta&&d.eu&&<PlanilhaManualModal nome={d.eu.nome} salas={d.salasEu?.salas} onClose={()=>setManualAberta(false)} onPronto={p=>{ setManualAberta(false); setPlanilha(p); }}/>}
+      {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} salas={d.salasEu?.salas} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
     </div>;
   }
 
   /* ================= GESTÃO ================= */
   const souAdmin=!!(raiz&&pode('administrar',raiz.id));
   const modais=<>
+    {capitalDe&&<CapitalModal nome={capitalDe.p.nome} salas={capitalDe.salas} onClose={()=>setCapitalDe(null)}
+      onSalvar={async({valor,sala})=>{ const p=capitalDe.p; const r=await rodar('registrar_aporte',{p_pessoa:p.id,p_valor:valor,p_data:todayISO(),p_obs:null,p_sala:sala},`Capital de ${fmt(valor)} registrado pra ${p.nome} (${sala}).`); if(r) setCapitalDe(null); }}/>}
+    {salasDe&&<SalasModal nome={salasDe.p.nome} dados={salasDe.dados} onClose={()=>setSalasDe(null)}/>}
     {saidaDe&&<SaidaModal nome={saidaDe.p.nome} previa={saidaDe.previa} onClose={()=>setSaidaDe(null)}
       onBanca={async b=>{ const pv=await previaSaida(saidaDe.p,b); if(pv) setSaidaDe(x=>x&&{...x,previa:pv}); }}
       onConfirmar={async({banca,recebido})=>{ const p=saidaDe.p; const r=await rodar('registrar_saida',{p_alvo:p.id,p_banca:banca,p_recebido:recebido,p_obs:null},
@@ -3076,6 +3186,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca informada {fmt(s.banca)}{s.banca_sistema!=null?<> · no sistema {fmt(s.banca_sistema)}</>:null} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b>{s.observacao?` · "${s.observacao}"`:''}</div>
           {s.banca_sistema!=null&&Math.abs(Number(s.banca)-Number(s.banca_sistema))>1&&<div data-banca-diferente style={{color:C.red,fontWeight:700,fontSize:13,marginTop:4}}>
             A banca informada está {fmt(Math.abs(Number(s.banca)-Number(s.banca_sistema)))} {Number(s.banca)>Number(s.banca_sistema)?'acima':'abaixo'} da do sistema: confira os lançamentos antes de aprovar.</div>}
+          {Array.isArray(s.carteiras)&&s.carteiras.length>0&&<div data-saque-salas style={{marginTop:6,fontSize:12.5,lineHeight:1.6}}>
+            {s.carteiras.map(c=>{ const dif=cent(num(c.saldo)-num(c.sistema)); return <div key={c.chave||c.sala} data-saque-sala-linha={c.sala}><b>{c.sala}</b>: informado {fmt(c.saldo)} · sistema {fmt(c.sistema)}{Math.abs(dif)>1?<span style={{color:C.red,fontWeight:700}}> ({fmtSinal(dif)})</span>:null} · <b>sai {fmt(c.valor)}</b></div>; })}</div>}
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
             {s.status==='solicitado'&&<button style={btnP} onClick={()=>rodar('decidir_saque',{p_id:s.id,p_aprovar:true,p_motivo:null},'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')}>Aprovar</button>}
             {s.status==='solicitado'&&<button style={{...btnS,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_saque',{p_id:s.id,p_aprovar:false,p_motivo:m},'Saque recusado.'); }})}>Recusar</button>}
@@ -3116,12 +3228,15 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
       {din.length>0&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Dinheiro por jogador</h3>
         <div style={{overflowX:'auto'}}><table data-dinheiro style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lifetime'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lifetime','Salas'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
           <tbody>{[...din].sort((a,b)=>(mkDe(a.banca,a.mu)??0)-(mkDe(b.banca,b.mu)??0)).map(l=><tr key={l.pessoa_id} data-dinheiro-de={l.nome}>
             <td style={{...tdS,fontWeight:700}}>{l.nome}</td><td style={tdS}>{U[l.unidade_id]?.nome||l.unidade}</td><td style={tdS}>{fmt(l.banca)}</td><td style={tdS}>{l.mu==null?'—':fmt(l.mu)}</td>
             <td style={tdS}><MkSelo v={mkDe(l.banca,l.mu)}/></td>
             <td style={tdS} data-lifetime-de={l.nome}>{l.lucro_sacado==null?'—':<>{mkDe(l.banca,l.mu)==null?fmt(l.lucro_sacado):fmtSinal(cent(num(l.lucro_sacado)+mkDe(l.banca,l.mu)))}
-              <div style={{fontSize:12,color:C.inkSoft}}>sacado {fmt(l.lucro_sacado)}</div></>}</td></tr>)}</tbody></table></div>
+              <div style={{fontSize:12,color:C.inkSoft}}>sacado {fmt(l.lucro_sacado)}</div></>}</td>
+            <td style={tdS} data-salas-de={l.nome}>{(()=>{ const c=d.conferencias.find(x=>x.pessoa_id===l.pessoa_id);
+              return <div style={{display:'flex',alignItems:'center',gap:8}}>{c?<span style={{fontSize:12.5,fontWeight:700,color:c.diverge?C.red:C.greenMid}}>{c.diverge?`diverge ${fmtSinal(Number(c.diferenca))}`:'bateu'} · {dataBR(c.criado_em)}</span>:<span style={{fontSize:12.5,color:C.inkSoft}}>sem conferência</span>}
+                <button style={{...btnS,padding:'5px 9px',fontSize:12}} onClick={()=>verSalas({id:l.pessoa_id,nome:l.nome})}>Ver</button></div>; })()}</td></tr>)}</tbody></table></div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:4}}>Lifetime = o que já sacou + o profit de agora (como na planilha).</div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Contrato do time: {faixasTexto(contratoRaiz?.faixas)}{souAdmin?' · muda em Regras do time':''}</div>
       </Card>}
@@ -3281,9 +3396,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   }
   return null;
 }
-function ReloadModal({onClose,onPedir}){
+function ReloadModal({salas,onClose,onPedir}){
   const [f,setF]=useState({valor:'',sala:'',motivo:''});
-  const ok=parseValor(f.valor)>0;
+  const ok=parseValor(f.valor)>0&&String(f.sala).trim().length>0;
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
     <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -3291,7 +3406,7 @@ function ReloadModal({onClose,onPedir}){
         <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
       </div>
       <div><label style={labelStyle}>Quanto (US$)</label><input style={inputStyle} inputMode="decimal" value={f.valor} placeholder="ex.: 100" onChange={e=>setF(x=>({...x,valor:e.target.value}))}/></div>
-      <div><label style={labelStyle}>Em qual sala (opcional)</label><input style={inputStyle} value={f.sala} placeholder="ex.: GG" onChange={e=>setF(x=>({...x,sala:e.target.value}))}/></div>
+      <SalaCampo salas={salas} valor={f.sala} onChange={v=>setF(x=>({...x,sala:v}))} rotulo="Em qual sala"/>
       <div><label style={labelStyle}>Motivo (opcional)</label><input style={inputStyle} value={f.motivo} placeholder="ex.: banca abaixo do mínimo da grade" onChange={e=>setF(x=>({...x,motivo:e.target.value}))}/></div>
       <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5}}>Quem aprova os saques do time é avisado. Quando o time mandar, o valor entra no seu MU.</div>
       <button disabled={!ok} onClick={()=>onPedir({p_valor:parseValor(f.valor),p_sala:f.sala.trim()||null,p_motivo:f.motivo.trim()||null})}
@@ -3401,40 +3516,67 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
     </div>
   </div>;
 }
-function SaqueModal({pessoa,onClose,onPedir}){
-  const [f,setF]=useState({banca:'',devolucao:'',cashout:'',obs:''});
+function SaqueModal({pessoa,salas,onClose,onPedir}){
+  // cada sala: o saldo de agora (o que o jogador vê no site) e quanto sai dela; o servidor confere tudo de novo
+  const base=(salas||[]).filter(s=>s.chave);
+  const [ls,setLs]=useState(()=>base.length?base.map(s=>({sala:s.sala,sistema:num(s.saldo),saldo:'',valor:''})):[{sala:'',sistema:null,saldo:'',valor:''}]);
+  const [dev,setDev]=useState(''); const [obs,setObs]=useState('');
   const [prev,setPrev]=useState(null); const [err,setErr]=useState('');
   const [sug,setSug]=useState(null);   // sugestão do servidor: devolve o MU e saca deixando a reserva em cada sala
   useEffect(()=>{ let vivo=true; (async()=>{ try{ const {data,error}=await sb.rpc('sugerir_saque',{p_pessoa:pessoa}); if(vivo&&!error&&data) setSug(data); }catch(e){} })(); return ()=>{ vivo=false; }; },[pessoa]);
   const br=v=>String(Number(v)||0).replace('.',',');
-  useEffect(()=>{ const b=parseValor(f.banca), dv=parseValor(f.devolucao)||0, co=parseValor(f.cashout)||0;
-    if(!(b>0)||!(dv+co>0)){ setPrev(null); setErr(''); return; }
-    const t=setTimeout(async()=>{ const {data,error}=await sb.rpc('simular_saque',{p_pessoa:pessoa,p_banca:b,p_devolucao:dv,p_cashout:co});
+  const nomeadas=ls.filter(l=>String(l.sala).trim());
+  const banca=cent(nomeadas.reduce((a,l)=>a+parseValor(l.saldo),0)), total=cent(nomeadas.reduce((a,l)=>a+parseValor(l.valor),0));
+  const devolucao=cent(parseValor(dev)), cashout=cent(total-devolucao);
+  const problema=ls.some(l=>!String(l.sala).trim()&&(parseValor(l.saldo)||parseValor(l.valor)))?'Dê o nome da sala.'
+    :nomeadas.some(l=>parseValor(l.valor)>parseValor(l.saldo)+0.001)?'Não dá pra sacar de uma sala mais do que ela tem.'
+    :new Set(nomeadas.map(l=>salaChave(l.sala))).size<nomeadas.length?'Sala repetida.'
+    :cashout<0?'A devolução é maior do que o que sai das salas.':'';
+  useEffect(()=>{ if(problema||!(banca>0)||!(total>0)){ setPrev(null); setErr(problema); return; }
+    const t=setTimeout(async()=>{ const {data,error}=await sb.rpc('simular_saque',{p_pessoa:pessoa,p_banca:banca,p_devolucao:devolucao,p_cashout:cashout});
       if(error){ setPrev(null); setErr(error.message||'Valores inválidos.'); } else { setPrev(data); setErr(''); } },350);
-    return ()=>clearTimeout(t); },[f.banca,f.devolucao,f.cashout]);
-  const campo=(k,rot,dica)=><div><label style={labelStyle}>{rot}</label><input style={inputStyle} inputMode="decimal" value={f[k]} placeholder={dica} onChange={e=>setF(x=>({...x,[k]:e.target.value}))}/></div>;
-  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-    <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12,maxHeight:'92vh',overflowY:'auto'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Pedir saque</h3>
-        <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
-      </div>
+    return ()=>clearTimeout(t); },[banca,total,devolucao,cashout,problema]);
+  const usarSugestao=()=>{ if(!sug) return; const de=Object.fromEntries((sug.de_onde||[]).map(x=>[salaChave(x.sala),x]));
+    setLs(x=>x.map(l=>{ const y=de[salaChave(l.sala)]; return {...l,saldo:l.sistema!=null?br(l.sistema):l.saldo,valor:sug.por_sala&&y?br(y.sacar):l.valor}; }));
+    setDev(br(sug.devolucao)); };
+  const muda=(i,k,v)=>setLs(x=>x.map((l,j)=>j===i?{...l,[k]:v}:l));
+  const ok=!!prev&&!problema;
+  return <div onClick={onClose} style={fundoModal}>
+    <div onClick={e=>e.stopPropagation()} data-saque-modal className="ftfade" style={caixaModal}>
+      {topoModal('Pedir saque',onClose)}
       {sug&&sug.em_mk&&<div data-saque-sugestao="mk" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>Em MK: a banca no sistema ({fmt(sug.banca)}) está abaixo do MU ({fmt(sug.mu)}). Saque de lucro só depois de sair do MK.</div>}
       {sug&&!sug.em_mk&&(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao style={{background:C.bg,borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
         Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b>{Number(sug.reserva_total)>0?<>, deixando {fmt(sug.reserva_por_sala)} em {Number(sug.salas)>1?`cada uma das ${sug.salas} salas`:'cada sala'} (banca depois {fmt(sug.banca_depois)})</>:null}.
-        <div style={{marginTop:6}}><button style={btnS} onClick={()=>setF(x=>({...x,banca:br(sug.banca),devolucao:br(sug.devolucao),cashout:br(sug.cashout)}))}>Usar sugestão</button></div></div>}
-      {campo('banca','Banca atual (todas as salas)','ex.: 625')}
-      {campo('devolucao','Devolver de MU','ex.: 310')}
-      {campo('cashout','Cashout (lucro que você quer sacar)','ex.: 165')}
-      <div><label style={labelStyle}>Observação (opcional)</label><input style={inputStyle} value={f.obs} placeholder="ex.: 50 saindo da PS pra Bullet" onChange={e=>setF(x=>({...x,obs:e.target.value}))}/></div>
+        {sug.por_sala&&(sug.de_onde||[]).some(x=>Number(x.sacar)>0)?<> Sai de: {(sug.de_onde||[]).filter(x=>Number(x.sacar)>0).map(x=>`${x.sala} ${fmt(x.sacar)}`).join(', ')}.</>:null}
+        <div style={{marginTop:6}}><button style={btnS} onClick={usarSugestao}>Usar sugestão</button></div></div>}
+      <div style={{fontSize:12.5,color:C.inkSoft}}>Em cada sala: quanto tem agora (como aparece no site) e quanto sai dela.</div>
+      {ls.map((l,i)=>{ const dif=l.sistema!=null&&String(l.saldo).trim()!==''?cent(parseValor(l.saldo)-l.sistema):null;
+        return <div key={i} data-saque-sala={l.sala||i} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',display:'flex',flexDirection:'column',gap:6}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            {l.sistema!=null?<b style={{flex:1}}>{l.sala}</b>:<input data-saque-sala-nome style={{...inputStyle,flex:1}} value={l.sala} placeholder="Nome da sala" onChange={e=>muda(i,'sala',e.target.value)}/>}
+            {l.sistema!=null&&<span style={{fontSize:12,color:C.inkSoft}}>no sistema {fmt(l.sistema)}</span>}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div><div style={{fontSize:11,fontWeight:700,color:C.inkSoft,marginBottom:3}}>Saldo agora</div>
+              <input data-saque-saldo aria-label={`Saldo agora em ${l.sala||'sala'}`} style={inputStyle} inputMode="decimal" value={l.saldo} placeholder="0" onChange={e=>muda(i,'saldo',e.target.value)}/></div>
+            <div><div style={{fontSize:11,fontWeight:700,color:C.inkSoft,marginBottom:3}}>Sacar daqui</div>
+              <input data-saque-valor aria-label={`Sacar de ${l.sala||'sala'}`} style={inputStyle} inputMode="decimal" value={l.valor} placeholder="0" onChange={e=>muda(i,'valor',e.target.value)}/></div></div>
+          {dif!=null&&Math.abs(dif)>1&&<div data-saque-sala-diferente style={{fontSize:12,color:C.red,fontWeight:600}}>{fmtSinal(dif)} em relação ao sistema: o time vai ver a diferença.</div>}
+        </div>; })}
+      <button style={{...btnS,alignSelf:'flex-start'}} onClick={()=>setLs(x=>[...x,{sala:'',sistema:null,saldo:'',valor:''}])}>+ outra sala</button>
+      <div data-saque-totais style={{fontSize:13.5,lineHeight:1.6}}>Banca (soma das salas): <b>{fmt(banca)}</b> · sai das salas: <b>{fmt(total)}</b></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,alignItems:'end'}}>
+        <div><label style={labelStyle} htmlFor="sq-dev">Disso, devolver de MU</label><input id="sq-dev" data-saque-devolucao style={inputStyle} inputMode="decimal" value={dev} placeholder="0" onChange={e=>setDev(e.target.value)}/></div>
+        <div style={{fontSize:13.5,paddingBottom:12}}>Cashout (lucro): <b data-saque-cashout>{fmt(Math.max(cashout,0))}</b></div></div>
+      <div><label style={labelStyle}>Observação (opcional)</label><input style={inputStyle} value={obs} placeholder="ex.: GG pelo Skrill, PS pela conta do banco" onChange={e=>setObs(e.target.value)}/></div>
       {err&&<div data-saque-erro style={{color:C.red,fontSize:13,fontWeight:600}}>{err}</div>}
       {prev&&<div data-saque-previa style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',fontSize:13.5,lineHeight:1.6}}>
         Você fica com <b>{fmt(prev.parte_jogador)}</b> · time recebe <b>{fmt(prev.total_time)}</b> ({fmt(prev.devolucao)} de MU + {fmt(prev.parte_time)} do cashout)<br/>
         Banca depois: {fmt(prev.banca_depois)} · MU depois: {fmt(prev.mu_depois)}
         {prev.divisao&&prev.divisao.faixas&&prev.divisao.faixas[0]&&<><br/><span data-saque-faixa>Faixa de {Math.round(Number(prev.divisao.faixas[0].jogador_pct)*1000)/10}% pro saque inteiro (lifetime de {fmt(prev.divisao.faixas[0].lifetime)} hoje)</span></>}
       </div>}
-      <button disabled={!prev} onClick={()=>onPedir({p_banca:parseValor(f.banca),p_devolucao:parseValor(f.devolucao)||0,p_cashout:parseValor(f.cashout)||0,p_carteiras:null,p_obs:f.obs.trim()||null})}
-        style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:prev?'pointer':'default',opacity:prev?1:.5}}>Pedir saque</button>
+      <button disabled={!ok} onClick={()=>onPedir({p_banca:banca,p_devolucao:devolucao,p_cashout:cashout,
+          p_carteiras:nomeadas.map(l=>({sala:String(l.sala).trim(),saldo:cent(parseValor(l.saldo)),valor:cent(parseValor(l.valor))})),p_obs:obs.trim()||null})}
+        style={{padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:ok?'pointer':'default',opacity:ok?1:.5}}>Pedir saque</button>
     </div>
   </div>;
 }
@@ -4477,7 +4619,7 @@ function Dashboard({session,profile}){
             onLimpar={async()=>{ setAvApagados(l=>[...l,...alertasPainel.map(x=>x.key)]); setAvLocais([]);
               if(avisos.length){ setAvisos([]); try{ await sb.rpc('apagar_avisos'); }catch(e){} } }}
             onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel){
-              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
+              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
               else setView('time'); } }}/>
           <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
         </div>

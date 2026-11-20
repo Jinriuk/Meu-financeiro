@@ -2138,6 +2138,19 @@ const gradeSala = s => {
   if (/party/.test(k)) return 'party';
   return k;
 };
+// sala do DINHEIRO numa chave só (igual a sala_chave do servidor): "GG" = "GG Poker", "PS" = "PokerStars", "WPN" = "ACR"
+// (a grade separa ACR de WPN; o dinheiro do ACR sai da conta WPN)
+const salaChave = s => {
+  const k = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!k) return null;
+  if (/^gg/.test(k) || k === 'natural8' || k === 'n8') return 'gg';
+  if (k === 'pses' || k === 'pokerstarses' || k === 'starses') return 'pses';
+  if (k === 'ps' || /stars/.test(k)) return 'ps';
+  if (/^(acr|americas|winning|wpn)/.test(k)) return 'wpn';
+  if (/party/.test(k)) return 'party';
+  if (/^888/.test(k)) return '888';
+  return k;
+};
 // garantido pelo nome: "$5K", "100k GTD", "$100,000" (número com k/m, ou 1.000+ com $)
 function gtdDoNome(nome) {
   const n = String(nome || '');
@@ -8517,6 +8530,363 @@ function PlataformaApp() {
   }));
 }
 
+// escolhe a sala: uma das que o jogador já tem, ou outra pelo nome (capital, reload)
+function SalaCampo({
+  salas,
+  valor,
+  onChange,
+  rotulo = 'Sala'
+}) {
+  const nomes = [...new Set((salas || []).filter(s => s.chave).map(s => s.sala))];
+  const [outra, setOutra] = useState(!nomes.length || !!valor && !nomes.includes(valor));
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, rotulo), nomes.length > 0 && /*#__PURE__*/React.createElement("select", {
+    "data-sala-escolha": true,
+    value: outra ? '__outra' : valor || '',
+    onChange: e => {
+      if (e.target.value === '__outra') {
+        setOutra(true);
+        onChange('');
+      } else {
+        setOutra(false);
+        onChange(e.target.value);
+      }
+    },
+    style: inputStyle
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Escolha a sala"), nomes.map(n => /*#__PURE__*/React.createElement("option", {
+    key: n,
+    value: n
+  }, n)), /*#__PURE__*/React.createElement("option", {
+    value: "__outra"
+  }, "Outra sala\u2026")), outra && /*#__PURE__*/React.createElement("input", {
+    "data-sala-outra": true,
+    style: {
+      ...inputStyle,
+      marginTop: nomes.length ? 8 : 0
+    },
+    value: valor || '',
+    placeholder: "ex.: GG, PokerStars, WPN",
+    onChange: e => onChange(e.target.value)
+  }));
+}
+const fundoModal = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(20,18,30,.45)',
+  backdropFilter: 'blur(3px)',
+  display: 'flex',
+  alignItems: 'flex-end',
+  justifyContent: 'center',
+  zIndex: 50
+};
+const caixaModal = {
+  background: C.surface,
+  width: '100%',
+  maxWidth: 500,
+  maxHeight: '92vh',
+  overflowY: 'auto',
+  borderRadius: '24px 24px 0 0',
+  padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12
+};
+const topoModal = (titulo, onClose) => /*#__PURE__*/React.createElement("div", {
+  style: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  }
+}, /*#__PURE__*/React.createElement("h3", {
+  style: {
+    fontFamily: "'Space Grotesk',sans-serif",
+    fontSize: 20,
+    fontWeight: 600,
+    margin: 0
+  }
+}, titulo), /*#__PURE__*/React.createElement("button", {
+  onClick: onClose,
+  "aria-label": "Fechar",
+  style: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    border: 'none',
+    background: C.bg,
+    cursor: 'pointer',
+    display: 'grid',
+    placeItems: 'center',
+    color: C.inkSoft
+  }
+}, /*#__PURE__*/React.createElement(IcoX, {
+  s: 20
+})));
+// capital mandado pelo time: valor e sala (cada sala tem o seu jeito de depósito)
+function CapitalModal({
+  nome,
+  salas,
+  onSalvar,
+  onClose
+}) {
+  const [valor, setValor] = useState('');
+  const [sala, setSala] = useState('');
+  const [indo, setIndo] = useState(false);
+  const v = parseValor(valor),
+    ok = v !== 0 && String(sala).trim().length > 0 && !indo;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-capital-modal": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(`Capital mandado pra ${nome}`, onClose), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "cap-v"
+  }, "Quanto (US$)"), /*#__PURE__*/React.createElement("input", {
+    id: "cap-v",
+    "data-capital-valor": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: valor,
+    placeholder: "ex.: 200",
+    onChange: e => setValor(e.target.value)
+  })), /*#__PURE__*/React.createElement(SalaCampo, {
+    salas: salas,
+    valor: sala,
+    onChange: setSala,
+    rotulo: "Em qual sala"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "Entra no MU e na banca dessa sala. Negativo corrige um lan\xE7amento."), /*#__PURE__*/React.createElement("button", {
+    disabled: !ok,
+    onClick: async () => {
+      setIndo(true);
+      await onSalvar({
+        valor: v,
+        sala: String(sala).trim()
+      });
+      setIndo(false);
+    },
+    style: {
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer',
+      opacity: ok ? 1 : .5
+    }
+  }, "Registrar capital")));
+}
+// as salas de um jogador pelo sistema, a soma (= banca) e a última conferência dele
+function SalasModal({
+  nome,
+  dados,
+  onClose
+}) {
+  const salas = dados && dados.salas || [],
+    conf = dados && dados.ultima_conferencia;
+  const difDe = ch => {
+    const l = conf && (conf.salas || []).find(x => x.chave === ch);
+    return l && l.diferenca != null ? Number(l.diferenca) : null;
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-salas-modal": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(`Salas de ${nome}`, onClose), salas.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft
+    }
+  }, "Nenhuma sala ainda.") : salas.map(s => {
+    const dif = s.chave ? difDe(s.chave) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: s.chave || 'sem',
+      "data-sala-linha": s.sala,
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '6px 0',
+        borderBottom: `1px solid ${C.border}`,
+        fontSize: 13.5
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: s.chave ? C.ink : C.inkSoft
+      }
+    }, s.chave ? s.sala : 'Sem sala (capital ou saque antigo sem a sala)'), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("b", null, fmt(s.saldo)), dif != null && Math.abs(dif) > 1 ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.red,
+        fontWeight: 700
+      }
+    }, " \xB7 lan\xE7ado ", fmtSinal(dif)) : null));
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      fontSize: 14,
+      fontWeight: 800,
+      paddingTop: 4
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Total (banca)"), /*#__PURE__*/React.createElement("span", null, fmt(dados?.total))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, conf ? `Última conferência do jogador: ${dataBR(conf.criado_em)} · ${conf.diverge ? `diverge ${fmtSinal(Number(conf.diferenca))} no total` : 'bateu'}.` : 'O jogador ainda não conferiu os saldos das salas.')));
+}
+// abertura sem planilha: o jogador preenche o que a planilha do time diria (serve pra qualquer time)
+function PlanilhaManualModal({
+  nome,
+  salas,
+  onPronto,
+  onClose
+}) {
+  const base = (salas || []).filter(s => s.chave).map(s => s.sala);
+  const [mk, setMk] = useState('');
+  const [co, setCo] = useState('');
+  const [data, setData] = useState(todayISO());
+  const [ls, setLs] = useState(() => (base.length ? base : ['GG Poker', 'PokerStars']).map(sala => ({
+    sala,
+    saldo: ''
+  })));
+  const saldos = ls.filter(l => String(l.sala).trim()).map(l => ({
+    sala: String(l.sala).trim(),
+    saldo: cent(parseValor(l.saldo))
+  }));
+  const banca = cent(saldos.reduce((a, s) => a + s.saldo, 0)),
+    makeup = cent(parseValor(mk)),
+    cashout = cent(parseValor(co));
+  const ok = makeup >= 0 && cashout >= 0 && saldos.length > 0 && !!data;
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-planilha-manual": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal('Abertura sem planilha', onClose), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "Os n\xFAmeros de hoje com o time (os mesmos da planilha). O time confere antes de valer."), ls.map((l, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 120px',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    "data-manual-sala": i,
+    style: inputStyle,
+    value: l.sala,
+    placeholder: "Sala",
+    onChange: e => setLs(x => x.map((y, j) => j === i ? {
+      ...y,
+      sala: e.target.value
+    } : y))
+  }), /*#__PURE__*/React.createElement("input", {
+    "data-manual-saldo": i,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: l.saldo,
+    placeholder: "Saldo",
+    onChange: e => setLs(x => x.map((y, j) => j === i ? {
+      ...y,
+      saldo: e.target.value
+    } : y))
+  }))), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnS,
+      alignSelf: 'flex-start'
+    },
+    onClick: () => setLs(x => [...x, {
+      sala: '',
+      saldo: ''
+    }])
+  }, "+ sala"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pm-mk"
+  }, "MakeUp (capital do time com voc\xEA)"), /*#__PURE__*/React.createElement("input", {
+    id: "pm-mk",
+    "data-manual-makeup": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: mk,
+    onChange: e => setMk(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pm-co"
+  }, "Cashout (lucro que voc\xEA j\xE1 sacou no time)"), /*#__PURE__*/React.createElement("input", {
+    id: "pm-co",
+    "data-manual-cashout": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: co,
+    onChange: e => setCo(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pm-dt"
+  }, "Saldos de que dia"), /*#__PURE__*/React.createElement("input", {
+    id: "pm-dt",
+    type: "date",
+    style: inputStyle,
+    value: data,
+    max: todayISO(),
+    onChange: e => setData(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5
+    }
+  }, "Banca (soma das salas): ", /*#__PURE__*/React.createElement("b", null, fmt(banca)), " \xB7 profit ", fmtSinal(cent(banca - makeup))), /*#__PURE__*/React.createElement("button", {
+    disabled: !ok,
+    onClick: () => onPronto({
+      nome,
+      atualizado_em: data,
+      saldos,
+      banca,
+      makeup,
+      cashout,
+      lucro: cent(banca - makeup),
+      lifetime: cent(cashout + banca - makeup),
+      grade: [],
+      avisos: []
+    }),
+    style: {
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer',
+      opacity: ok ? 1 : .5
+    }
+  }, "Conferir e enviar")));
+}
+
 // regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
 const REGRAS_RETA = [{
   k: 'abi_max',
@@ -8804,6 +9174,10 @@ function TimeApp({
   const [regraSel, setRegraSel] = useState(null); // regras por reta: a unidade aberta no cartão
   const [planilha, setPlanilha] = useState(null);
   const [reloadAberto, setReloadAberto] = useState(false);
+  const [capitalDe, setCapitalDe] = useState(null); // capital com a sala: {p, salas}
+  const [salasDe, setSalasDe] = useState(null); // gestor olhando as salas de um jogador: {p, dados}
+  const [conf, setConf] = useState(null); // conferência de saldos do jogador: {valores, resultado}
+  const [manualAberta, setManualAberta] = useState(false); // abertura sem planilha
   const [periodo, setPeriodo] = useState('mes');
   const [resumo, setResumo] = useState(null);
   const [gradeAberta, setGradeAberta] = useState(null);
@@ -8867,16 +9241,21 @@ function TimeApp({
   };
   const carregar = async () => {
     const q = (t, cols = '*') => lerTudo(() => sb.from(t).select(cols).order('id')); // paginado: o servidor corta em 1.000 linhas
-    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd, acs] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada'), q('acerto_saida')]);
+    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd, acs, cfs] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada'), q('acerto_saida'), q('conferencia_saldo')]);
     const pessoas = p.data || [],
       vinculos = v.data || [];
     const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
     let sit = null;
+    let salasEu = null;
     if (eu && vinculos.some(x => x.pessoa_id === eu.id && !x.fim)) {
       const r = await sb.rpc('situacao_jogador', {
         p_pessoa: eu.id
       });
       if (!r.error) sit = r.data;
+      const r2 = await sb.rpc('salas_jogador', {
+        p_pessoa: eu.id
+      });
+      if (!r2.error && r2.data) salasEu = r2.data;
     }
     setD({
       unidades: (u.data || []).filter(x => !x.arquivada).sort((x, y) => String(x.caminho).localeCompare(String(y.caminho))),
@@ -8890,6 +9269,8 @@ function TimeApp({
       reloads: (rl.data || []).sort((x, y) => String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       eu,
       sit,
+      salasEu,
+      conferencias: cfs.error ? [] : (cfs.data || []).sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))),
       grades: gr.error ? [] : gr.data || [],
       regras: rg.error ? [] : rg.data || [],
       codigo: tc.error ? null : (tc.data || [])[0] || null,
@@ -9094,21 +9475,38 @@ function TimeApp({
       }
     });
   };
-  const capital = p => setPerg({
-    label: `Capital mandado pra ${p.nome}`,
-    hint: 'Valor em dólar que o time mandou de banca (entra no MU). Negativo corrige um lançamento.',
-    kind: 'money',
-    valor: 0,
-    onSave: async v => {
-      setPerg(null);
-      if (v) await rodar('registrar_aporte', {
-        p_pessoa: p.id,
-        p_valor: v,
-        p_data: todayISO(),
-        p_obs: null
-      }, `Capital de ${fmt(v)} registrado pra ${p.nome}.`);
+  const salasDoJogador = async p => {
+    const {
+      data,
+      error
+    } = await sb.rpc('salas_jogador', {
+      p_pessoa: p.id
+    });
+    if (error) {
+      setAviso({
+        erro: true,
+        texto: error.message || 'Não deu certo.'
+      });
+      return null;
     }
-  });
+    return data;
+  };
+  const capital = async p => {
+    setAviso(null);
+    const dados = await salasDoJogador(p);
+    setCapitalDe({
+      p,
+      salas: dados && dados.salas || []
+    });
+  };
+  const verSalas = async p => {
+    setAviso(null);
+    const dados = await salasDoJogador(p);
+    if (dados) setSalasDe({
+      p,
+      dados
+    });
+  };
   const linkPessoal = async (p, u) => {
     const t = await rodar('criar_convite', {
       p_unidade: u,
@@ -9337,7 +9735,7 @@ function TimeApp({
         fontWeight: 600,
         marginTop: 6
       }
-    }, "Planilha do Samba conferida pelo time em ", dataBR(minhaAbertura.confirmado_em), ".") : /*#__PURE__*/React.createElement("div", {
+    }, "Planilha conferida pelo time em ", dataBR(minhaAbertura.confirmado_em), ".") : /*#__PURE__*/React.createElement("div", {
       style: {
         marginTop: 10
       }
@@ -9349,12 +9747,18 @@ function TimeApp({
         fontWeight: 600,
         marginBottom: 6
       }
-    }, "Planilha enviada em ", dataBR(minhaAbertura.enviado_em), ": aguardando o time conferir. At\xE9 l\xE1 o MU e o lucro sacado dela n\xE3o contam."), /*#__PURE__*/React.createElement("label", {
+    }, "Planilha enviada em ", dataBR(minhaAbertura.enviado_em), ": aguardando o time conferir. At\xE9 l\xE1 o MU e o lucro sacado dela n\xE3o contam."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("label", {
       style: {
         ...btnS,
         display: 'inline-block'
       }
-    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar minha planilha do Samba', /*#__PURE__*/React.createElement("input", {
+    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar planilha (modelo Samba)', /*#__PURE__*/React.createElement("input", {
       type: "file",
       accept: ".xlsx",
       "data-importar-planilha": true,
@@ -9365,7 +9769,11 @@ function TimeApp({
         lerPlanilha(e.target.files && e.target.files[0]);
         e.target.value = '';
       }
-    }))), /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("button", {
+      "data-abertura-manual": true,
+      style: btnS,
+      onClick: () => setManualAberta(true)
+    }, "Preencher \xE0 m\xE3o"))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -9448,7 +9856,147 @@ function TimeApp({
       onClick: () => rodar('cancelar_saque', {
         p_id: s.id
       }, 'Pedido cancelado.')
-    }, "Cancelar"))))), minhaUnidade && /*#__PURE__*/React.createElement(Card, {
+    }, "Cancelar"))))), d.salasEu && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      },
+      "data-minhas-salas": true
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Minhas salas"), (d.salasEu.salas || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        color: C.inkSoft
+      }
+    }, "Nenhuma sala ainda. Elas aparecem com a planilha conferida, com o capital do time ou com os torneios de cada site."), (d.salasEu.salas || []).map(s => {
+      const r = conf && conf.resultado && (conf.resultado.salas || []).find(x => x.chave === s.chave);
+      return /*#__PURE__*/React.createElement("div", {
+        key: s.chave || 'sem',
+        "data-minha-sala": s.sala,
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '6px 0',
+          borderTop: `1px solid ${C.border}`,
+          fontSize: 13.5
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          flex: 1,
+          color: s.chave ? C.ink : C.inkSoft
+        }
+      }, s.chave ? s.sala : 'Sem sala (capital ou saque antigo)'), /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft,
+          fontSize: 12
+        }
+      }, "sistema"), /*#__PURE__*/React.createElement("b", {
+        style: {
+          minWidth: 90,
+          textAlign: 'right'
+        }
+      }, fmt(s.saldo)), conf && !conf.resultado && s.chave && /*#__PURE__*/React.createElement("input", {
+        "data-conferir-sala": s.sala,
+        "aria-label": `Saldo agora em ${s.sala}`,
+        style: {
+          ...inputStyle,
+          width: 110,
+          padding: '7px 10px'
+        },
+        inputMode: "decimal",
+        placeholder: "saldo agora",
+        value: conf.valores[s.chave] ?? '',
+        onChange: e => {
+          const v = e.target.value;
+          setConf(c => ({
+            ...c,
+            valores: {
+              ...c.valores,
+              [s.chave]: v
+            }
+          }));
+        }
+      }), r && r.diferenca != null && /*#__PURE__*/React.createElement("span", {
+        "data-sala-diferenca": s.sala,
+        style: {
+          fontWeight: 700,
+          color: Math.abs(Number(r.diferenca)) > 1 ? C.red : C.greenMid,
+          minWidth: 80,
+          textAlign: 'right'
+        }
+      }, Math.abs(Number(r.diferenca)) > 1 ? fmtSinal(Number(r.diferenca)) : 'bateu'));
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: 14,
+        fontWeight: 800,
+        padding: '8px 0 0'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Total (banca)"), /*#__PURE__*/React.createElement("span", null, fmt(d.salasEu.total))), conf && conf.resultado && /*#__PURE__*/React.createElement("div", {
+      "data-conferencia-resultado": true,
+      style: {
+        marginTop: 8,
+        fontSize: 13,
+        fontWeight: 600,
+        color: conf.resultado.diverge ? C.red : C.greenMid
+      }
+    }, conf.resultado.diverge ? `Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.` : 'Bateu com o sistema.'), !conf && d.salasEu.ultima_conferencia && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginTop: 6
+      }
+    }, "\xDAltima confer\xEAncia: ", dataBR(d.salasEu.ultima_conferencia.criado_em), " \xB7 ", d.salasEu.ultima_conferencia.diverge ? 'não bateu' : 'bateu', "."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        marginTop: 10,
+        flexWrap: 'wrap'
+      }
+    }, !conf && (d.salasEu.salas || []).some(s => s.chave) && /*#__PURE__*/React.createElement("button", {
+      "data-conferir-saldos": true,
+      style: btnS,
+      onClick: () => setConf({
+        valores: {},
+        resultado: null
+      })
+    }, "Conferir saldos"), conf && !conf.resultado && /*#__PURE__*/React.createElement("button", {
+      "data-enviar-conferencia": true,
+      style: btnP,
+      onClick: async () => {
+        const saldos = (d.salasEu.salas || []).filter(s => s.chave && String(conf.valores[s.chave] ?? '').trim() !== '').map(s => ({
+          sala: s.sala,
+          saldo: cent(parseValor(conf.valores[s.chave]))
+        }));
+        if (!saldos.length) return setAviso({
+          erro: true,
+          texto: 'Lance o saldo de pelo menos uma sala.'
+        });
+        setAviso(null);
+        const {
+          data,
+          error
+        } = await sb.rpc('conferir_saldos', {
+          p_saldos: saldos
+        });
+        if (error) return setAviso({
+          erro: true,
+          texto: error.message || 'Não deu certo.'
+        });
+        setConf(c => ({
+          ...c,
+          resultado: data
+        }));
+      }
+    }, "Comparar com o sistema"), conf && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => {
+        setConf(null);
+        carregar();
+      }
+    }, conf.resultado ? 'Fechar' : 'Cancelar'))), minhaUnidade && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       },
@@ -9527,6 +10075,7 @@ function TimeApp({
       onClose: () => setPerg(null),
       onSave: perg.onSave
     }), reloadAberto && /*#__PURE__*/React.createElement(ReloadModal, {
+      salas: d.salasEu?.salas,
       onClose: () => setReloadAberto(false),
       onPedir: async a => {
         const r = await rodar('pedir_reload', a, 'Pedido de reload enviado. O time foi avisado.');
@@ -9541,8 +10090,17 @@ function TimeApp({
         }, 'Planilha enviada. Agora o time confere os valores.');
         if (r) setPlanilha(null);
       }
+    }), manualAberta && d.eu && /*#__PURE__*/React.createElement(PlanilhaManualModal, {
+      nome: d.eu.nome,
+      salas: d.salasEu?.salas,
+      onClose: () => setManualAberta(false),
+      onPronto: p => {
+        setManualAberta(false);
+        setPlanilha(p);
+      }
     }), saqueAberto && d.eu && /*#__PURE__*/React.createElement(SaqueModal, {
       pessoa: d.eu.id,
+      salas: d.salasEu?.salas,
       onClose: () => setSaqueAberto(false),
       onPedir: async a => {
         const r = await rodar('solicitar_saque', a, 'Pedido de saque enviado. Aguarde a aprovação do time.');
@@ -9553,7 +10111,29 @@ function TimeApp({
 
   /* ================= GESTÃO ================= */
   const souAdmin = !!(raiz && pode('administrar', raiz.id));
-  const modais = /*#__PURE__*/React.createElement(React.Fragment, null, saidaDe && /*#__PURE__*/React.createElement(SaidaModal, {
+  const modais = /*#__PURE__*/React.createElement(React.Fragment, null, capitalDe && /*#__PURE__*/React.createElement(CapitalModal, {
+    nome: capitalDe.p.nome,
+    salas: capitalDe.salas,
+    onClose: () => setCapitalDe(null),
+    onSalvar: async ({
+      valor,
+      sala
+    }) => {
+      const p = capitalDe.p;
+      const r = await rodar('registrar_aporte', {
+        p_pessoa: p.id,
+        p_valor: valor,
+        p_data: todayISO(),
+        p_obs: null,
+        p_sala: sala
+      }, `Capital de ${fmt(valor)} registrado pra ${p.nome} (${sala}).`);
+      if (r) setCapitalDe(null);
+    }
+  }), salasDe && /*#__PURE__*/React.createElement(SalasModal, {
+    nome: salasDe.p.nome,
+    dados: salasDe.dados,
+    onClose: () => setSalasDe(null)
+  }), saidaDe && /*#__PURE__*/React.createElement(SaidaModal, {
     nome: saidaDe.p.nome,
     previa: saidaDe.previa,
     onClose: () => setSaidaDe(null),
@@ -10689,7 +11269,25 @@ function TimeApp({
         fontSize: 13,
         marginTop: 4
       }
-    }, "A banca informada est\xE1 ", fmt(Math.abs(Number(s.banca) - Number(s.banca_sistema))), " ", Number(s.banca) > Number(s.banca_sistema) ? 'acima' : 'abaixo', " da do sistema: confira os lan\xE7amentos antes de aprovar."), /*#__PURE__*/React.createElement("div", {
+    }, "A banca informada est\xE1 ", fmt(Math.abs(Number(s.banca) - Number(s.banca_sistema))), " ", Number(s.banca) > Number(s.banca_sistema) ? 'acima' : 'abaixo', " da do sistema: confira os lan\xE7amentos antes de aprovar."), Array.isArray(s.carteiras) && s.carteiras.length > 0 && /*#__PURE__*/React.createElement("div", {
+      "data-saque-salas": true,
+      style: {
+        marginTop: 6,
+        fontSize: 12.5,
+        lineHeight: 1.6
+      }
+    }, s.carteiras.map(c => {
+      const dif = cent(num(c.saldo) - num(c.sistema));
+      return /*#__PURE__*/React.createElement("div", {
+        key: c.chave || c.sala,
+        "data-saque-sala-linha": c.sala
+      }, /*#__PURE__*/React.createElement("b", null, c.sala), ": informado ", fmt(c.saldo), " \xB7 sistema ", fmt(c.sistema), Math.abs(dif) > 1 ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.red,
+          fontWeight: 700
+        }
+      }, " (", fmtSinal(dif), ")") : null, " \xB7 ", /*#__PURE__*/React.createElement("b", null, "sai ", fmt(c.valor)));
+    })), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -10968,7 +11566,7 @@ function TimeApp({
         width: '100%',
         borderCollapse: 'collapse'
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lifetime'].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lifetime', 'Salas'].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thS
     }, h)))), /*#__PURE__*/React.createElement("tbody", null, [...din].sort((a, b) => (mkDe(a.banca, a.mu) ?? 0) - (mkDe(b.banca, b.mu) ?? 0)).map(l => /*#__PURE__*/React.createElement("tr", {
@@ -10997,7 +11595,40 @@ function TimeApp({
         fontSize: 12,
         color: C.inkSoft
       }
-    }, "sacado ", fmt(l.lucro_sacado))))))))), /*#__PURE__*/React.createElement("div", {
+    }, "sacado ", fmt(l.lucro_sacado)))), /*#__PURE__*/React.createElement("td", {
+      style: tdS,
+      "data-salas-de": l.nome
+    }, (() => {
+      const c = d.conferencias.find(x => x.pessoa_id === l.pessoa_id);
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }
+      }, c ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: c.diverge ? C.red : C.greenMid
+        }
+      }, c.diverge ? `diverge ${fmtSinal(Number(c.diferenca))}` : 'bateu', " \xB7 ", dataBR(c.criado_em)) : /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12.5,
+          color: C.inkSoft
+        }
+      }, "sem confer\xEAncia"), /*#__PURE__*/React.createElement("button", {
+        style: {
+          ...btnS,
+          padding: '5px 9px',
+          fontSize: 12
+        },
+        onClick: () => verSalas({
+          id: l.pessoa_id,
+          nome: l.nome
+        })
+      }, "Ver"));
+    })())))))), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.inkSoft,
@@ -11728,6 +12359,7 @@ function TimeApp({
   return null;
 }
 function ReloadModal({
+  salas,
   onClose,
   onPedir
 }) {
@@ -11736,7 +12368,7 @@ function ReloadModal({
     sala: '',
     motivo: ''
   });
-  const ok = parseValor(f.valor) > 0;
+  const ok = parseValor(f.valor) > 0 && String(f.sala).trim().length > 0;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClose,
     style: {
@@ -11801,17 +12433,15 @@ function ReloadModal({
       ...x,
       valor: e.target.value
     }))
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelStyle
-  }, "Em qual sala (opcional)"), /*#__PURE__*/React.createElement("input", {
-    style: inputStyle,
-    value: f.sala,
-    placeholder: "ex.: GG",
-    onChange: e => setF(x => ({
+  })), /*#__PURE__*/React.createElement(SalaCampo, {
+    salas: salas,
+    valor: f.sala,
+    onChange: v => setF(x => ({
       ...x,
-      sala: e.target.value
-    }))
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      sala: v
+    })),
+    rotulo: "Em qual sala"
+  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
   }, "Motivo (opcional)"), /*#__PURE__*/React.createElement("input", {
     style: inputStyle,
@@ -12347,15 +12977,25 @@ function GradeModal({
 }
 function SaqueModal({
   pessoa,
+  salas,
   onClose,
   onPedir
 }) {
-  const [f, setF] = useState({
-    banca: '',
-    devolucao: '',
-    cashout: '',
-    obs: ''
-  });
+  // cada sala: o saldo de agora (o que o jogador vê no site) e quanto sai dela; o servidor confere tudo de novo
+  const base = (salas || []).filter(s => s.chave);
+  const [ls, setLs] = useState(() => base.length ? base.map(s => ({
+    sala: s.sala,
+    sistema: num(s.saldo),
+    saldo: '',
+    valor: ''
+  })) : [{
+    sala: '',
+    sistema: null,
+    saldo: '',
+    valor: ''
+  }]);
+  const [dev, setDev] = useState('');
+  const [obs, setObs] = useState('');
   const [prev, setPrev] = useState(null);
   const [err, setErr] = useState('');
   const [sug, setSug] = useState(null); // sugestão do servidor: devolve o MU e saca deixando a reserva em cada sala
@@ -12377,13 +13017,16 @@ function SaqueModal({
     };
   }, [pessoa]);
   const br = v => String(Number(v) || 0).replace('.', ',');
+  const nomeadas = ls.filter(l => String(l.sala).trim());
+  const banca = cent(nomeadas.reduce((a, l) => a + parseValor(l.saldo), 0)),
+    total = cent(nomeadas.reduce((a, l) => a + parseValor(l.valor), 0));
+  const devolucao = cent(parseValor(dev)),
+    cashout = cent(total - devolucao);
+  const problema = ls.some(l => !String(l.sala).trim() && (parseValor(l.saldo) || parseValor(l.valor))) ? 'Dê o nome da sala.' : nomeadas.some(l => parseValor(l.valor) > parseValor(l.saldo) + 0.001) ? 'Não dá pra sacar de uma sala mais do que ela tem.' : new Set(nomeadas.map(l => salaChave(l.sala))).size < nomeadas.length ? 'Sala repetida.' : cashout < 0 ? 'A devolução é maior do que o que sai das salas.' : '';
   useEffect(() => {
-    const b = parseValor(f.banca),
-      dv = parseValor(f.devolucao) || 0,
-      co = parseValor(f.cashout) || 0;
-    if (!(b > 0) || !(dv + co > 0)) {
+    if (problema || !(banca > 0) || !(total > 0)) {
       setPrev(null);
-      setErr('');
+      setErr(problema);
       return;
     }
     const t = setTimeout(async () => {
@@ -12392,9 +13035,9 @@ function SaqueModal({
         error
       } = await sb.rpc('simular_saque', {
         p_pessoa: pessoa,
-        p_banca: b,
-        p_devolucao: dv,
-        p_cashout: co
+        p_banca: banca,
+        p_devolucao: devolucao,
+        p_cashout: cashout
       });
       if (error) {
         setPrev(null);
@@ -12405,75 +13048,34 @@ function SaqueModal({
       }
     }, 350);
     return () => clearTimeout(t);
-  }, [f.banca, f.devolucao, f.cashout]);
-  const campo = (k, rot, dica) => /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: labelStyle
-  }, rot), /*#__PURE__*/React.createElement("input", {
-    style: inputStyle,
-    inputMode: "decimal",
-    value: f[k],
-    placeholder: dica,
-    onChange: e => setF(x => ({
-      ...x,
-      [k]: e.target.value
-    }))
-  }));
+  }, [banca, total, devolucao, cashout, problema]);
+  const usarSugestao = () => {
+    if (!sug) return;
+    const de = Object.fromEntries((sug.de_onde || []).map(x => [salaChave(x.sala), x]));
+    setLs(x => x.map(l => {
+      const y = de[salaChave(l.sala)];
+      return {
+        ...l,
+        saldo: l.sistema != null ? br(l.sistema) : l.saldo,
+        valor: sug.por_sala && y ? br(y.sacar) : l.valor
+      };
+    }));
+    setDev(br(sug.devolucao));
+  };
+  const muda = (i, k, v) => setLs(x => x.map((l, j) => j === i ? {
+    ...l,
+    [k]: v
+  } : l));
+  const ok = !!prev && !problema;
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClose,
-    style: {
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(20,18,30,.45)',
-      backdropFilter: 'blur(3px)',
-      display: 'flex',
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-      zIndex: 50
-    }
+    style: fundoModal
   }, /*#__PURE__*/React.createElement("div", {
     onClick: e => e.stopPropagation(),
+    "data-saque-modal": true,
     className: "ftfade",
-    style: {
-      background: C.surface,
-      width: '100%',
-      maxWidth: 460,
-      borderRadius: '24px 24px 0 0',
-      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-      maxHeight: '92vh',
-      overflowY: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center'
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: {
-      fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 20,
-      fontWeight: 600,
-      margin: 0
-    }
-  }, "Pedir saque"), /*#__PURE__*/React.createElement("button", {
-    onClick: onClose,
-    style: {
-      width: 38,
-      height: 38,
-      borderRadius: 12,
-      border: 'none',
-      background: C.bg,
-      cursor: 'pointer',
-      display: 'grid',
-      placeItems: 'center',
-      color: C.inkSoft
-    }
-  }, /*#__PURE__*/React.createElement(IcoX, {
-    s: 20
-  }))), sug && sug.em_mk && /*#__PURE__*/React.createElement("div", {
+    style: caixaModal
+  }, topoModal('Pedir saque', onClose), sug && sug.em_mk && /*#__PURE__*/React.createElement("div", {
     "data-saque-sugestao": "mk",
     style: {
       background: C.goldSoft,
@@ -12492,28 +13094,148 @@ function SaqueModal({
       fontSize: 13,
       lineHeight: 1.5
     }
-  }, "Sugest\xE3o: devolver ", /*#__PURE__*/React.createElement("b", null, fmt(sug.devolucao)), " de MU e sacar ", /*#__PURE__*/React.createElement("b", null, fmt(sug.cashout)), Number(sug.reserva_total) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, ", deixando ", fmt(sug.reserva_por_sala), " em ", Number(sug.salas) > 1 ? `cada uma das ${sug.salas} salas` : 'cada sala', " (banca depois ", fmt(sug.banca_depois), ")") : null, ".", /*#__PURE__*/React.createElement("div", {
+  }, "Sugest\xE3o: devolver ", /*#__PURE__*/React.createElement("b", null, fmt(sug.devolucao)), " de MU e sacar ", /*#__PURE__*/React.createElement("b", null, fmt(sug.cashout)), Number(sug.reserva_total) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, ", deixando ", fmt(sug.reserva_por_sala), " em ", Number(sug.salas) > 1 ? `cada uma das ${sug.salas} salas` : 'cada sala', " (banca depois ", fmt(sug.banca_depois), ")") : null, ".", sug.por_sala && (sug.de_onde || []).some(x => Number(x.sacar) > 0) ? /*#__PURE__*/React.createElement(React.Fragment, null, " Sai de: ", (sug.de_onde || []).filter(x => Number(x.sacar) > 0).map(x => `${x.sala} ${fmt(x.sacar)}`).join(', '), ".") : null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6
     }
   }, /*#__PURE__*/React.createElement("button", {
     style: btnS,
-    onClick: () => setF(x => ({
-      ...x,
-      banca: br(sug.banca),
-      devolucao: br(sug.devolucao),
-      cashout: br(sug.cashout)
-    }))
-  }, "Usar sugest\xE3o"))), campo('banca', 'Banca atual (todas as salas)', 'ex.: 625'), campo('devolucao', 'Devolver de MU', 'ex.: 310'), campo('cashout', 'Cashout (lucro que você quer sacar)', 'ex.: 165'), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onClick: usarSugestao
+  }, "Usar sugest\xE3o"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft
+    }
+  }, "Em cada sala: quanto tem agora (como aparece no site) e quanto sai dela."), ls.map((l, i) => {
+    const dif = l.sistema != null && String(l.saldo).trim() !== '' ? cent(parseValor(l.saldo) - l.sistema) : null;
+    return /*#__PURE__*/React.createElement("div", {
+      key: i,
+      "data-saque-sala": l.sala || i,
+      style: {
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: '10px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8
+      }
+    }, l.sistema != null ? /*#__PURE__*/React.createElement("b", {
+      style: {
+        flex: 1
+      }
+    }, l.sala) : /*#__PURE__*/React.createElement("input", {
+      "data-saque-sala-nome": true,
+      style: {
+        ...inputStyle,
+        flex: 1
+      },
+      value: l.sala,
+      placeholder: "Nome da sala",
+      onChange: e => muda(i, 'sala', e.target.value)
+    }), l.sistema != null && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft
+      }
+    }, "no sistema ", fmt(l.sistema))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.inkSoft,
+        marginBottom: 3
+      }
+    }, "Saldo agora"), /*#__PURE__*/React.createElement("input", {
+      "data-saque-saldo": true,
+      "aria-label": `Saldo agora em ${l.sala || 'sala'}`,
+      style: inputStyle,
+      inputMode: "decimal",
+      value: l.saldo,
+      placeholder: "0",
+      onChange: e => muda(i, 'saldo', e.target.value)
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: C.inkSoft,
+        marginBottom: 3
+      }
+    }, "Sacar daqui"), /*#__PURE__*/React.createElement("input", {
+      "data-saque-valor": true,
+      "aria-label": `Sacar de ${l.sala || 'sala'}`,
+      style: inputStyle,
+      inputMode: "decimal",
+      value: l.valor,
+      placeholder: "0",
+      onChange: e => muda(i, 'valor', e.target.value)
+    }))), dif != null && Math.abs(dif) > 1 && /*#__PURE__*/React.createElement("div", {
+      "data-saque-sala-diferente": true,
+      style: {
+        fontSize: 12,
+        color: C.red,
+        fontWeight: 600
+      }
+    }, fmtSinal(dif), " em rela\xE7\xE3o ao sistema: o time vai ver a diferen\xE7a."));
+  }), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnS,
+      alignSelf: 'flex-start'
+    },
+    onClick: () => setLs(x => [...x, {
+      sala: '',
+      sistema: null,
+      saldo: '',
+      valor: ''
+    }])
+  }, "+ outra sala"), /*#__PURE__*/React.createElement("div", {
+    "data-saque-totais": true,
+    style: {
+      fontSize: 13.5,
+      lineHeight: 1.6
+    }
+  }, "Banca (soma das salas): ", /*#__PURE__*/React.createElement("b", null, fmt(banca)), " \xB7 sai das salas: ", /*#__PURE__*/React.createElement("b", null, fmt(total))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 8,
+      alignItems: 'end'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "sq-dev"
+  }, "Disso, devolver de MU"), /*#__PURE__*/React.createElement("input", {
+    id: "sq-dev",
+    "data-saque-devolucao": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: dev,
+    placeholder: "0",
+    onChange: e => setDev(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      paddingBottom: 12
+    }
+  }, "Cashout (lucro): ", /*#__PURE__*/React.createElement("b", {
+    "data-saque-cashout": true
+  }, fmt(Math.max(cashout, 0))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
   }, "Observa\xE7\xE3o (opcional)"), /*#__PURE__*/React.createElement("input", {
     style: inputStyle,
-    value: f.obs,
-    placeholder: "ex.: 50 saindo da PS pra Bullet",
-    onChange: e => setF(x => ({
-      ...x,
-      obs: e.target.value
-    }))
+    value: obs,
+    placeholder: "ex.: GG pelo Skrill, PS pela conta do banco",
+    onChange: e => setObs(e.target.value)
   })), err && /*#__PURE__*/React.createElement("div", {
     "data-saque-erro": true,
     style: {
@@ -12533,13 +13255,17 @@ function SaqueModal({
   }, "Voc\xEA fica com ", /*#__PURE__*/React.createElement("b", null, fmt(prev.parte_jogador)), " \xB7 time recebe ", /*#__PURE__*/React.createElement("b", null, fmt(prev.total_time)), " (", fmt(prev.devolucao), " de MU + ", fmt(prev.parte_time), " do cashout)", /*#__PURE__*/React.createElement("br", null), "Banca depois: ", fmt(prev.banca_depois), " \xB7 MU depois: ", fmt(prev.mu_depois), prev.divisao && prev.divisao.faixas && prev.divisao.faixas[0] && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
     "data-saque-faixa": true
   }, "Faixa de ", Math.round(Number(prev.divisao.faixas[0].jogador_pct) * 1000) / 10, "% pro saque inteiro (lifetime de ", fmt(prev.divisao.faixas[0].lifetime), " hoje)"))), /*#__PURE__*/React.createElement("button", {
-    disabled: !prev,
+    disabled: !ok,
     onClick: () => onPedir({
-      p_banca: parseValor(f.banca),
-      p_devolucao: parseValor(f.devolucao) || 0,
-      p_cashout: parseValor(f.cashout) || 0,
-      p_carteiras: null,
-      p_obs: f.obs.trim() || null
+      p_banca: banca,
+      p_devolucao: devolucao,
+      p_cashout: cashout,
+      p_carteiras: nomeadas.map(l => ({
+        sala: String(l.sala).trim(),
+        saldo: cent(parseValor(l.saldo)),
+        valor: cent(parseValor(l.valor))
+      })),
+      p_obs: obs.trim() || null
     }),
     style: {
       padding: '15px 0',
@@ -12549,8 +13275,8 @@ function SaqueModal({
       color: '#fff',
       fontWeight: 700,
       fontSize: 16,
-      cursor: prev ? 'pointer' : 'default',
-      opacity: prev ? 1 : .5
+      cursor: ok ? 'pointer' : 'default',
+      opacity: ok ? 1 : .5
     }
   }, "Pedir saque")));
 }
@@ -15008,6 +15734,7 @@ function Dashboard({
           reload: 'g_financeiro',
           abertura: 'g_financeiro',
           saida: 'g_financeiro',
+          saldo: 'g_financeiro',
           entrada: 'g_jogadores',
           grade: 'g_grades'
         }[av.tipo] || 'g_visao');else setView('time');

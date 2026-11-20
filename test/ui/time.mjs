@@ -38,6 +38,7 @@ const abrirTime = async (page) => { await aba(page, 'Meu time'); await page.getB
 // 1) jogador: vê MU, contrato e pede saque com a prévia do servidor
 await cenario('jogador', estrutura({ __rpc: {
   situacao_jogador: { mu: 310, lifetime: 200, contrato: CONTRATO },
+  salas_jogador: { salas: [{ chave: 'gg', sala: 'GG Poker', saldo: 425 }, { chave: 'ps', sala: 'PokerStars', saldo: 200 }], total: 625, banca: 625, sem_sala: 0 },
   simular_saque: { parte_jogador: 57.75, parte_time: 107.25, total_time: 417.25, devolucao: 310, banca_depois: 150, mu_depois: 0 },
   solicitar_saque: 'novo-saque' } }), async (page, escritas) => {
   await abrirTime(page);
@@ -48,8 +49,10 @@ await cenario('jogador', estrutura({ __rpc: {
   ok(await page.locator('[data-convidar]').count() === 0 && await page.getByRole('button', { name: /^Equipe e convites$/ }).count() === 0, 'jogador não convida');
   ok(await page.locator('[data-modo]').count() === 0, 'sem chave Gestão/Meu jogo (não tem papel na gestão)');
   await page.getByRole('button', { name: 'Pedir saque' }).first().click();
-  const campos = page.locator('input[inputmode="decimal"]');
-  await campos.nth(0).fill('625'); await campos.nth(1).fill('310'); await campos.nth(2).fill('165');
+  // por sala: quanto tem em cada uma agora e quanto sai; devolução de MU, o resto é cashout
+  await page.getByLabel('Saldo agora em GG Poker').fill('425'); await page.getByLabel('Sacar de GG Poker').fill('300');
+  await page.getByLabel('Saldo agora em PokerStars').fill('200'); await page.getByLabel('Sacar de PokerStars').fill('175');
+  await page.locator('[data-saque-devolucao]').fill('310');
   await page.locator('[data-saque-previa]').waitFor({ timeout: 5000 });
   const sim = rpc(escritas, 'simular_saque').pop();
   ok(sim && sim.p_banca === 625 && sim.p_devolucao === 310 && sim.p_cashout === 165 && sim.p_pessoa === 'p1', 'prévia calculada no servidor com os valores digitados');
@@ -58,6 +61,7 @@ await cenario('jogador', estrutura({ __rpc: {
   await page.waitForTimeout(500);
   const sol = rpc(escritas, 'solicitar_saque').pop();
   ok(sol && sol.p_banca === 625 && sol.p_devolucao === 310 && sol.p_cashout === 165, 'pedido enviado com os mesmos valores');
+  ok(JSON.stringify(sol && sol.p_carteiras) === '[{"sala":"GG Poker","saldo":425,"valor":300},{"sala":"PokerStars","saldo":200,"valor":175}]', '…e com cada sala (saldo agora e quanto sai)');
 });
 
 // 2) admin que também joga: abre na gestão; aprova saque no Financeiro, gera link pelo convite único, contrato em Regras do time

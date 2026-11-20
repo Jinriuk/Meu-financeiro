@@ -218,7 +218,7 @@ insert into teste.classe values
  ('tournaments','desempenho'), ('hh_tournament_stats','desempenho'), ('daily_entries','desempenho'), ('hh_import_log','desempenho'),
  ('bankroll_ledger','dinheiro'), ('withdrawals','dinheiro'), ('player_wallets','dinheiro'), ('aporte','dinheiro'), ('saque','dinheiro'),
  ('reload','dinheiro'), ('abertura','dinheiro'), ('acerto_saida','dinheiro'),
- ('vinculo','estrutura'), ('acesso','estrutura'), ('contrato','estrutura'), ('pedido_entrada','estrutura'), ('convite','estrutura');
+ ('vinculo','estrutura'), ('acesso','estrutura'), ('contrato','estrutura'), ('pedido_entrada','estrutura'), ('convite','estrutura'), ('conferencia_saldo','dinheiro');
 select teste.igual('toda tabela com pessoa_id está classificada (desempenho, dinheiro ou estrutura)',
   $q$select coalesce(string_agg(c.table_name, ', '), 'todas') from information_schema.columns c join information_schema.tables b on b.table_schema = c.table_schema and b.table_name = c.table_name
      where c.table_schema = 'public' and c.column_name = 'pessoa_id' and b.table_type = 'BASE TABLE' and c.table_name not in (select tabela from teste.classe)$q$, 'todas');
