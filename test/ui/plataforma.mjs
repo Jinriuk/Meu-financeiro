@@ -25,7 +25,7 @@ await cenario('gestor geral', db, async (page, escritas) => {
   await aba(page, 'Plataforma');
   await page.locator('[data-times]').waitFor({ timeout: 8000 });
   const samba_ = (await page.locator('[data-time-plataforma="Samba"]').innerText()).replace(/\s+/g, ' ');
-  ok(/Samba 7 \(2 convidados\) 4 30 Gabriel/.test(samba_), 'lista o time pelos números: pessoas, jogadores, assentos, admin: ' + samba_);
+  ok(/Samba 7 \(2 convidados\) 4 US\$ 20 30 Gabriel/.test(samba_), 'lista o time pelos números: pessoas, jogadores, mensalidade (4 × US$ 5), assentos, admin: ' + samba_);
   const novo = await page.locator('[data-time-plataforma="Time Novo"]').innerText();
   ok(/sem limite/.test(novo) && /sem dono/.test(novo) && await page.locator('[data-time-plataforma="Time Novo"]').getByRole('button', { name: 'Link do admin' }).count() === 1,
     'time sem dono: aviso e o botão do link do admin');
