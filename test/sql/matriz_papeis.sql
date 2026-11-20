@@ -31,13 +31,6 @@ begin
   perform set_config('request.jwt.claims', coalesce(antes, ''), false);
   return rtrim(saida);
 end $$;
--- a banca que o APP monta pro painel do aluno com o que quem olha consegue ler (mesma conta do bancaAtual no time)
-create or replace function teste.banca_vista(p uuid) returns numeric language sql as $$
-  select round(coalesce((select sum(saldo_inicial) from public.player_wallets where pessoa_id = p), 0)
-    + coalesce((select sum(prize + coalesce(bounty, 0) - case when ticket then 0 else buyin * (1 + coalesce(reentries, 0)) end)
-                  from public.tournaments where pessoa_id = p), 0)
-    + coalesce((select sum(entrada - saida) from public.bankroll_ledger where pessoa_id = p), 0)
-    - coalesce((select sum(devolucao + cashout) from public.saque where pessoa_id = p and status = 'pago'), 0), 2) $$;
 -- a banca que o SERVIDOR mostra na lista de jogadores e no Financeiro
 create or replace function teste.banca_lista(p uuid) returns numeric language sql as $$ select banca from public.resumo_time() where pessoa_id = p $$;
 grant execute on all functions in schema teste to authenticated;
@@ -119,7 +112,9 @@ select teste.igual('o prêmio corrigido é o que todos que podem ver enxergam',
 
 -- ---------- 3) planilha: o aluno envia, o financeiro confere ----------
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
-select teste.ok('J1 envia a planilha (MU 100, sala PS com 80)', $q$select public.enviar_planilha('{"makeup":100,"cashout":0,"saldos":[{"sala":"PS","saldo":80}]}'::jsonb)$q$);
+select teste.ok('J1 envia a planilha (MU 100; GG 90 e PS 80; atualizada no dia em que entrou, há 20 dias)',
+  $q$select public.enviar_planilha(jsonb_build_object('makeup', 100, 'cashout', 0, 'atualizado_em', (current_date - 20)::text,
+     'saldos', jsonb_build_array(jsonb_build_object('sala', 'GG Poker', 'saldo', 90), jsonb_build_object('sala', 'PS', 'saldo', 80))))$q$);
 select teste.igual('planilha do J1: quem vê', $q$select teste.quem_ve($c$select count(*)::text from public.abertura where pessoa_id = teste.id('pJ1')$c$)$q$,
   'A=1 F=1 P1=1 P2=0 J1=1 J2=0 X=0');
 select teste.igual('aviso "planilha pra conferir": só quem aprova saque (admin e financeiro)',
@@ -130,12 +125,23 @@ select teste.erro('P1 (sem aprovar saques) NÃO confere', $q$select public.confe
 select teste.como('ac000000-0000-0000-0000-0000000000f1');
 select teste.ok('F confere a planilha', $q$select public.conferir_abertura(teste.id('pJ1'), 100, 0)$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
-select teste.igual('o J1 vê a planilha conferida, o MU dela e a sala PS que veio dela',
+select teste.igual('o J1 vê a planilha conferida, o MU dela e as salas dela (a GG que ele tinha digitado com 100 vira 90; a PS é criada)',
   $q$select (public.situacao_jogador(teste.id('pJ1'))->>'abertura')||' MU '||(public.situacao_jogador(teste.id('pJ1'))->>'mu')||' salas '||
             (select string_agg(wallet||':'||saldo_inicial::text, ',' order by wallet) from public.player_wallets where pessoa_id = teste.id('pJ1'))$q$,
-  'confirmada MU 100.00 salas GG Poker:100,PS:80.00');
+  'confirmada MU 100.00 salas GG Poker:90.00,PS:80.00');
 select teste.igual('aviso "planilha conferida" chega só no J1', $q$select teste.quem_ve($c$select count(*)::text from public.aviso where tipo = 'planilha' and titulo like 'Planilha conferida%'$c$)$q$,
   'A=0 F=0 P1=0 P2=0 J1=1 J2=0 X=0');
+-- BUG-10: depois da foto, o saldo inicial das salas não muda pelo aluno (o reload entra sozinho; digitar contaria 2 vezes)
+select teste.erro_qualquer('BUG-10 J1 NÃO muda o saldo inicial da GG depois da planilha conferida', $q$update public.player_wallets set saldo_inicial = 140 where pessoa_id = teste.id('pJ1') and wallet = 'GG Poker'$q$);
+select teste.erro_qualquer('BUG-10 …nem cria sala nova com saldo', $q$insert into public.player_wallets(player, wallet, saldo_inicial) values ('Joga Um', 'Coin', 30)$q$);
+select teste.erro_qualquer('BUG-10 …nem apaga sala com saldo', $q$delete from public.player_wallets where pessoa_id = teste.id('pJ1') and wallet = 'PS'$q$);
+select teste.ok('BUG-10 J1 abre sala nova com 0 (o dinheiro chega pelo reload)', $q$insert into public.player_wallets(player, wallet, saldo_inicial) values ('Joga Um', 'WPT', 0)$q$);
+select teste.como('ac000000-0000-0000-0000-0000000000f1');
+select teste.ok('BUG-10 quem aprova saques corrige o saldo de uma sala do J1', $q$update public.player_wallets set saldo_inicial = 5 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
+select teste.ok('BUG-10 …e volta pro valor certo', $q$update public.player_wallets set saldo_inicial = 0 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
+select teste.como('ac000000-0000-0000-0000-0000000000c1');
+select teste.igual('BUG-10 as salas do J1 continuam a foto (GG 90, PS 80) e a WPT nova com 0',
+  $q$select string_agg(wallet||':'||saldo_inicial::text, ',' order by wallet) from public.player_wallets where pessoa_id = teste.id('pJ1')$q$, 'GG Poker:90.00,PS:80.00,WPT:0');
 
 -- ---------- 4) contrato do admin chega no aluno ----------
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
@@ -143,20 +149,21 @@ select teste.ok('A define o contrato do time (50%)', $q$select public.definir_co
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
 select teste.igual('o J1 vê o contrato', $q$select (public.situacao_jogador(teste.id('pJ1'))->'contrato')::text$q$, '[{"ate": null, "jogador": 0.5}]');
 
--- ---------- 5) a mesma banca pra todo mundo (lista do servidor x painel montado no app) ----------
--- banca do J1: salas 100 + 80, torneios +25 (30−10 e 10−5), movimento +50 = 255
+-- ---------- 5) a banca: uma conta só, no servidor, a mesma pra todo mundo que pode ver ----------
+-- foto = planilha de 20 dias atrás. banca = salas 170 + torneio de 10 dias +20 + movimento de 5 dias +50 = 240.
+-- O torneio de 30 dias (antes da foto) já está nos saldos da planilha: não soma de novo.
 select teste.igual('banca do J1 na lista de jogadores (servidor): quem vê',
-  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=255.00 F=255.00 P1=255.00 P2=- J1=255.00 J2=- X=-');
-select teste.igual('a soma dos fatos que o admin e o próprio J1 leem bate com a banca da lista',
-  $q$select split_part(v, ' ', 1)||' '||split_part(v, ' ', 5) from (select teste.quem_ve($c$select teste.banca_vista(teste.id('pJ1'))::text$c$) v) x$q$, 'A=255.00 J1=255.00');
--- quem não lê todos os fatos (financeiro sem torneios, professor sem o que é de antes do time) não pode montar a banca
--- no app: o painel do aluno aberto pela gestão mostra a banca e o MU do servidor (test/ui/gestao.mjs)
-select teste.conhecido('BUG-2 a banca do servidor ainda soma o torneio de antes de entrar no time, que o professor da reta não vê (250 dos fatos dele x 255 da lista)',
-  $q$select split_part(teste.quem_ve($c$select (teste.banca_vista(teste.id('pJ1')) = teste.banca_lista(teste.id('pJ1')))::text$c$), ' ', 3)$q$, 'P1=true');
+  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=240.00 F=240.00 P1=240.00 P2=- J1=240.00 J2=- X=-');
+select teste.igual('BUG-2 o app do J1 mostra a mesma banca, com as partes, a partir da foto',
+  $q$select (b->>'banca')||' = salas '||(b->>'salas')||' + resultados '||(b->>'resultados')||' + movimentos '||(b->>'movimentos')||' + aportes '||(b->>'aportes')||' − saques '||(b->>'saques')||' · corte '||(b->>'corte')
+     from (select public.situacao_jogador(teste.id('pJ1'))->'banca_partes' b) x$q$,
+  '240.00 = salas 170.00 + resultados 20.00 + movimentos 50.00 + aportes 0.00 − saques 0.00 · corte ' || (current_date - 20)::text);
+select teste.igual('…e o servidor diz que ele não está em MK (240 x MU 100)', $q$select (public.situacao_jogador(teste.id('pJ1'))->>'banca')||' x '||(public.situacao_jogador(teste.id('pJ1'))->>'mu')$q$, '240.00 x 100.00');
 
 -- ---------- 6) saque: aluno pede, financeiro aprova, admin confirma ----------
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
-insert into teste.ids select 'saque', public.solicitar_saque(255, 0, 100, null, null);
+insert into teste.ids select 'saque', public.solicitar_saque(240, 0, 100, null, null);
+select teste.igual('o pedido guarda a banca que o J1 digitou e a do sistema na hora', $q$select banca||' / '||banca_sistema from public.saque where id = teste.id('saque')$q$, '240.00 / 240.00');
 select teste.igual('saque do J1: quem vê', $q$select teste.quem_ve($c$select count(*)::text from public.saque where id = teste.id('saque')$c$)$q$,
   'A=1 F=1 P1=1 P2=0 J1=1 J2=0 X=0');
 select teste.igual('…com a divisão do contrato (jogador 50, time 50)', $q$select parte_jogador||'/'||parte_time||'/'||total_time from public.saque where id = teste.id('saque')$q$, '50.00/50.00/50.00');
@@ -174,8 +181,8 @@ select teste.igual('o J1 vê o saque pago (entra na banca dele) e os avisos de a
   $q$select (select status from public.saque where id = teste.id('saque'))||' avisos:'||(select count(*) from public.aviso where tipo = 'saque' and ref_id = teste.id('saque'))$q$,
   'pago avisos:2');
 select teste.igual('…MU e lucro sacado do J1 depois do saque', $q$select (public.situacao_jogador(teste.id('pJ1'))->>'mu')||' / '||(public.situacao_jogador(teste.id('pJ1'))->>'lifetime')$q$, '100.00 / 100.00');
-select teste.igual('banca do J1 depois do saque (255 − 100): quem vê na lista',
-  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=155.00 F=155.00 P1=155.00 P2=- J1=155.00 J2=- X=-');
+select teste.igual('banca do J1 depois do saque (240 − 100): quem vê na lista',
+  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=140.00 F=140.00 P1=140.00 P2=- J1=140.00 J2=- X=-');
 
 -- ---------- 7) reload: aluno pede, financeiro aprova e manda ----------
 insert into teste.ids select 'reload', public.pedir_reload(200, 'GG', 'acabou a banca');
@@ -189,8 +196,10 @@ select teste.igual('avisos do reload: pedido pra admin e financeiro; aprovado e 
   'A=1 F=1 P1=0 P2=0 J1=2 J2=0 X=0');
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
 select teste.igual('…e o MU dele sobe 200', $q$select public.situacao_jogador(teste.id('pJ1'))->>'mu'$q$, '300.00');
-select teste.conhecido('BUG-1 reload sobe a banca junto com o MU: o lucro (banca − MU) não muda (era 155 − 100 = 55)',
-  $q$select (teste.banca_lista(teste.id('pJ1')) - (public.situacao_jogador(teste.id('pJ1'))->>'mu')::numeric)::text$q$, '55.00');
+select teste.igual('BUG-1 reload sobe a banca junto com o MU (140 + 200 = 340)',
+  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=340.00 F=340.00 P1=340.00 P2=- J1=340.00 J2=- X=-');
+select teste.igual('BUG-1 …e o lucro (banca − MU) não muda: era 140 − 100 = 40, continua 340 − 300 = 40',
+  $q$select (teste.banca_lista(teste.id('pJ1')) - (public.situacao_jogador(teste.id('pJ1'))->>'mu')::numeric)::text$q$, '40.00');
 
 -- ---------- 8) grade: só quem configura salva; o aluno da reta é avisado ----------
 select teste.como('ac000000-0000-0000-0000-0000000000b1');
@@ -223,16 +232,16 @@ select teste.igual('BUG-7 …e o dinheiro antigo dele também (saque, aporte, re
   $q$select teste.quem_ve($c$select ((select count(*) from public.saque where pessoa_id = teste.id('pJ1')) + (select count(*) from public.aporte where pessoa_id = teste.id('pJ1'))
      + (select count(*) from public.reload where pessoa_id = teste.id('pJ1')) + (select count(*) from public.abertura where pessoa_id = teste.id('pJ1')))::text$c$)$q$,
   'A=4 F=4 P1=4 P2=4 J1=4 J2=0 X=0');
-select teste.conhecido('BUG-2 …a soma do que o P2 lê do J1 só não bate com a lista por causa do torneio de antes do time (153 x 158)',
-  $q$select split_part(teste.quem_ve($c$select (teste.banca_vista(teste.id('pJ1')) = teste.banca_lista(teste.id('pJ1')))::text$c$), ' ', 4)$q$, 'P2=true');
+select teste.igual('…e a banca dele pro P2 é a mesma de todo mundo (340 + 3 do torneio novo)',
+  $q$select teste.quem_ve($c$select coalesce(teste.banca_lista(teste.id('pJ1'))::text, '-')$c$)$q$, 'A=343.00 F=343.00 P1=- P2=343.00 J1=343.00 J2=- X=-');
 
 -- ---------- 10) renomear: os fatos acompanham e o aluno continua vendo tudo ----------
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
 select teste.ok('A renomeia o J1', $q$select public.renomear_pessoa(teste.id('pJ1'), 'Joga Um B')$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
-select teste.igual('o J1 vê os 3 torneios, a sala e o movimento com o nome novo (nada no antigo)',
+select teste.igual('o J1 vê os 3 torneios, as 3 salas e o movimento com o nome novo (nada no antigo)',
   $q$select (select count(*) from public.tournaments where player = 'Joga Um B')||'/'||(select count(*) from public.player_wallets where player = 'Joga Um B')||'/'||
-            (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/2/1 antigo:0');
+            (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/3/1 antigo:0');
 
 -- ---------- 11) saída: o aluno sai; a gestão continua com o histórico ----------
 select teste.como('ac000000-0000-0000-0000-0000000000c2');

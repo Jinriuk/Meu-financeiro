@@ -1472,7 +1472,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
-          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button aria-label="Fechar" onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
         {kind==='select'
@@ -2453,6 +2453,8 @@ function ContratoModal({atual,onSalvar,onClose}){
 function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const uid=session.user.id;
   const [d,setD]=useState(null);
+  const [cortes,setCortes]=useState({});       // conferência da planilha: até que dia os saldos dela valem (por planilha)
+  const corteDe=a=>{ const pl=a.planilha||{}; return cortes[a.id]||(/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em||''))?pl.atualizado_em:String(a.enviado_em||'').slice(0,10))||null; };
   const [aviso,setAviso]=useState(null);       // {erro, texto}
   const [perg,setPerg]=useState(null);         // QuickEditModal: {label,hint,kind,opts,valor,onSave}
   const [link,setLink]=useState(null);         // link pessoal gerado fora do convite: {titulo,url,texto}
@@ -2685,7 +2687,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
     const soma=(ls,k)=>{ const v=ls.map(l=>l[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+Number(b),0):null; };
     const temPerf=vis.some(l=>l.torneios!=null);
     const torn=soma(vis,'torneios'), inv=soma(vis,'investido'), luc=soma(vis,'lucro');
-    const abiPond=(()=>{ const ls=vis.filter(l=>l.abi!=null&&l.torneios); const n=ls.reduce((a,l)=>a+l.torneios,0); return n?ls.reduce((a,l)=>a+Number(l.abi)*l.torneios,0)/n:null; })();
+    // ABI por entrada (reentry conta), igual ao do aluno: a média do grupo pesa pelas entradas de cada um
+    const pesoAbi=l=>Number(l.entradas??l.torneios)||0;
+    const abiPond=(()=>{ const ls=vis.filter(l=>l.abi!=null&&pesoAbi(l)); const n=ls.reduce((a,l)=>a+pesoAbi(l),0); return n?ls.reduce((a,l)=>a+Number(l.abi)*pesoAbi(l),0)/n:null; })();
     const foraTot=Object.values(gradePorPessoa).reduce((a,g)=>a+g.fora,0), foraAlunos=Object.values(gradePorPessoa).filter(g=>g.fora>0).length;
     const porReta=Object.values(vis.reduce((m,l)=>{ const k=l.unidade_id; (m[k]||(m[k]={u:U[k],ls:[]})).ls.push(l); return m; },{}))
       .filter(x=>x.u).sort((a,b)=>String(a.u.caminho).localeCompare(String(b.u.caminho)));
@@ -2722,7 +2726,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           {porReta.length>0&&<div style={{overflowX:'auto'}}><table data-por-reta style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>{['Reta','Alunos',...(temPerf?['Torneios','ABI','ROI','Resultado']:[]),'Fora da grade'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{porReta.map(({u,ls})=>{ const i_=soma(ls,'investido'), l_=soma(ls,'lucro'), n_=soma(ls,'torneios');
-              const ab=(()=>{ const x=ls.filter(l=>l.abi!=null&&l.torneios); const n=x.reduce((a,l)=>a+l.torneios,0); return n?x.reduce((a,l)=>a+Number(l.abi)*l.torneios,0)/n:null; })();
+              const ab=(()=>{ const x=ls.filter(l=>l.abi!=null&&pesoAbi(l)); const n=x.reduce((a,l)=>a+pesoAbi(l),0); return n?x.reduce((a,l)=>a+Number(l.abi)*pesoAbi(l),0)/n:null; })();
               const fora=ls.reduce((a,l)=>a+(gradePorPessoa[l.pessoa_id]?.fora||0),0); const g=gradeEf(u.id);
               return <tr key={u.id} data-reta={u.nome} onClick={()=>{ setFiltro({reta:u.id,sit:null,busca:''}); onIr('g_jogadores'); }} style={{cursor:'pointer'}}>
                 <td style={tdS}><b>{u.nome}</b>{u.rotulo&&<span style={{color:C.inkSoft}}> · {u.rotulo}</span>} {g&&g.simulada&&<Tag tom="warn">grade simulada</Tag>}</td>
@@ -2884,7 +2888,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
         {itens===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada para resolver agora.</div>}
         {paraDecidir.map(s=><div key={s.id} data-saque={nomeDe(s.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="plum">saque</Tag><b>{nomeDe(s.pessoa_id)}</b><span style={{color:C.inkSoft}}>· {dataBR(s.solicitado_em)} ·</span><span style={{color:C.gold,fontWeight:700}}>{SAQUE_ROTULO[s.status]}</span></div>
-          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca {fmt(s.banca)} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b>{s.observacao?` · "${s.observacao}"`:''}</div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca informada {fmt(s.banca)}{s.banca_sistema!=null?<> · no sistema {fmt(s.banca_sistema)}</>:null} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b>{s.observacao?` · "${s.observacao}"`:''}</div>
+          {s.banca_sistema!=null&&Math.abs(Number(s.banca)-Number(s.banca_sistema))>1&&<div data-banca-diferente style={{color:C.red,fontWeight:700,fontSize:13,marginTop:4}}>
+            A banca informada está {fmt(Math.abs(Number(s.banca)-Number(s.banca_sistema)))} {Number(s.banca)>Number(s.banca_sistema)?'acima':'abaixo'} da do sistema: confira os lançamentos antes de aprovar.</div>}
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
             {s.status==='solicitado'&&<button style={btnP} onClick={()=>rodar('decidir_saque',{p_id:s.id,p_aprovar:true,p_motivo:null},'Saque aprovado. Quando o dinheiro chegar, confirme o valor recebido.')}>Aprovar</button>}
             {s.status==='solicitado'&&<button style={{...btnS,color:C.red}} onClick={()=>setPerg({label:'Motivo da recusa',hint:'O jogador vê este motivo.',kind:'text',valor:'',onSave:async m=>{ setPerg(null); if(m) await rodar('decidir_saque',{p_id:s.id,p_aprovar:false,p_motivo:m},'Saque recusado.'); }})}>Recusar</button>}
@@ -2904,11 +2910,17 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="ok">planilha</Tag><b>{nomeDe(a.pessoa_id)}</b><span style={{color:C.inkSoft}}>· enviada {dataBR(a.enviado_em)}{pl.atualizado_em?` · planilha de ${dataBR(pl.atualizado_em)}`:''}</span></div>
           <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
           {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
+          {(()=>{ const padrao=/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em||''))?pl.atualizado_em:String(a.enviado_em||'').slice(0,10); const v=cortes[a.id]||padrao;
+            return <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:8}}>
+              <label style={{fontSize:13,color:C.ink,fontWeight:600}}>Saldos valem até</label>
+              <input type="date" data-corte={nomeDe(a.pessoa_id)} value={v} max={todayISO()} onChange={e=>setCortes(c=>({...c,[a.id]:e.target.value}))} style={{...inputStyle,width:'auto',padding:'7px 10px'}}/>
+              <span style={{fontSize:12,color:C.inkSoft}}>jogos e movimentos até esse dia já estão nos saldos da planilha; contam só os de depois</span>
+            </div>; })()}
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-            <button style={btnP} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
+            <button style={btnP} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
             <button style={btnS} onClick={()=>setPerg({label:`MakeUp de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU (capital do time com o jogador).',kind:'money',valor:a.mu,
               onSave:mu=>setPerg({label:`Cashout de ${nomeDe(a.pessoa_id)}`,hint:'Lucro que ele já sacou no time (conta pra faixa do contrato).',kind:'money',valor:a.cashout,
-                onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
+                onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
           </div></div>; })}
       </Card>
       {din.length>0&&<Card style={{padding:20}}>
@@ -3236,10 +3248,14 @@ function Dashboard({session,profile}){
     if(gestaoAtiva&&!String(viewSel).startsWith('g_')&&viewSel!=='config') setView('g_visao');
     if(!gestaoAtiva&&String(viewSel).startsWith('g_')) setView('painel'); },[gestaoAtiva,modoTime,timeGente.carregado]);
   // MU do jogador na tela: make-up = banca − MU
+  // no time, banca e MU vêm do SERVIDOR (uma conta só, a partir da foto: planilha conferida ou entrada no time).
+  // Recarrega quando os lançamentos mudam; troca de jogador limpa na hora (nunca mostra a situação do anterior).
   useEffect(()=>{ if(!modoTime||!jogadorSel){ setSitSel(null); return; }
     const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); if(!pp){ setSitSel(null); return; }
-    let vivo=true; sb.rpc('situacao_jogador',{p_pessoa:pp.id}).then(({data,error})=>{ if(vivo) setSitSel(error?null:data); }).catch(()=>{});
-    return ()=>{ vivo=false; }; },[modoTime,jogadorSel,timeGente]);
+    setSitSel(s=>s&&s._pessoa===pp.id?s:null);
+    let vivo=true; const t=setTimeout(()=>{ sb.rpc('situacao_jogador',{p_pessoa:pp.id}).then(({data,error})=>{ if(!vivo) return;
+      if(!error&&data) setSitSel({...data,_pessoa:pp.id}); else setSitSel(s=>s&&s._pessoa===pp.id?s:null); }).catch(()=>{}); },250);
+    return ()=>{ vivo=false; clearTimeout(t); }; },[modoTime,jogadorSel,timeGente,toursRaw,ledgerRaw,walletsRaw]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
@@ -3840,8 +3856,13 @@ function Dashboard({session,profile}){
   // soma do que chegou aqui não é a banca. Sem permissão de ver o dinheiro dele, o painel não mostra banca.
   const dinAluno = somenteLeitura && !!alunoResumo && alunoResumo.banca!=null;
   const semDinheiro = somenteLeitura && !dinAluno;
-  const bancaAtual = dinAluno ? cent(alunoResumo.banca) : bancaFatos;
-  const muTela = dinAluno ? alunoResumo.mu : (sitSel ? sitSel.mu : null);
+  // no time a banca é a do servidor (salas + o que veio depois da foto + capital do time − saques pagos): a mesma da
+  // lista de jogadores, do Financeiro e do MK. A soma local só fica enquanto o servidor não respondeu.
+  const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
+  const bancaAtual = modoTime && sitSel && sitSel.banca!=null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
+  const muTela = sitSel && sitSel.mu!=null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
+  const salasTravadas = modoTime && !!sitSel && (sitSel.abertura==='confirmada' || (partesBanca&&(Number(partesBanca.aportes)!==0||Number(partesBanca.saques)!==0)));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
   // usa walletBucket pra que site/carteira fora da lista (ou saque "Não informar" = null) caiam em "Outros"
@@ -4193,7 +4214,13 @@ function Dashboard({session,profile}){
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>{somenteLeitura?`Banca de ${alunoAberto}`:solo?'Minha banca':'Banca central da pool'}</div>
           {semDinheiro?<div data-sem-dinheiro style={{fontSize:14.5,fontWeight:600,marginTop:8,opacity:.92}}>Você não vê o financeiro deste aluno.</div>:<>
           <div data-banca-hero style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
-          {!somenteLeitura&&<div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
+          {partesBanca?<div data-partes-banca style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
+            <span>Salas {fmt(partesBanca.salas)}</span><span>Jogos {fmtSinal(partesBanca.resultados)}</span>
+            {Number(partesBanca.movimentos)!==0&&<span>Movimentos {fmtSinal(partesBanca.movimentos)}</span>}
+            {Number(partesBanca.aportes)!==0&&<span>Capital do time {fmtSinal(partesBanca.aportes)}</span>}
+            {Number(partesBanca.saques)>0&&<span>Saques −{fmt(partesBanca.saques)}</span>}
+            {partesBanca.corte&&<span style={{opacity:.85}}>conta o que veio depois de {dataBR(partesBanca.corte)}</span>}
+          </div>:!somenteLeitura&&<div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Inicial {fmt(config.banca_inicial)}</span>
             <span>Jogos {resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</span>
             {movimentosTotal!==0&&<span>Aportes {movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</span>}
@@ -4844,15 +4871,37 @@ function Dashboard({session,profile}){
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>Banca atual</div>
           <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:40,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
-          <div style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
+          {partesBanca?<><div data-partes-banca style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Salas</div><div style={{fontWeight:700,fontSize:15}}>{fmt(partesBanca.salas)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.resultados)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Movimentos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.movimentos)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Capital do time</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.aportes)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(partesBanca.saques)}</div></div>
+          </div>
+          {partesBanca.corte&&<div style={{fontSize:12.5,opacity:.85,marginTop:10}}>Jogos e movimentos até {dataBR(partesBanca.corte)} já estão no saldo das salas (planilha ou entrada no time): contam só os de depois.</div>}</>
+          :<div style={{display:'flex',gap:18,marginTop:14,flexWrap:'wrap'}}>
             <div><div style={{fontSize:12.5,opacity:.85}}>Banca inicial</div><div style={{fontWeight:700,fontSize:15}}>{fmt(config.banca_inicial)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Aportes/movimentos</div><div style={{fontWeight:700,fontSize:15}}>{movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(sacadoTotal)}</div></div>
-          </div>
+          </div>}
         </Card>
 
-        <Card style={{padding:20}}>
+        {modoTime?<Card data-salas-time style={{padding:20}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Salas</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>Saldo de cada sala na foto: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'o que você tinha quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+            {(salasTravadas||somenteLeitura?wallets.map(w=>w.wallet):[...new Set([...wallets.map(w=>w.wallet),...WALLETS.filter(x=>x!=='Reserva')])]).map(w=>{ const wr=wallets.find(x=>x.wallet===w); const editar=!salasTravadas&&!somenteLeitura;
+              return <button key={w} data-sala={w} disabled={!editar} onClick={()=>editar&&setQuickEdit({label:`Saldo inicial · ${w}`,hint:'O que você tinha nessa sala quando entrou no time, antes de qualquer reload. Depois do primeiro reload ou saque, esse saldo trava (o reload já entra sozinho).',kind:'money',current:wr?num(wr.saldo_inicial):0,onSave:nv=>saveWallet(jogadorSel,w,nv)})}
+                style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2,padding:'8px 12px',borderRadius:11,border:`1px solid ${C.border}`,background:wr?C.warm:'transparent',cursor:editar?'pointer':'default',minWidth:96}}>
+                <span style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>{w}</span>
+                <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:15,fontWeight:600,color:wr?C.ink:'#C3BBA9'}}>{wr?fmt(wr.saldo_inicial):'definir'}</span>
+              </button>; })}
+            {!wallets.length&&(salasTravadas||somenteLeitura)&&<span style={{fontSize:13,color:C.inkSoft}}>Nenhuma sala com saldo inicial.</span>}
+          </div>
+          {salasTravadas&&<div data-salas-travadas style={{fontSize:12.5,color:C.inkSoft,marginTop:10,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>
+            🔒 Travado: depois que o time mandou ou recebeu dinheiro (ou conferiu a planilha), o saldo inicial não muda. O reload já entra sozinho na banca: digitar de novo contaria duas vezes. Pra corrigir, fale com quem aprova os saques.</div>}
+        </Card>:<Card style={{padding:20}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
             <div><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>Onde o dinheiro está. Atualiza sozinho com torneios, saques e movimentos.</div></div>
@@ -4874,9 +4923,9 @@ function Dashboard({session,profile}){
           </div>;})}
           <div style={{fontSize:12,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>Toque numa plataforma pra ajustar o <b>saldo inicial</b> daquele jogador. Depósitos/transferências entram como <b>movimento</b> abaixo (escolhendo o jogador); saque pago sai da carteira escolhida na aba Saques.</div>
           <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>ℹ️ Esta é a visão de <b>quem tem o quê</b>, montada a partir do saldo inicial que cada um declarou por plataforma. Ela <b>não precisa bater</b> com o total da <b>banca central</b> lá em cima — a banca central parte da banca inicial da pool, não desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em <b>"Outros"</b>.</div>
-        </Card>
+        </Card>}
 
-        <ListView title="Movimentos da banca" subtitle="Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo." onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
+        <ListView title="Movimentos da banca" subtitle={modoTime?"Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus.":"Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo."} onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
             onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
             onEdit={()=>setEditing({type:'bank',item:l})}

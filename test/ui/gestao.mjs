@@ -1,6 +1,6 @@
 // Telas de gestão do time: menu por papel, visão geral, make-up por jogador, convite único, equipe e regras.
 import { abrirApp } from './harness.mjs';
-import { samba } from './fixture_time.mjs';
+import { samba, D } from './fixture_time.mjs';
 const falhas = []; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ ') + m); if (!c) falhas.push(m); };
 async function cenario(nome, db, fn, opcoes) {
   const { page, erros, escritas, fechar } = await abrirApp(db, opcoes);
@@ -73,8 +73,10 @@ await cenario('admin', db, async (page, escritas) => {
   ok(ct && ct.p_unidade === 'u0' && JSON.stringify(ct.p_faixas) === '[{"ate":5000,"jogador":0.3},{"ate":null,"jogador":0.45}]', 'contrato do time: 30% até 5 mil, 45% depois');
 });
 
-// 2) financeiro: menu sem estrutura nem regras; profit somado e a receber
-await cenario('financeiro', samba('fin'), async (page) => {
+// 2) financeiro: menu sem estrutura nem regras; profit somado e a receber; saque com a banca do sistema; data da planilha
+const dbFin = samba('fin');
+dbFin.saque = dbFin.saque.map(q => q.id === 's1' ? { ...q, banca_sistema: 380 } : q);
+await cenario('financeiro', dbFin, async (page, escritas) => {
   await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
   const n = await nav(page);
   ok(/Financeiro/.test(n) && /Visão geral/.test(n) && !/Equipe e convites|Regras do time/.test(n), 'financeiro do time inteiro: Visão geral e Financeiro, sem Equipe nem Regras');
@@ -82,6 +84,15 @@ await cenario('financeiro', samba('fin'), async (page) => {
   const t = await page.locator('main').innerText();
   ok(/US\$\s1\.650,00/.test(t) && /\+US\$\s350,00/.test(t), 'banca somada e profit sem contar a convidada');
   ok(await page.locator('[data-dinheiro-de="Iza N."]').count() === 0, 'convidada sem dinheiro no time não aparece na tabela');
+  const sq = await page.locator('[data-saque="Bruno T."]').innerText();
+  ok(/Banca informada US\$\s412,00 · no sistema US\$\s380,00/.test(sq) && /US\$\s32,00 acima da do sistema/.test(sq), 'saque mostra a banca digitada e a do sistema, e avisa a diferença');
+  const corte = page.locator('[data-corte="Enzo P."]');
+  ok(await corte.inputValue() === D(1), 'conferência: a data dos saldos começa no dia do envio (planilha sem "atualizado em")');
+  await corte.fill(D(3));
+  await page.locator('[data-conferir="Enzo P."]').getByRole('button', { name: 'Conferir como está' }).click();
+  await page.waitForTimeout(500);
+  const cf = rpc(escritas, 'conferir_abertura').pop();
+  ok(cf && cf.p_pessoa === 'p3' && cf.p_corte === D(3) && cf.p_mu === 700, 'confere mandando a data escolhida (o que é até esse dia já está nos saldos)');
   await aba(page, 'Jogadores');
   ok(await page.locator('[data-jogador="Caio R."]').getByRole('button', { name: 'Caio R.', exact: true }).count() === 0, 'financeiro não abre o painel do aluno (é tela de desempenho; a banca dele está na lista)');
   await page.locator('[data-acoes="Caio R."]').click();

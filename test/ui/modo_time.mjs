@@ -74,8 +74,32 @@ await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1
   ok(/Minha banca/.test(t), 'layout de um jogador');
   ok(/100,00/.test(t) && !/999/.test(t), 'banca = 75 + 80 (salas) + 15 (torneios) − 70 (saque do time) = 100; a banca inicial do time não entra');
   ok(/MK −US\$\s200,00/.test(await page.locator('[data-painel-mk]').innerText()), 'em MK: banca 100 − MU 300 = MK −200');
+  await irPara(page, 'Banca');
+  ok(await page.locator('[data-salas-travadas]').count() === 0 && !(await page.locator('[data-sala="GG Poker"]').isDisabled()), 'antes do 1º dinheiro do time, as salas ainda se editam');
+  await page.locator('[data-sala="GG Poker"]').click();
+  ok(/antes de qualquer reload/.test(await corpo(page)), '…e o aviso diz que é o saldo de quando entrou, antes de qualquer reload');
+  await page.mouse.click(8, 8); await page.waitForTimeout(250);   // fecha o editor clicando fora
   await irPara(page, 'Ajustes');
   ok(await page.locator('[data-ajustes-time]').count() === 1 && /só quem configura o time altera/.test(await corpo(page)), 'aluno vê as regras do time sem poder editar');
+});
+
+// 2b) a banca do aluno vem do SERVIDOR (a mesma da lista e do MK): salas + o que veio depois da foto + capital do time − saques
+await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' }], vinculo: [{ pessoa_id: 'p1', unidade_id: 'u1', fim: null }],
+  tournaments: [tour('t1', 'Hero', 'Torneio do Hero', 10, 30, '2026-11-16'), tour('t2', 'Hero', 'Outro do Hero', 5, 0, '2026-11-17')],
+  __rpc: { situacao_jogador: { mu: 300, lifetime: 0, contrato: null, abertura: 'confirmada', banca: 250.5,
+    banca_partes: { salas: 155, resultados: 15, movimentos: 0, aportes: 150.5, saques: 70, banca: 250.5, corte: '2026-11-10' } } } }), async (page) => {
+  await irPara(page, 'Início');
+  await page.locator('[data-partes-banca]').waitFor({ timeout: 8000 });
+  const t = await page.locator('main').innerText();
+  ok(/Minha banca\s*US\$\s250,50/.test(t), 'banca = a do servidor (US$ 250,50), não a soma local');
+  const pt = await page.locator('[data-partes-banca]').innerText();
+  ok(/Salas US\$\s155,00/.test(pt) && /Capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
+  ok(/MK −US\$\s49,50/.test(await page.locator('[data-painel-mk]').innerText()), 'MK pela mesma conta: 250,50 − MU 300 = −49,50');
+  await irPara(page, 'Banca');
+  ok(/Capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
+  ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
+  ok(await page.locator('[data-salas-travadas]').count() === 1 && await page.locator('[data-sala="GG Poker"]').isDisabled() && /US\$\s80,00/.test(await page.locator('[data-sala="GG Poker"]').innerText()),
+    'BUG-10 salas travadas depois do reload: mostram o saldo da foto e não abrem pra editar');
 });
 
 // 3) pool de 2 ('team'): nada muda

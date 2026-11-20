@@ -3805,6 +3805,7 @@ function QuickEditModal({
       margin: 0
     }
   }, label), /*#__PURE__*/React.createElement("button", {
+    "aria-label": "Fechar",
     onClick: onClose,
     style: {
       width: 38,
@@ -8154,6 +8155,11 @@ function TimeApp({
 }) {
   const uid = session.user.id;
   const [d, setD] = useState(null);
+  const [cortes, setCortes] = useState({}); // conferência da planilha: até que dia os saldos dela valem (por planilha)
+  const corteDe = a => {
+    const pl = a.planilha || {};
+    return cortes[a.id] || (/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em || '')) ? pl.atualizado_em : String(a.enviado_em || '').slice(0, 10)) || null;
+  };
   const [aviso, setAviso] = useState(null); // {erro, texto}
   const [perg, setPerg] = useState(null); // QuickEditModal: {label,hint,kind,opts,valor,onSave}
   const [link, setLink] = useState(null); // link pessoal gerado fora do convite: {titulo,url,texto}
@@ -9030,10 +9036,12 @@ function TimeApp({
     const torn = soma(vis, 'torneios'),
       inv = soma(vis, 'investido'),
       luc = soma(vis, 'lucro');
+    // ABI por entrada (reentry conta), igual ao do aluno: a média do grupo pesa pelas entradas de cada um
+    const pesoAbi = l => Number(l.entradas ?? l.torneios) || 0;
     const abiPond = (() => {
-      const ls = vis.filter(l => l.abi != null && l.torneios);
-      const n = ls.reduce((a, l) => a + l.torneios, 0);
-      return n ? ls.reduce((a, l) => a + Number(l.abi) * l.torneios, 0) / n : null;
+      const ls = vis.filter(l => l.abi != null && pesoAbi(l));
+      const n = ls.reduce((a, l) => a + pesoAbi(l), 0);
+      return n ? ls.reduce((a, l) => a + Number(l.abi) * pesoAbi(l), 0) / n : null;
     })();
     const foraTot = Object.values(gradePorPessoa).reduce((a, g) => a + g.fora, 0),
       foraAlunos = Object.values(gradePorPessoa).filter(g => g.fora > 0).length;
@@ -9208,9 +9216,9 @@ function TimeApp({
         l_ = soma(ls, 'lucro'),
         n_ = soma(ls, 'torneios');
       const ab = (() => {
-        const x = ls.filter(l => l.abi != null && l.torneios);
-        const n = x.reduce((a, l) => a + l.torneios, 0);
-        return n ? x.reduce((a, l) => a + Number(l.abi) * l.torneios, 0) / n : null;
+        const x = ls.filter(l => l.abi != null && pesoAbi(l));
+        const n = x.reduce((a, l) => a + pesoAbi(l), 0);
+        return n ? x.reduce((a, l) => a + Number(l.abi) * pesoAbi(l), 0) / n : null;
       })();
       const fora = ls.reduce((a, l) => a + (gradePorPessoa[l.pessoa_id]?.fora || 0), 0);
       const g = gradeEf(u.id);
@@ -9940,11 +9948,19 @@ function TimeApp({
         marginTop: 4,
         lineHeight: 1.5
       }
-    }, "Banca ", fmt(s.banca), " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
+    }, "Banca informada ", fmt(s.banca), s.banca_sistema != null ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 no sistema ", fmt(s.banca_sistema)) : null, " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
       style: {
         color: C.ink
       }
-    }, "time recebe ", fmt(s.total_time)), s.observacao ? ` · "${s.observacao}"` : ''), /*#__PURE__*/React.createElement("div", {
+    }, "time recebe ", fmt(s.total_time)), s.observacao ? ` · "${s.observacao}"` : ''), s.banca_sistema != null && Math.abs(Number(s.banca) - Number(s.banca_sistema)) > 1 && /*#__PURE__*/React.createElement("div", {
+      "data-banca-diferente": true,
+      style: {
+        color: C.red,
+        fontWeight: 700,
+        fontSize: 13,
+        marginTop: 4
+      }
+    }, "A banca informada est\xE1 ", fmt(Math.abs(Number(s.banca) - Number(s.banca_sistema))), " ", Number(s.banca) > Number(s.banca_sistema) ? 'acima' : 'abaixo', " da do sistema: confira os lan\xE7amentos antes de aprovar."), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -10115,7 +10131,44 @@ function TimeApp({
           fontSize: 12.5,
           fontWeight: 600
         }
-      }, t)), /*#__PURE__*/React.createElement("div", {
+      }, t)), (() => {
+        const padrao = /^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em || '')) ? pl.atualizado_em : String(a.enviado_em || '').slice(0, 10);
+        const v = cortes[a.id] || padrao;
+        return /*#__PURE__*/React.createElement("div", {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            marginTop: 8
+          }
+        }, /*#__PURE__*/React.createElement("label", {
+          style: {
+            fontSize: 13,
+            color: C.ink,
+            fontWeight: 600
+          }
+        }, "Saldos valem at\xE9"), /*#__PURE__*/React.createElement("input", {
+          type: "date",
+          "data-corte": nomeDe(a.pessoa_id),
+          value: v,
+          max: todayISO(),
+          onChange: e => setCortes(c => ({
+            ...c,
+            [a.id]: e.target.value
+          })),
+          style: {
+            ...inputStyle,
+            width: 'auto',
+            padding: '7px 10px'
+          }
+        }), /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 12,
+            color: C.inkSoft
+          }
+        }, "jogos e movimentos at\xE9 esse dia j\xE1 est\xE3o nos saldos da planilha; contam s\xF3 os de depois"));
+      })(), /*#__PURE__*/React.createElement("div", {
         style: {
           display: 'flex',
           gap: 8,
@@ -10127,7 +10180,8 @@ function TimeApp({
         onClick: () => rodar('conferir_abertura', {
           p_pessoa: a.pessoa_id,
           p_mu: a.mu,
-          p_cashout: a.cashout
+          p_cashout: a.cashout,
+          p_corte: corteDe(a)
         }, `Planilha de ${nomeDe(a.pessoa_id)} conferida.`)
       }, "Conferir como est\xE1"), /*#__PURE__*/React.createElement("button", {
         style: btnS,
@@ -10146,7 +10200,8 @@ function TimeApp({
               await rodar('conferir_abertura', {
                 p_pessoa: a.pessoa_id,
                 p_mu: mu,
-                p_cashout: co
+                p_cashout: co,
+                p_corte: corteDe(a)
               }, `Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`);
             }
           })
@@ -11444,6 +11499,8 @@ function Dashboard({
     if (!gestaoAtiva && String(viewSel).startsWith('g_')) setView('painel');
   }, [gestaoAtiva, modoTime, timeGente.carregado]);
   // MU do jogador na tela: make-up = banca − MU
+  // no time, banca e MU vêm do SERVIDOR (uma conta só, a partir da foto: planilha conferida ou entrada no time).
+  // Recarrega quando os lançamentos mudam; troca de jogador limpa na hora (nunca mostra a situação do anterior).
   useEffect(() => {
     if (!modoTime || !jogadorSel) {
       setSitSel(null);
@@ -11454,19 +11511,27 @@ function Dashboard({
       setSitSel(null);
       return;
     }
+    setSitSel(s => s && s._pessoa === pp.id ? s : null);
     let vivo = true;
-    sb.rpc('situacao_jogador', {
-      p_pessoa: pp.id
-    }).then(({
-      data,
-      error
-    }) => {
-      if (vivo) setSitSel(error ? null : data);
-    }).catch(() => {});
+    const t = setTimeout(() => {
+      sb.rpc('situacao_jogador', {
+        p_pessoa: pp.id
+      }).then(({
+        data,
+        error
+      }) => {
+        if (!vivo) return;
+        if (!error && data) setSitSel({
+          ...data,
+          _pessoa: pp.id
+        });else setSitSel(s => s && s._pessoa === pp.id ? s : null);
+      }).catch(() => {});
+    }, 250);
     return () => {
       vivo = false;
+      clearTimeout(t);
     };
-  }, [modoTime, jogadorSel, timeGente]);
+  }, [modoTime, jogadorSel, timeGente, toursRaw, ledgerRaw, walletsRaw]);
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
   const [imp, setImp] = useState({
     busy: false,
@@ -12820,8 +12885,13 @@ function Dashboard({
   // soma do que chegou aqui não é a banca. Sem permissão de ver o dinheiro dele, o painel não mostra banca.
   const dinAluno = somenteLeitura && !!alunoResumo && alunoResumo.banca != null;
   const semDinheiro = somenteLeitura && !dinAluno;
-  const bancaAtual = dinAluno ? cent(alunoResumo.banca) : bancaFatos;
-  const muTela = dinAluno ? alunoResumo.mu : sitSel ? sitSel.mu : null;
+  // no time a banca é a do servidor (salas + o que veio depois da foto + capital do time − saques pagos): a mesma da
+  // lista de jogadores, do Financeiro e do MK. A soma local só fica enquanto o servidor não respondeu.
+  const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
+  const bancaAtual = modoTime && sitSel && sitSel.banca != null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
+  const muTela = sitSel && sitSel.mu != null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
+  const salasTravadas = modoTime && !!sitSel && (sitSel.abertura === 'confirmada' || partesBanca && (Number(partesBanca.aportes) !== 0 || Number(partesBanca.saques) !== 0));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial = (player, wallet) => {
     const w = wallets.find(x => x.player === player && x.wallet === wallet);
@@ -13931,7 +14001,22 @@ function Dashboard({
       fontWeight: 600,
       marginTop: 6
     }
-  }, fmt(bancaAtual)), !somenteLeitura && /*#__PURE__*/React.createElement("div", {
+  }, fmt(bancaAtual)), partesBanca ? /*#__PURE__*/React.createElement("div", {
+    "data-partes-banca": true,
+    style: {
+      display: 'flex',
+      gap: '6px 16px',
+      flexWrap: 'wrap',
+      marginTop: 8,
+      fontSize: 12.5,
+      opacity: .88,
+      fontWeight: 600
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "Salas ", fmt(partesBanca.salas)), /*#__PURE__*/React.createElement("span", null, "Jogos ", fmtSinal(partesBanca.resultados)), Number(partesBanca.movimentos) !== 0 && /*#__PURE__*/React.createElement("span", null, "Movimentos ", fmtSinal(partesBanca.movimentos)), Number(partesBanca.aportes) !== 0 && /*#__PURE__*/React.createElement("span", null, "Capital do time ", fmtSinal(partesBanca.aportes)), Number(partesBanca.saques) > 0 && /*#__PURE__*/React.createElement("span", null, "Saques \u2212", fmt(partesBanca.saques)), partesBanca.corte && /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: .85
+    }
+  }, "conta o que veio depois de ", dataBR(partesBanca.corte))) : !somenteLeitura && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '6px 16px',
@@ -16740,7 +16825,71 @@ function Dashboard({
       fontWeight: 600,
       marginTop: 6
     }
-  }, fmt(bancaAtual)), /*#__PURE__*/React.createElement("div", {
+  }, fmt(bancaAtual)), partesBanca ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    "data-partes-banca": true,
+    style: {
+      display: 'flex',
+      gap: 18,
+      marginTop: 14,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85
+    }
+  }, "Salas"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, fmt(partesBanca.salas))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85
+    }
+  }, "Resultado dos jogos"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, fmtSinal(partesBanca.resultados))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85
+    }
+  }, "Movimentos"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, fmtSinal(partesBanca.movimentos))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85
+    }
+  }, "Capital do time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, fmtSinal(partesBanca.aportes))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85
+    }
+  }, "Saques pagos"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, "\u2212", fmt(partesBanca.saques)))), partesBanca.corte && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      opacity: .85,
+      marginTop: 10
+    }
+  }, "Jogos e movimentos at\xE9 ", dataBR(partesBanca.corte), " j\xE1 est\xE3o no saldo das salas (planilha ou entrada no time): contam s\xF3 os de depois.")) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 18,
@@ -16787,7 +16936,89 @@ function Dashboard({
       fontWeight: 700,
       fontSize: 15
     }
-  }, "\u2212", fmt(sacadoTotal))))), /*#__PURE__*/React.createElement(Card, {
+  }, "\u2212", fmt(sacadoTotal))))), modoTime ? /*#__PURE__*/React.createElement(Card, {
+    "data-salas-time": true,
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 19,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Salas"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 2,
+      lineHeight: 1.5
+    }
+  }, "Saldo de cada sala na foto: ", sitSel && sitSel.abertura === 'confirmada' ? 'o da planilha conferida' : 'o que você tinha quando entrou no time', ". Jogos, movimentos, reload e saques entram sozinhos na banca l\xE1 em cima."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap',
+      marginTop: 10
+    }
+  }, (salasTravadas || somenteLeitura ? wallets.map(w => w.wallet) : [...new Set([...wallets.map(w => w.wallet), ...WALLETS.filter(x => x !== 'Reserva')])]).map(w => {
+    const wr = wallets.find(x => x.wallet === w);
+    const editar = !salasTravadas && !somenteLeitura;
+    return /*#__PURE__*/React.createElement("button", {
+      key: w,
+      "data-sala": w,
+      disabled: !editar,
+      onClick: () => editar && setQuickEdit({
+        label: `Saldo inicial · ${w}`,
+        hint: 'O que você tinha nessa sala quando entrou no time, antes de qualquer reload. Depois do primeiro reload ou saque, esse saldo trava (o reload já entra sozinho).',
+        kind: 'money',
+        current: wr ? num(wr.saldo_inicial) : 0,
+        onSave: nv => saveWallet(jogadorSel, w, nv)
+      }),
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: 2,
+        padding: '8px 12px',
+        borderRadius: 11,
+        border: `1px solid ${C.border}`,
+        background: wr ? C.warm : 'transparent',
+        cursor: editar ? 'pointer' : 'default',
+        minWidth: 96
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.inkSoft,
+        fontWeight: 700
+      }
+    }, w), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 15,
+        fontWeight: 600,
+        color: wr ? C.ink : '#C3BBA9'
+      }
+    }, wr ? fmt(wr.saldo_inicial) : 'definir'));
+  }), !wallets.length && (salasTravadas || somenteLeitura) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft
+    }
+  }, "Nenhuma sala com saldo inicial.")), salasTravadas && /*#__PURE__*/React.createElement("div", {
+    "data-salas-travadas": true,
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 10,
+      lineHeight: 1.5,
+      padding: '10px 12px',
+      borderRadius: 12,
+      background: C.bg
+    }
+  }, "\uD83D\uDD12 Travado: depois que o time mandou ou recebeu dinheiro (ou conferiu a planilha), o saldo inicial n\xE3o muda. O reload j\xE1 entra sozinho na banca: digitar de novo contaria duas vezes. Pra corrigir, fale com quem aprova os saques.")) : /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -16928,7 +17159,7 @@ function Dashboard({
     }
   }, "\u2139\uFE0F Esta \xE9 a vis\xE3o de ", /*#__PURE__*/React.createElement("b", null, "quem tem o qu\xEA"), ", montada a partir do saldo inicial que cada um declarou por plataforma. Ela ", /*#__PURE__*/React.createElement("b", null, "n\xE3o precisa bater"), " com o total da ", /*#__PURE__*/React.createElement("b", null, "banca central"), " l\xE1 em cima \u2014 a banca central parte da banca inicial da pool, n\xE3o desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em ", /*#__PURE__*/React.createElement("b", null, "\"Outros\""), ".")), /*#__PURE__*/React.createElement(ListView, {
     title: "Movimentos da banca",
-    subtitle: "S\xF3 aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Di\xE1rio, e saque de jogador pela aba Saques \u2014 n\xE3o registre eles aqui de novo.",
+    subtitle: modoTime ? "Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus." : "Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo.",
     onAdd: () => setModal('bank'),
     rows: [...ledger].sort((a, b) => a.entry_date < b.entry_date ? 1 : -1),
     empty: "Nenhum movimento na banca.",
