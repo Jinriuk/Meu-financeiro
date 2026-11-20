@@ -18,6 +18,10 @@
 -- BUG-9 corrigir a planilha depois de conferida regravava a hora da conferência: todo reload e saque feitos entre a
 --       primeira conferência e a correção sumiam do MU e do lucro sacado (MU 1.000 + reload 500, corrigido pra 1.100:
 --       ficava 1.100 em vez de 1.600). A correção agora muda os valores e mantém o momento da foto.
+-- BUG-10 o aluno podia mudar o saldo inicial das salas a qualquer hora. Com o hábito da planilha ("o time mandou 50 de
+--       reload, boto 50 de banca na GG"), o reload contava duas vezes (banca 100 com MU 50: profit falso de 50, sacável).
+--       O saldo inicial é a foto: depois da planilha conferida, ou do primeiro reload ou saque, o aluno não muda mais
+--       (pode criar sala nova com 0); quem aprova saques corrige.
 -- Saque: guarda a banca do sistema na hora do pedido, ao lado da banca que o aluno digitou (o gestor vê as duas).
 --
 --   banca  = salas + resultados e movimentos depois do corte + aportes depois da conferência − saques pagos depois dela
@@ -212,3 +216,29 @@ begin
 end $$;
 revoke all on function public.solicitar_saque(numeric,numeric,numeric,jsonb,text) from public, anon;
 grant execute on function public.solicitar_saque(numeric,numeric,numeric,jsonb,text) to authenticated;
+
+-- ---------- salas: o saldo inicial é a foto; depois do 1º dinheiro do time, o aluno não mexe (BUG-10) ----------
+-- Roda depois do zz_fato_pessoa (ordem alfabética dos gatilhos BEFORE), quando a pessoa da linha já está resolvida.
+create or replace function public.trava_sala() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare p uuid := case when tg_op = 'DELETE' then old.pessoa_id else new.pessoa_id end;
+begin
+  if p is null or not exists (select 1 from public.pessoa x where x.id = p and x.user_id = auth.uid()) then
+    return case when tg_op = 'DELETE' then old else new end;          -- quem não é o próprio aluno segue as regras de sempre
+  end if;
+  if exists (select 1 from public.abertura a where a.pessoa_id = p and a.status = 'confirmada')
+     or exists (select 1 from public.aporte a where a.pessoa_id = p)
+     or exists (select 1 from public.saque q where q.pessoa_id = p and q.status = 'pago') then
+    if (tg_op = 'INSERT' and coalesce(new.saldo_inicial, 0) <> 0)
+       or (tg_op = 'UPDATE' and new.saldo_inicial is distinct from old.saldo_inicial)
+       or (tg_op = 'DELETE' and coalesce(old.saldo_inicial, 0) <> 0) then
+      raise exception 'o saldo inicial das salas é a foto (planilha conferida ou o que você tinha ao entrar no time) e não muda depois que o time mandou ou recebeu dinheiro: reload entra sozinho na banca. Pra corrigir, fale com quem aprova os saques.'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+revoke all on function public.trava_sala() from public, anon, authenticated;
+drop trigger if exists zzz_trava_sala on public.player_wallets;
+create trigger zzz_trava_sala before insert or update or delete on public.player_wallets for each row execute function public.trava_sala();
+

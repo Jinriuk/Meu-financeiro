@@ -131,6 +131,17 @@ select teste.igual('o J1 vê a planilha conferida, o MU dela e as salas dela (a 
   'confirmada MU 100.00 salas GG Poker:90.00,PS:80.00');
 select teste.igual('aviso "planilha conferida" chega só no J1', $q$select teste.quem_ve($c$select count(*)::text from public.aviso where tipo = 'planilha' and titulo like 'Planilha conferida%'$c$)$q$,
   'A=0 F=0 P1=0 P2=0 J1=1 J2=0 X=0');
+-- BUG-10: depois da foto, o saldo inicial das salas não muda pelo aluno (o reload entra sozinho; digitar contaria 2 vezes)
+select teste.erro_qualquer('BUG-10 J1 NÃO muda o saldo inicial da GG depois da planilha conferida', $q$update public.player_wallets set saldo_inicial = 140 where pessoa_id = teste.id('pJ1') and wallet = 'GG Poker'$q$);
+select teste.erro_qualquer('BUG-10 …nem cria sala nova com saldo', $q$insert into public.player_wallets(player, wallet, saldo_inicial) values ('Joga Um', 'Coin', 30)$q$);
+select teste.erro_qualquer('BUG-10 …nem apaga sala com saldo', $q$delete from public.player_wallets where pessoa_id = teste.id('pJ1') and wallet = 'PS'$q$);
+select teste.ok('BUG-10 J1 abre sala nova com 0 (o dinheiro chega pelo reload)', $q$insert into public.player_wallets(player, wallet, saldo_inicial) values ('Joga Um', 'WPT', 0)$q$);
+select teste.como('ac000000-0000-0000-0000-0000000000f1');
+select teste.ok('BUG-10 quem aprova saques corrige o saldo de uma sala do J1', $q$update public.player_wallets set saldo_inicial = 5 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
+select teste.ok('BUG-10 …e volta pro valor certo', $q$update public.player_wallets set saldo_inicial = 0 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
+select teste.como('ac000000-0000-0000-0000-0000000000c1');
+select teste.igual('BUG-10 as salas do J1 continuam a foto (GG 90, PS 80) e a WPT nova com 0',
+  $q$select string_agg(wallet||':'||saldo_inicial::text, ',' order by wallet) from public.player_wallets where pessoa_id = teste.id('pJ1')$q$, 'GG Poker:90.00,PS:80.00,WPT:0');
 
 -- ---------- 4) contrato do admin chega no aluno ----------
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
@@ -228,9 +239,9 @@ select teste.igual('…e a banca dele pro P2 é a mesma de todo mundo (340 + 3 d
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
 select teste.ok('A renomeia o J1', $q$select public.renomear_pessoa(teste.id('pJ1'), 'Joga Um B')$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
-select teste.igual('o J1 vê os 3 torneios, a sala e o movimento com o nome novo (nada no antigo)',
+select teste.igual('o J1 vê os 3 torneios, as 3 salas e o movimento com o nome novo (nada no antigo)',
   $q$select (select count(*) from public.tournaments where player = 'Joga Um B')||'/'||(select count(*) from public.player_wallets where player = 'Joga Um B')||'/'||
-            (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/2/1 antigo:0');
+            (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/3/1 antigo:0');
 
 -- ---------- 11) saída: o aluno sai; a gestão continua com o histórico ----------
 select teste.como('ac000000-0000-0000-0000-0000000000c2');

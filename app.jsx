@@ -1472,7 +1472,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{label}</h3>
-          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button aria-label="Fechar" onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         {hint&&<div style={{fontSize:13,color:C.inkSoft,marginBottom:14,lineHeight:1.6}}>{hint}</div>}
         {kind==='select'
@@ -3861,6 +3861,8 @@ function Dashboard({session,profile}){
   const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
   const bancaAtual = modoTime && sitSel && sitSel.banca!=null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
   const muTela = sitSel && sitSel.mu!=null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
+  const salasTravadas = modoTime && !!sitSel && (sitSel.abertura==='confirmada' || (partesBanca&&(Number(partesBanca.aportes)!==0||Number(partesBanca.saques)!==0)));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
   // usa walletBucket pra que site/carteira fora da lista (ou saque "Não informar" = null) caiam em "Outros"
@@ -4885,7 +4887,21 @@ function Dashboard({session,profile}){
           </div>}
         </Card>
 
-        <Card style={{padding:20}}>
+        {modoTime?<Card data-salas-time style={{padding:20}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Salas</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>Saldo de cada sala na foto: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'o que você tinha quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.</div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+            {(salasTravadas||somenteLeitura?wallets.map(w=>w.wallet):[...new Set([...wallets.map(w=>w.wallet),...WALLETS.filter(x=>x!=='Reserva')])]).map(w=>{ const wr=wallets.find(x=>x.wallet===w); const editar=!salasTravadas&&!somenteLeitura;
+              return <button key={w} data-sala={w} disabled={!editar} onClick={()=>editar&&setQuickEdit({label:`Saldo inicial · ${w}`,hint:'O que você tinha nessa sala quando entrou no time, antes de qualquer reload. Depois do primeiro reload ou saque, esse saldo trava (o reload já entra sozinho).',kind:'money',current:wr?num(wr.saldo_inicial):0,onSave:nv=>saveWallet(jogadorSel,w,nv)})}
+                style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:2,padding:'8px 12px',borderRadius:11,border:`1px solid ${C.border}`,background:wr?C.warm:'transparent',cursor:editar?'pointer':'default',minWidth:96}}>
+                <span style={{fontSize:11,color:C.inkSoft,fontWeight:700}}>{w}</span>
+                <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:15,fontWeight:600,color:wr?C.ink:'#C3BBA9'}}>{wr?fmt(wr.saldo_inicial):'definir'}</span>
+              </button>; })}
+            {!wallets.length&&(salasTravadas||somenteLeitura)&&<span style={{fontSize:13,color:C.inkSoft}}>Nenhuma sala com saldo inicial.</span>}
+          </div>
+          {salasTravadas&&<div data-salas-travadas style={{fontSize:12.5,color:C.inkSoft,marginTop:10,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>
+            🔒 Travado: depois que o time mandou ou recebeu dinheiro (ou conferiu a planilha), o saldo inicial não muda. O reload já entra sozinho na banca: digitar de novo contaria duas vezes. Pra corrigir, fale com quem aprova os saques.</div>}
+        </Card>:<Card style={{padding:20}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:6}}>
             <div><h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Por jogador e plataforma</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>Onde o dinheiro está. Atualiza sozinho com torneios, saques e movimentos.</div></div>
@@ -4907,7 +4923,7 @@ function Dashboard({session,profile}){
           </div>;})}
           <div style={{fontSize:12,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>Toque numa plataforma pra ajustar o <b>saldo inicial</b> daquele jogador. Depósitos/transferências entram como <b>movimento</b> abaixo (escolhendo o jogador); saque pago sai da carteira escolhida na aba Saques.</div>
           <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>ℹ️ Esta é a visão de <b>quem tem o quê</b>, montada a partir do saldo inicial que cada um declarou por plataforma. Ela <b>não precisa bater</b> com o total da <b>banca central</b> lá em cima — a banca central parte da banca inicial da pool, não desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em <b>"Outros"</b>.</div>
-        </Card>
+        </Card>}
 
         <ListView title="Movimentos da banca" subtitle={modoTime?"Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus.":"Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo."} onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}

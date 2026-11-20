@@ -74,6 +74,11 @@ await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1
   ok(/Minha banca/.test(t), 'layout de um jogador');
   ok(/100,00/.test(t) && !/999/.test(t), 'banca = 75 + 80 (salas) + 15 (torneios) − 70 (saque do time) = 100; a banca inicial do time não entra');
   ok(/MK −US\$\s200,00/.test(await page.locator('[data-painel-mk]').innerText()), 'em MK: banca 100 − MU 300 = MK −200');
+  await irPara(page, 'Banca');
+  ok(await page.locator('[data-salas-travadas]').count() === 0 && !(await page.locator('[data-sala="GG Poker"]').isDisabled()), 'antes do 1º dinheiro do time, as salas ainda se editam');
+  await page.locator('[data-sala="GG Poker"]').click();
+  ok(/antes de qualquer reload/.test(await corpo(page)), '…e o aviso diz que é o saldo de quando entrou, antes de qualquer reload');
+  await page.mouse.click(8, 8); await page.waitForTimeout(250);   // fecha o editor clicando fora
   await irPara(page, 'Ajustes');
   ok(await page.locator('[data-ajustes-time]').count() === 1 && /só quem configura o time altera/.test(await corpo(page)), 'aluno vê as regras do time sem poder editar');
 });
@@ -93,6 +98,8 @@ await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id:
   await irPara(page, 'Banca');
   ok(/Capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
   ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
+  ok(await page.locator('[data-salas-travadas]').count() === 1 && await page.locator('[data-sala="GG Poker"]').isDisabled() && /US\$\s80,00/.test(await page.locator('[data-sala="GG Poker"]').innerText()),
+    'BUG-10 salas travadas depois do reload: mostram o saldo da foto e não abrem pra editar');
 });
 
 // 3) pool de 2 ('team'): nada muda
