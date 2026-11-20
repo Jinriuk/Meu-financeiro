@@ -8220,6 +8220,303 @@ function ContratoModal({
   }, "Salvar contrato")));
 }
 
+// gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
+// registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
+const ACAO_ROTULO = {
+  criar_time: 'criou o time',
+  mudar_assentos: 'mudou os assentos',
+  novo_link_admin: 'gerou link novo do admin'
+};
+function PlataformaApp() {
+  const [times, setTimes] = useState(null);
+  const [acoes, setAcoes] = useState([]);
+  const [aviso, setAviso] = useState(null);
+  const [novo, setNovo] = useState({
+    nome: '',
+    assentos: '',
+    admin: ''
+  });
+  const [link, setLink] = useState(null);
+  const [perg, setPerg] = useState(null);
+  const carregar = async () => {
+    const [t, a] = await Promise.all([sb.rpc('times_da_plataforma'), sb.rpc('acoes_plataforma', {
+      p_limite: 30
+    })]);
+    if (t.error) {
+      setAviso({
+        erro: true,
+        texto: t.error.message || 'Não consegui carregar os times.'
+      });
+      setTimes([]);
+    } else setTimes(t.data || []);
+    setAcoes(a.error ? [] : a.data || []);
+  };
+  useEffect(() => {
+    carregar();
+  }, []);
+  const rodar = async (fn, args, okTexto) => {
+    setAviso(null);
+    const {
+      data,
+      error
+    } = await sb.rpc(fn, args);
+    if (error) {
+      setAviso({
+        erro: true,
+        texto: error.message || 'Não deu certo.'
+      });
+      return null;
+    }
+    if (okTexto) setAviso({
+      erro: false,
+      texto: okTexto
+    });
+    await carregar();
+    return data ?? true;
+  };
+  const url = t => `${window.location.origin}/?convite=${t}`;
+  const nomeOk = novo.nome.trim().length > 0 && novo.admin.trim().length > 0;
+  const criar = async () => {
+    const n = novo.nome.trim(),
+      adm = novo.admin.trim(),
+      as = parseInt(novo.assentos, 10);
+    const r = await rodar('criar_time_plataforma', {
+      p_nome: n,
+      p_assentos: as > 0 ? as : null,
+      p_admin_nome: adm
+    }, `Time ${n} criado. Mande o link pra ${adm}.`);
+    if (r && r.convite) {
+      setLink({
+        titulo: `Link de admin do ${n}`,
+        url: url(r.convite),
+        texto: `${adm}, teu acesso de admin ao time ${n} no GrinderBank:`
+      });
+      setNovo({
+        nome: '',
+        assentos: '',
+        admin: ''
+      });
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ftfade",
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 24,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Plataforma"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "Voc\xEA v\xEA os times s\xF3 pelos n\xFAmeros. Os dados de cada time continuam s\xF3 com quem \xE9 do time.")), aviso && /*#__PURE__*/React.createElement("div", {
+    "data-aviso-plataforma": true,
+    style: {
+      padding: '11px 14px',
+      borderRadius: 13,
+      background: aviso.erro ? C.redSoft : C.greenSoft,
+      color: aviso.erro ? C.red : C.greenMid,
+      fontWeight: 600,
+      fontSize: 13.5
+    }
+  }, aviso.texto), link && /*#__PURE__*/React.createElement(LinkPronto, {
+    titulo: link.titulo,
+    url: link.url,
+    texto: link.texto,
+    onFechar: () => setLink(null)
+  }), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tituloS
+  }, "Criar time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pl-nome"
+  }, "Nome do time"), /*#__PURE__*/React.createElement("input", {
+    id: "pl-nome",
+    "data-novo-time-nome": true,
+    style: inputStyle,
+    value: novo.nome,
+    onChange: e => setNovo(x => ({
+      ...x,
+      nome: e.target.value
+    }))
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pl-adm"
+  }, "Nome de quem vai administrar"), /*#__PURE__*/React.createElement("input", {
+    id: "pl-adm",
+    "data-novo-time-admin": true,
+    style: inputStyle,
+    value: novo.admin,
+    onChange: e => setNovo(x => ({
+      ...x,
+      admin: e.target.value
+    }))
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "pl-ass"
+  }, "Assentos (em branco: sem limite)"), /*#__PURE__*/React.createElement("input", {
+    id: "pl-ass",
+    "data-novo-time-assentos": true,
+    style: inputStyle,
+    inputMode: "numeric",
+    value: novo.assentos,
+    onChange: e => setNovo(x => ({
+      ...x,
+      assentos: e.target.value.replace(/\D/g, '')
+    }))
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      margin: '8px 0 10px',
+      lineHeight: 1.5
+    }
+  }, "O time nasce com a raiz e a configura\xE7\xE3o padr\xE3o. Quem aceitar o link de admin vira o dono do time e monta a estrutura."), /*#__PURE__*/React.createElement("button", {
+    disabled: !nomeOk,
+    onClick: criar,
+    style: {
+      ...btnP,
+      opacity: nomeOk ? 1 : .5
+    }
+  }, "Criar time")), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tituloS
+  }, "Times ", times && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft,
+      fontWeight: 500
+    }
+  }, times.length)), times == null ? /*#__PURE__*/React.createElement("div", {
+    className: "spin"
+  }) : !times.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft
+    }
+  }, "Nenhum time ainda.") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      overflowX: 'auto'
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    "data-times": true,
+    style: {
+      width: '100%',
+      borderCollapse: 'collapse'
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Time', 'Pessoas', 'Jogadores', 'Assentos', 'Admin', 'Último lançamento', ''].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: thS
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, times.map(t => /*#__PURE__*/React.createElement("tr", {
+    key: t.id,
+    "data-time-plataforma": t.nome
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      ...tdS,
+      fontWeight: 700
+    }
+  }, t.nome, t.tipo === 'pool' ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft
+    }
+  }, " \xB7 pool") : null), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, t.pessoas, t.convidados ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft
+    }
+  }, " (", t.convidados, " convidad", t.convidados > 1 ? 'os' : 'o', ")") : null), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, t.jogadores), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, t.assentos == null ? 'sem limite' : t.assentos), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, t.admins || '—', !t.tem_dono ? /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+    tom: "warn"
+  }, "sem dono")) : null), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, t.ultimo_lancamento ? dataBR(t.ultimo_lancamento) : '—'), /*#__PURE__*/React.createElement("td", {
+    style: tdS
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => setPerg({
+      label: `Assentos do ${t.nome}`,
+      hint: 'Convite além disso é recusado no servidor. 0 = sem limite.',
+      kind: 'money',
+      valor: t.assentos ?? 0,
+      onSave: async v => {
+        setPerg(null);
+        const n = Math.round(Number(v) || 0);
+        await rodar('mudar_assentos', {
+          p_ws: t.id,
+          p_assentos: n > 0 ? n : null
+        }, `Assentos do ${t.nome}: ${n > 0 ? n : 'sem limite'}.`);
+      }
+    })
+  }, "Assentos"), t.admin_pendente && /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: async () => {
+      const tok = await rodar('novo_link_admin', {
+        p_ws: t.id
+      }, null);
+      if (tok && typeof tok === 'string') setLink({
+        titulo: `Link novo de admin do ${t.nome}`,
+        url: url(tok),
+        texto: `Teu acesso de admin ao time ${t.nome} no GrinderBank:`
+      });
+    }
+  }, "Link do admin"))))))))), acoes.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tituloS
+  }, "Registro"), acoes.map((a, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    "data-acao-plataforma": true,
+    style: {
+      padding: '7px 0',
+      borderTop: `1px solid ${C.border}`,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("b", null, dataBR(a.criado_em)), " \xB7 ", ACAO_ROTULO[a.acao] || a.acao, a.time_nome ? ` · ${a.time_nome}` : '', a.acao === 'mudar_assentos' && a.detalhes ? ` (${a.detalhes.antes ?? 'sem limite'} → ${a.detalhes.depois ?? 'sem limite'})` : ''))), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+    label: perg.label,
+    hint: perg.hint,
+    kind: perg.kind,
+    currentValue: perg.valor,
+    onClose: () => setPerg(null),
+    onSave: perg.onSave
+  }));
+}
+
 // regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
 const REGRAS_RETA = [{
   k: 'abi_max',
@@ -12264,6 +12561,7 @@ function Dashboard({
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws, setWs] = useState(null); // workspace da conta (team = pool · solo = cliente)
+  const [souGestorGeral, setSouGestorGeral] = useState(false); // gestor geral da plataforma (o servidor diz)
   const [srvStatus, setSrvStatus] = useState(null); // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup, setNeedsSetup] = useState(false); // solo sem config ainda -> onboarding de 3 passos
   const [conviteErro, setConviteErro] = useState(null); // convite de time recusado pelo servidor (vencido, conta em outro lugar…)
@@ -12724,6 +13022,12 @@ function Dashboard({
       });
       const myWs = wsr.data && wsr.data[0] || null;
       setWs(myWs);
+      try {
+        const {
+          data: gg
+        } = await sb.rpc('sou_gestor_geral');
+        setSouGestorGeral(gg === true);
+      } catch (e) {}
       // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
       if (myWs && myWs.kind === 'solo') {
         try {
@@ -14384,6 +14688,11 @@ function Dashboard({
       MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'stats', 'time'];
     }
   }
+  if (souGestorGeral && !alunoAberto) nav = [...nav, {
+    id: 'plataforma',
+    label: 'Plataforma',
+    Icon: IcoGrid
+  }];
   const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
 
   /* ---------- mensal ---------- */
@@ -18273,7 +18582,7 @@ function Dashboard({
     config: config,
     banca: bancaAtual,
     onIr: setView
-  }), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
+  }), view === 'plataforma' && souGestorGeral && /*#__PURE__*/React.createElement(PlataformaApp, null), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
     secao: view,
     session: session,
     tours: toursRaw,

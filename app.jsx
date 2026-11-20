@@ -2487,6 +2487,66 @@ function ContratoModal({atual,titulo,onSalvar,onClose}){
   </div>;
 }
 
+// gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
+// registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
+const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin'};
+function PlataformaApp(){
+  const [times,setTimes]=useState(null); const [acoes,setAcoes]=useState([]); const [aviso,setAviso]=useState(null);
+  const [novo,setNovo]=useState({nome:'',assentos:'',admin:''}); const [link,setLink]=useState(null); const [perg,setPerg]=useState(null);
+  const carregar=async()=>{ const [t,a]=await Promise.all([sb.rpc('times_da_plataforma'),sb.rpc('acoes_plataforma',{p_limite:30})]);
+    if(t.error){ setAviso({erro:true,texto:t.error.message||'Não consegui carregar os times.'}); setTimes([]); } else setTimes(t.data||[]);
+    setAcoes(a.error?[]:(a.data||[])); };
+  useEffect(()=>{ carregar(); },[]);
+  const rodar=async(fn,args,okTexto)=>{ setAviso(null); const {data,error}=await sb.rpc(fn,args);
+    if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; }
+    if(okTexto) setAviso({erro:false,texto:okTexto}); await carregar(); return data??true; };
+  const url=t=>`${window.location.origin}/?convite=${t}`;
+  const nomeOk=novo.nome.trim().length>0&&novo.admin.trim().length>0;
+  const criar=async()=>{ const n=novo.nome.trim(), adm=novo.admin.trim(), as=parseInt(novo.assentos,10);
+    const r=await rodar('criar_time_plataforma',{p_nome:n,p_assentos:as>0?as:null,p_admin_nome:adm},`Time ${n} criado. Mande o link pra ${adm}.`);
+    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, teu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); } };
+  return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+    <div><h2 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,margin:0}}>Plataforma</h2>
+      <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Você vê os times só pelos números. Os dados de cada time continuam só com quem é do time.</div></div>
+    {aviso&&<div data-aviso-plataforma style={{padding:'11px 14px',borderRadius:13,background:aviso.erro?C.redSoft:C.greenSoft,color:aviso.erro?C.red:C.greenMid,fontWeight:600,fontSize:13.5}}>{aviso.texto}</div>}
+    {link&&<LinkPronto titulo={link.titulo} url={link.url} texto={link.texto} onFechar={()=>setLink(null)}/>}
+    <Card style={{padding:20}}>
+      <h3 style={tituloS}>Criar time</h3>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:10}}>
+        <div><label style={labelStyle} htmlFor="pl-nome">Nome do time</label><input id="pl-nome" data-novo-time-nome style={inputStyle} value={novo.nome} onChange={e=>setNovo(x=>({...x,nome:e.target.value}))}/></div>
+        <div><label style={labelStyle} htmlFor="pl-adm">Nome de quem vai administrar</label><input id="pl-adm" data-novo-time-admin style={inputStyle} value={novo.admin} onChange={e=>setNovo(x=>({...x,admin:e.target.value}))}/></div>
+        <div><label style={labelStyle} htmlFor="pl-ass">Assentos (em branco: sem limite)</label><input id="pl-ass" data-novo-time-assentos style={inputStyle} inputMode="numeric" value={novo.assentos} onChange={e=>setNovo(x=>({...x,assentos:e.target.value.replace(/\D/g,'')}))}/></div>
+      </div>
+      <div style={{fontSize:12.5,color:C.inkSoft,margin:'8px 0 10px',lineHeight:1.5}}>O time nasce com a raiz e a configuração padrão. Quem aceitar o link de admin vira o dono do time e monta a estrutura.</div>
+      <button disabled={!nomeOk} onClick={criar} style={{...btnP,opacity:nomeOk?1:.5}}>Criar time</button>
+    </Card>
+    <Card style={{padding:20}}>
+      <h3 style={tituloS}>Times {times&&<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{times.length}</span>}</h3>
+      {times==null?<div className="spin"/>:!times.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhum time ainda.</div>:
+      <div style={{overflowX:'auto'}}><table data-times style={{width:'100%',borderCollapse:'collapse'}}>
+        <thead><tr>{['Time','Pessoas','Jogadores','Assentos','Admin','Último lançamento',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+        <tbody>{times.map(t=><tr key={t.id} data-time-plataforma={t.nome}>
+          <td style={{...tdS,fontWeight:700}}>{t.nome}{t.tipo==='pool'?<span style={{fontSize:12,color:C.inkSoft}}> · pool</span>:null}</td>
+          <td style={tdS}>{t.pessoas}{t.convidados?<span style={{fontSize:12,color:C.inkSoft}}> ({t.convidados} convidad{t.convidados>1?'os':'o'})</span>:null}</td>
+          <td style={tdS}>{t.jogadores}</td>
+          <td style={tdS}>{t.assentos==null?'sem limite':t.assentos}</td>
+          <td style={tdS}>{t.admins||'—'}{!t.tem_dono?<> <Tag tom="warn">sem dono</Tag></>:null}</td>
+          <td style={tdS}>{t.ultimo_lancamento?dataBR(t.ultimo_lancamento):'—'}</td>
+          <td style={tdS}><div style={{display:'flex',gap:6}}>
+            <button style={btnS} onClick={()=>setPerg({label:`Assentos do ${t.nome}`,hint:'Convite além disso é recusado no servidor. 0 = sem limite.',kind:'money',valor:t.assentos??0,
+              onSave:async v=>{ setPerg(null); const n=Math.round(Number(v)||0); await rodar('mudar_assentos',{p_ws:t.id,p_assentos:n>0?n:null},`Assentos do ${t.nome}: ${n>0?n:'sem limite'}.`); }})}>Assentos</button>
+            {t.admin_pendente&&<button style={btnS} onClick={async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null); if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }}>Link do admin</button>}
+          </div></td></tr>)}</tbody></table></div>}
+    </Card>
+    {acoes.length>0&&<Card style={{padding:20}}>
+      <h3 style={tituloS}>Registro</h3>
+      {acoes.map((a,i)=><div key={i} data-acao-plataforma style={{padding:'7px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
+        <b>{dataBR(a.criado_em)}</b> · {ACAO_ROTULO[a.acao]||a.acao}{a.time_nome?` · ${a.time_nome}`:''}{a.acao==='mudar_assentos'&&a.detalhes?` (${a.detalhes.antes??'sem limite'} → ${a.detalhes.depois??'sem limite'})`:''}</div>)}
+    </Card>}
+    {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+  </div>;
+}
+
 // regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
 const REGRAS_RETA=[
   {k:'abi_max',rot:'ABI máximo (reta sem grade)',kind:'money',padrao:c=>num(c.abi_max_player1)||num(c.abi_max)||2,txt:v=>fmt(v)},
@@ -3383,6 +3443,7 @@ function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
+  const [souGestorGeral,setSouGestorGeral]=useState(false);   // gestor geral da plataforma (o servidor diz)
   const [srvStatus,setSrvStatus]=useState(null);   // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
   const [conviteErro,setConviteErro]=useState(null);// convite de time recusado pelo servidor (vencido, conta em outro lugar…)
@@ -3602,6 +3663,7 @@ function Dashboard({session,profile}){
       setErroCarga(falhas.length>0);
       if(falhas.length) registrarErro('carga','lista não carregou: '+falhas.map(([r])=>r.error.message).join(' | '),{tabelas:falhas.length});
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
+      try{ const {data:gg}=await sb.rpc('sou_gestor_geral'); setSouGestorGeral(gg===true); }catch(e){}
       // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
       if(myWs&&myWs.kind==='solo'){ try{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); }catch(e){}
         try{ const {data:ms}=await sb.from('acerto_saida').select('id,time_nome,saida,banca,mu,mk_congelado,devolucao,parte_jogador,total_time').order('registrado_em',{ascending:false}).limit(1); setMinhasSaidas(ms||[]); }catch(e){} }
@@ -4289,6 +4351,7 @@ function Dashboard({session,profile}){
       MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','stats','time'];
     }
   }
+  if(souGestorGeral&&!alunoAberto) nav=[...nav,{id:'plataforma',label:'Plataforma',Icon:IcoGrid}];
   const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
 
   /* ---------- mensal ---------- */
@@ -5195,6 +5258,7 @@ function Dashboard({session,profile}){
 
       {/* ---------------- CONFIG ---------------- */}
       {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+      {view==='plataforma'&&souGestorGeral&&<PlataformaApp/>}
       {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}/>}
       {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
         {!(gestaoAtiva&&view==='config')&&<>
