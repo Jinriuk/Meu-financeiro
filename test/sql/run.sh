@@ -45,9 +45,11 @@ $M -f "$ROOT/supabase/migrations/20261120400000_historico_so_do_jogador.sql" >/d
 $M -f "$ROOT/supabase/migrations/20261120400000_historico_so_do_jogador.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261120500000_saida_do_jogador.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261120500000_saida_do_jogador.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261120600000_regras_por_reta.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261120600000_regras_por_reta.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
-for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis matriz_papeis entrada_time historico_jogador saida_jogador exemplo_samba webhook; do
+for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis matriz_papeis entrada_time historico_jogador saida_jogador regras_reta exemplo_samba webhook; do
   $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
 done
 # oráculo do dinheiro: históricos aleatórios (semente fixa) conferidos contra um modelo escrito a partir das regras

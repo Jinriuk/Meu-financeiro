@@ -199,6 +199,8 @@ const lucroTorneio   = t => num(t.prize)+bountyTorneio(t)-totalInvestido(t);
 // torneio antigo é julgado pela grade da época, não pela atual.
 let CONFIG_CHANGES=[];   // histórico de alterações dos Ajustes (carregado do banco pelo Dashboard)
 const abiMaxFor = (config, player, date) => {
+  const daReta = regraDoJogador('abi_max', player, date);            // time: a regra da reta do jogador
+  if(daReta!=null && num(daReta)>0) return num(daReta);
   const key = player===config.player2_name ? 'abi_max_player2' : 'abi_max_player1';
   let v = num(config[key]);
   if(!(v>0)) v = num(config.abi_max)||2;
@@ -1166,7 +1168,28 @@ function resumoCelulaGrade(txt){
   if(c.obs) p.push(c.obs); return p.join(' · ');
 }
 // grades do time carregadas pelo Dashboard (time de staking); vazio no pool e na conta individual
-let GRADE_CTX={unidades:[],grades:[],unidadeDe:{}};
+let GRADE_CTX={unidades:[],grades:[],unidadeDe:{},regras:[]};
+// regra da unidade (fase 1): a da unidade mais funda com a chave (ela ou de cima), a mais nova até a data.
+// null = nenhuma unidade tem a regra: vale a configuração do time
+function regraDaUnidade(chave,unidadeId,data){
+  const rs=GRADE_CTX.regras||[]; if(!unidadeId||!rs.length) return null;
+  const U=Object.fromEntries((GRADE_CTX.unidades||[]).map(u=>[u.id,u])); const u=U[unidadeId]; if(!u) return null;
+  const d=String(data||todayISO()).slice(0,10);
+  const r=rs.filter(x=>x.chave===chave&&String(x.vigente_desde)<=d&&U[x.unidade_id]&&String(u.caminho).startsWith(U[x.unidade_id].caminho))
+    .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1))[0];
+  return r?r.valor:null;
+}
+function regraDoJogador(chave,player,data){ return regraDaUnidade(chave,(GRADE_CTX.unidadeDe||{})[String(player||'').trim().toLowerCase()],data); }
+// stop loss do jogador: o da reta dele, ou o do time
+function stopDe(config,player){
+  const d=regraDoJogador('stop_dia_buyins',player), s=regraDoJogador('stop_semana_pct',player);
+  return {dia:d!=null?num(d):num(config.stoploss_daily_buyins),semana:s!=null?num(s):num(config.stoploss_weekly_pct)};
+}
+// teto de ABI de um torneio sem grade: a regra da reta em que ele foi jogado, na data; senão a do jogador / do time
+function tetoDoTorneio(t,config){
+  const r=t.unidade_id?regraDaUnidade('abi_max',t.unidade_id,t.entry_date):null;
+  return r!=null&&num(r)>0?num(r):abiMaxFor(config,t.player,t.entry_date);
+}
 // status de grade de um torneio: pela grade da reta (quando o time tem) ou pelo teto de ABI dos Ajustes
 function statusGrade(t,config){
   // salvo com pessoa e sem unidade: é de antes da entrada no time, quando as regras do time não valiam (não ganha selo)
@@ -1175,7 +1198,7 @@ function statusGrade(t,config){
   const g=gradeDoTorneio(tt,GRADE_CTX.unidades,GRADE_CTX.grades);
   if(g){ const r=classificarTorneioGrade(tt,g); if(r) return {...r,simulada:!!g.simulada,porGrade:true}; }
   if(!config) return {status:'dentro',motivo:''};
-  const mx=abiMaxFor(config,t.player,t.entry_date);
+  const mx=tetoDoTorneio(t,config);
   return num(t.buyin)>mx?{status:'fora',motivo:`buy-in ${fmt(t.buyin)} · teto ${fmt(mx)}`,teto:mx}:{status:'dentro',motivo:'',teto:mx};
 }
 
@@ -1256,17 +1279,17 @@ function SLMeter({label,used,limit,detail}){
 }
 function StopLossCard({players,config,daily,curWeek,bancaAtual}){
   const today=todayISO();
-  const dayBI=num(config.stoploss_daily_buyins), wkPct=num(config.stoploss_weekly_pct);
   const [open,setOpen]=useState(null);   // null = automático (abre sozinho se alguém passou de 70%)
-  if(!(dayBI>0)&&!(wkPct>0)) return null;
+  if(!players.some(p=>{ const s=stopDe(config,p); return s.dia>0||s.semana>0; })) return null;
   const rows=players.map((p,i)=>{
+    const st=stopDe(config,p);                       // no time: o stop da reta do jogador
     const abiMax=abiMaxFor(config,p,today);
-    const slDay=dayBI*abiMax;
+    const slDay=st.dia*abiMax;
     const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
-    const wkLim=wkPct*bancaAtual;
+    const wkLim=st.semana*bancaAtual;
     const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
     const pct=Math.max(slDay>0?dayLoss/slDay*100:0, wkLim>0?wkLoss/wkLim*100:0);
-    return {p,i,abiMax,slDay,dayLoss,wkLim,wkLoss,pct};
+    return {p,i,abiMax,slDay,dayLoss,wkLim,wkLoss,pct,st};
   });
   const worst=Math.max(0,...rows.map(r=>r.pct));
   const isOpen=open==null?worst>=70:open;
@@ -1285,8 +1308,8 @@ function StopLossCard({players,config,daily,curWeek,bancaAtual}){
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
         {rows.map(r=><div key={r.p} style={{display:'flex',flexDirection:'column',gap:10}}>
           <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>
-          {r.slDay>0&&<SLMeter label={`Hoje · limite ${dayBI} buy-ins`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${dayBI} bi`}/>}
-          {r.wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(wkPct*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>}
+          {r.slDay>0&&<SLMeter label={`Hoje · limite ${r.st.dia} buy-ins`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${r.st.dia} bi`}/>}
+          {r.wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(r.st.semana*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>}
         </div>)}
       </div>
     </div>}
@@ -2443,7 +2466,7 @@ function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClos
 }
 
 /* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
-function ContratoModal({atual,onSalvar,onClose}){
+function ContratoModal({atual,titulo,onSalvar,onClose}){
   const f=Array.isArray(atual)&&atual.length?[...atual].sort((a,b)=>(a.ate==null?1e15:a.ate)-(b.ate==null?1e15:b.ate)):[{ate:10000,jogador:.35},{ate:null,jogador:.4}];
   const [lim,setLim]=useState(String(f[0].ate??10000)); const [a,setA]=useState(String(Math.round(Number(f[0].jogador)*1000)/10));
   const [b,setB]=useState(String(Math.round(Number((f[1]||f[0]).jogador)*1000)/10)); const [ini,setIni]=useState(todayISO());
@@ -2451,7 +2474,7 @@ function ContratoModal({atual,onSalvar,onClose}){
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
     <div onClick={e=>e.stopPropagation()} data-contrato-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:460,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Contrato do time</h3>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{titulo||'Contrato do time'}</h3>
         <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
       </div>
       <div><label style={labelStyle} htmlFor="ct-a">% do jogador até o limite</label><input id="ct-a" data-ct-a style={inputStyle} inputMode="decimal" value={a} onChange={e=>setA(e.target.value)}/></div>
@@ -2463,6 +2486,17 @@ function ContratoModal({atual,onSalvar,onClose}){
     </div>
   </div>;
 }
+
+// regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
+const REGRAS_RETA=[
+  {k:'abi_max',rot:'ABI máximo (reta sem grade)',kind:'money',padrao:c=>num(c.abi_max_player1)||num(c.abi_max)||2,txt:v=>fmt(v)},
+  {k:'stop_dia_buyins',rot:'Stop loss diário',kind:'money',padrao:c=>num(c.stoploss_daily_buyins),txt:v=>`${num(v)} buy-ins`},
+  {k:'stop_semana_pct',rot:'Stop loss semanal',kind:'percent',padrao:c=>num(c.stoploss_weekly_pct),txt:v=>`${pctFmt(num(v)*100)} da banca`},
+  {k:'sites',rot:'Sites permitidos',kind:'list',padrao:c=>c.sites_permitidos||[],txt:v=>(Array.isArray(v)?v:[]).join(', ')||'—'},
+  {k:'modalidades',rot:'Modalidades',kind:'list',padrao:c=>c.modalidades_permitidas||[],txt:v=>(Array.isArray(v)?v:[]).join(', ')||'—'},
+  {k:'reserva_por_sala',rot:'Reserva por sala no saque',kind:'money',padrao:()=>0,txt:v=>num(v)>0?`${fmt(v)} por sala`:'nenhuma'},
+  {k:'bloquear_promocao_com_mk',rot:'Não promover com MK',kind:'bool',padrao:()=>false,txt:v=>v===true?'ligado':'desligado'},
+];
 
 // saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
 // o que vai pra conta individual nova dele e o que fica com o time. Confirma digitando SAIU.
@@ -2528,6 +2562,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const [link,setLink]=useState(null);         // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto,setSaqueAberto]=useState(false);
   const [saidaDe,setSaidaDe]=useState(null);   // saída: {p, previa} (a prévia do acerto vem do servidor)
+  const [regraSel,setRegraSel]=useState(null); // regras por reta: a unidade aberta no cartão
   const [planilha,setPlanilha]=useState(null);
   const [reloadAberto,setReloadAberto]=useState(false);
   const [periodo,setPeriodo]=useState('mes');
@@ -2601,10 +2636,14 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const urlConvite=t=>`${window.location.origin}/?convite=${t}`;
   const hoje=todayISO(), semana=addDaysISO(hoje,-6);
   const gradeEf=uid_=>gradeDoTorneio({unidade_id:uid_,entry_date:hoje},d.unidades,d.grades);
-  const regraEf=(uid_,chave)=>{ const t=U[uid_]; if(!t) return null;
-    const r=d.regras.filter(x=>x.chave===chave&&String(x.vigente_desde)<=hoje&&U[x.unidade_id]&&String(t.caminho).startsWith(U[x.unidade_id].caminho))
-      .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1))[0];
-    return r?r.valor:null; };
+  // a regra que vale numa unidade (ela ou a de cima mais perto), com a origem; null = vale o padrão do time
+  const regraComOrigem=(uid_,chave)=>{ const t=U[uid_]; if(!t) return null;
+    return d.regras.filter(x=>x.chave===chave&&String(x.vigente_desde)<=hoje&&U[x.unidade_id]&&String(t.caminho).startsWith(U[x.unidade_id].caminho))
+      .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||(a.vigente_desde<b.vigente_desde?1:-1))[0]||null; };
+  const regraEf=(uid_,chave)=>{ const r=regraComOrigem(uid_,chave); return r?r.valor:null; };
+  const contratoEf=uid_=>{ const t=U[uid_]; if(!t) return null;
+    return d.contratos.filter(c=>!c.pessoa_id&&c.unidade_id&&U[c.unidade_id]&&String(c.inicio||'')<=hoje&&String(t.caminho).startsWith(U[c.unidade_id].caminho))
+      .sort((a,b)=>U[b.unidade_id].caminho.length-U[a.unidade_id].caminho.length||String(b.inicio).localeCompare(String(a.inicio))||String(b.criado_em).localeCompare(String(a.criado_em)))[0]||null; };
   const linhas=resumo||[];
   const linhaDe=pid=>linhas.find(l=>l.pessoa_id===pid);
   const unidadeDoTorneio=t=>t.unidade_id||GRADE_CTX.unidadeDe[String(t.player||'').trim().toLowerCase()]||null;
@@ -2707,6 +2746,11 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           {s.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
         </div>)}</div>}
       </Card>}
+      {minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
+        <h3 style={tituloS}>Regras da sua reta</h3>
+        {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
+          return <div key={rr.k} data-minha-regra={rr.k} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rr.rot}</span><b>{rr.txt(v)}</b></div>; })}
+      </Card>}
       {minhaGradeReta&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'} {minhaGradeReta.simulada?<Tag tom="warn">simulada</Tag>:<Tag tom="ok">oficial</Tag>}</h3>
         {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
@@ -2755,8 +2799,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
         onSave:async t=>{ setPerg(null); const [n,r]=String(t||'').split(';'); if(n&&n.trim()) await rodar('renomear_unidade',{p_alvo:u.id,p_nome:n.trim(),p_rotulo:(r||'').trim()||null},'Unidade renomeada.'); }})}
       onArquivar={u=>setPerg({label:`Arquivar ${u.nome}`,hint:'Só funciona com a unidade vazia. Digite ARQUIVAR pra confirmar.',kind:'text',valor:'',
         onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='ARQUIVAR') await rodar('arquivar_unidade',{p_alvo:u.id},`${u.nome} arquivada.`); }})}/>}
-    {contratoAberto&&raiz&&<ContratoModal atual={contratoRaiz?.faixas} onClose={()=>setContratoAberto(false)}
-      onSalvar={async(faixas,ini)=>{ const r=await rodar('definir_contrato',{p_unidade:raiz.id,p_pessoa:null,p_faixas:faixas,p_inicio:ini||todayISO()},'Contrato salvo.'); if(r) setContratoAberto(false); }}/>}
+    {contratoAberto&&raiz&&(()=>{ const alvo=contratoAberto===true?raiz:U[contratoAberto]; if(!alvo) return null;
+      return <ContratoModal atual={(alvo.id===raiz.id?contratoRaiz:contratoEf(alvo.id))?.faixas} titulo={alvo.id===raiz.id?'Contrato do time':`Contrato da ${alvo.nome}`} onClose={()=>setContratoAberto(false)}
+        onSalvar={async(faixas,ini)=>{ const r=await rodar('definir_contrato',{p_unidade:alvo.id,p_pessoa:null,p_faixas:faixas,p_inicio:ini||todayISO()},'Contrato salvo.'); if(r) setContratoAberto(false); }}/>; })()}
   </>;
   const linkBox=link&&<LinkPronto titulo={link.titulo} url={link.url} texto={link.texto} onFechar={()=>setLink(null)}/>;
 
@@ -3143,6 +3188,33 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           Não promover quem está em MK</label>
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:6,lineHeight:1.5}}>{mkBloq?'Ligado: o servidor recusa promover jogador com make-up negativo.':'Desligado: dá pra promover, a tela só avisa que o jogador está em MK.'}</div>
       </Card>
+      {(()=>{ const unis=d.unidades; if(!unis.length) return null;
+        const selU=U[regraSel]||unis.find(u=>u.mae_id&&pode('configurar_regras',u.id))||unis.find(u=>u.mae_id)||raiz; if(!selU) return null;
+        const podeSel=pode('configurar_regras',selU.id), ehRaiz=!selU.mae_id;
+        const mudar=(rr,v)=>{ if(rr.kind==='bool') return rodar('definir_regra',{p_unidade:selU.id,p_chave:rr.k,p_valor:!(v===true),p_desde:null},`${rr.rot}: ${v===true?'desligado':'ligado'} na ${selU.nome}.`);
+          setPerg({label:`${rr.rot} · ${ehRaiz?'time inteiro':selU.nome}`,hint:rr.kind==='list'?'Separe por vírgula.':'Vale daqui pra frente, pra quem joga nesta unidade e nas de baixo (que não tiverem a própria).',kind:rr.kind,valor:v,
+            onSave:async x=>{ setPerg(null); if(rr.kind==='list'&&!(Array.isArray(x)&&x.length)) return; await rodar('definir_regra',{p_unidade:selU.id,p_chave:rr.k,p_valor:x,p_desde:null},`${rr.rot} da ${ehRaiz?'equipe':selU.nome} salvo.`); }}); };
+        const c=contratoEf(selU.id), cProprio=c&&c.unidade_id===selU.id;
+        return <Card style={{padding:20}} data-regras-reta>
+          <h3 style={tituloS}>Regras por reta</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Cada unidade herda da de cima; sem regra em nenhuma, vale o padrão do time (Regras de jogo). Mude só onde a reta é diferente.</div>
+          <select data-regra-unidade value={selU.id} onChange={e=>setRegraSel(e.target.value)} style={{...inputStyle,width:'auto',marginBottom:6}}>
+            {unis.map(u=><option key={u.id} value={u.id}>{u.mae_id?caminhoNome(u):'Time inteiro'}</option>)}</select>
+          {REGRAS_RETA.map(rr=>{ const r=regraComOrigem(selU.id,rr.k), proprio=!!(r&&r.unidade_id===selU.id), v=r?r.valor:rr.padrao(config||{});
+            const origem=r?(proprio?(ehRaiz?'do time':'desta unidade'):`herdado de ${U[r.unidade_id]?.nome}`):'padrão do time';
+            const editavel=podeSel&&(!ehRaiz||['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k));
+            return <div key={rr.k} data-regra={rr.k} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+              <span style={{flex:1,minWidth:170,color:C.inkSoft}}>{rr.rot}</span><b data-regra-valor>{rr.txt(v)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {origem}</span>
+              {editavel&&<button style={btnS} onClick={()=>mudar(rr,v)}>Mudar</button>}
+              {editavel&&proprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:rr.k},`${rr.rot}: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+            </div>; })}
+          {!ehRaiz&&<div data-regra="contrato" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+            <span style={{flex:1,minWidth:170,color:C.inkSoft}}>Contrato</span><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b>
+            <span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {cProprio?'desta unidade':c&&c.unidade_id!==raiz?.id?`herdado de ${U[c.unidade_id]?.nome}`:'do time'}</span>
+            {podeSel&&<button style={btnS} onClick={()=>setContratoAberto(selU.id)}>Mudar</button>}
+            {podeSel&&cProprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:'contrato'},`Contrato: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+          </div>}
+        </Card>; })()}
       <div style={{fontSize:12.5,color:C.inkSoft}}>A grade de cada reta fica na aba <button onClick={()=>onIr('g_grades')} style={{border:'none',background:'transparent',color:P,fontWeight:700,padding:0,cursor:'pointer',font:'inherit'}}>Grades</button>.</div>
       {modais}
     </div>;
@@ -3272,6 +3344,9 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
 function SaqueModal({pessoa,onClose,onPedir}){
   const [f,setF]=useState({banca:'',devolucao:'',cashout:'',obs:''});
   const [prev,setPrev]=useState(null); const [err,setErr]=useState('');
+  const [sug,setSug]=useState(null);   // sugestão do servidor: devolve o MU e saca deixando a reserva em cada sala
+  useEffect(()=>{ let vivo=true; (async()=>{ try{ const {data,error}=await sb.rpc('sugerir_saque',{p_pessoa:pessoa}); if(vivo&&!error&&data) setSug(data); }catch(e){} })(); return ()=>{ vivo=false; }; },[pessoa]);
+  const br=v=>String(Number(v)||0).replace('.',',');
   useEffect(()=>{ const b=parseValor(f.banca), dv=parseValor(f.devolucao)||0, co=parseValor(f.cashout)||0;
     if(!(b>0)||!(dv+co>0)){ setPrev(null); setErr(''); return; }
     const t=setTimeout(async()=>{ const {data,error}=await sb.rpc('simular_saque',{p_pessoa:pessoa,p_banca:b,p_devolucao:dv,p_cashout:co});
@@ -3284,6 +3359,10 @@ function SaqueModal({pessoa,onClose,onPedir}){
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Pedir saque</h3>
         <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
       </div>
+      {sug&&sug.em_mk&&<div data-saque-sugestao="mk" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>Em MK: a banca no sistema ({fmt(sug.banca)}) está abaixo do MU ({fmt(sug.mu)}). Saque de lucro só depois de sair do MK.</div>}
+      {sug&&!sug.em_mk&&(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao style={{background:C.bg,borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
+        Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b>{Number(sug.reserva_total)>0?<>, deixando {fmt(sug.reserva_por_sala)} em {Number(sug.salas)>1?`cada uma das ${sug.salas} salas`:'cada sala'} (banca depois {fmt(sug.banca_depois)})</>:null}.
+        <div style={{marginTop:6}}><button style={btnS} onClick={()=>setF(x=>({...x,banca:br(sug.banca),devolucao:br(sug.devolucao),cashout:br(sug.cashout)}))}>Usar sugestão</button></div></div>}
       {campo('banca','Banca atual (todas as salas)','ex.: 625')}
       {campo('devolucao','Devolver de MU','ex.: 310')}
       {campo('cashout','Cashout (lucro que você quer sacar)','ex.: 165')}
@@ -3461,13 +3540,13 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq,gr]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+      const [pe,vi,ac,un,sq,gr,rg]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
         sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome'),
         lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago').order('id')),
-        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas')]);
+        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde')]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
-      GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe};
+      GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe,regras:rg.error?[]:(rg.data||[])};
       const pessoas=(pe.data||[]).filter(x=>x.status!=='saiu'); const ativos=new Set((vi.data||[]).filter(v=>!v.fim).map(v=>v.pessoa_id));
       const eu=pessoas.find(x=>x.user_id===session.user.id)||null;
       const jogadores=pessoas.filter(x=>ativos.has(x.id)).map(x=>x.nome).sort((a,b)=>a.localeCompare(b));
@@ -3998,8 +4077,13 @@ function Dashboard({session,profile}){
   const trialExpired=srvStatus&&srvStatus.ativo!=null?!srvStatus.ativo:(trialEnds!=null&&agoraSrv>trialEnds);
   const makeInit={[players[0]]:num(config.makeup_inicial_player1),[players[1]]:num(config.makeup_inicial_player2)};
   const abiMax=num(config.abi_max), piso=num(config.piso_minimo);
-  const sites=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
-  const modalidades=(config.modalidades_permitidas&&config.modalidades_permitidas.length)?config.modalidades_permitidas:['MTT','Spin','Cash','Sit & Go'];
+  const sitesTime=(config.sites_permitidos&&config.sites_permitidos.length)?config.sites_permitidos:['PokerStars','GG Poker'];
+  const modalidadesTime=(config.modalidades_permitidas&&config.modalidades_permitidas.length)?config.modalidades_permitidas:['MTT','Spin','Cash','Sit & Go'];
+  // no time, quem joga usa os da reta dele (regra por reta); sem regra, os do time
+  const meuNomeTime=modoTime&&timeGente.eu?timeGente.eu.nome:null;
+  const sitesReta=meuNomeTime?regraDoJogador('sites',meuNomeTime):null, modsReta=meuNomeTime?regraDoJogador('modalidades',meuNomeTime):null;
+  const sites=Array.isArray(sitesReta)&&sitesReta.length?sitesReta:sitesTime;
+  const modalidades=Array.isArray(modsReta)&&modsReta.length?modsReta:modalidadesTime;
   const CURWK=weekEnding(todayISO());
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
@@ -4070,8 +4154,8 @@ function Dashboard({session,profile}){
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && statusGrade(t,config).status==='fora');
   if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
-  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=num(config.stoploss_weekly_pct)*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
-  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=num(config.stoploss_daily_buyins)*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=stopDe(config,p).semana*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=stopDe(config,e.player).dia*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
   // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
   if(tours.length>0){
@@ -5125,8 +5209,8 @@ function Dashboard({session,profile}){
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             ...(modoTime?[]:[{label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)}]),
             {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
-            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
-            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
+            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
+            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]:[
             {label:'Jogador 1',val:config.player1_name,kind:'text',key:'player1_name'},
             {label:'Jogador 2',val:config.player2_name,kind:'text',key:'player2_name'},
@@ -5141,8 +5225,8 @@ function Dashboard({session,profile}){
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
             {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
-            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sites.join(', ')},
-            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidades.join(', ')},
+            {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
+            {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
             {(!modoTime||timeGente.podeConfigurar)&&<button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}

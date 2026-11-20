@@ -346,6 +346,8 @@ const lucroTorneio = t => num(t.prize) + bountyTorneio(t) - totalInvestido(t);
 // torneio antigo é julgado pela grade da época, não pela atual.
 let CONFIG_CHANGES = []; // histórico de alterações dos Ajustes (carregado do banco pelo Dashboard)
 const abiMaxFor = (config, player, date) => {
+  const daReta = regraDoJogador('abi_max', player, date); // time: a regra da reta do jogador
+  if (daReta != null && num(daReta) > 0) return num(daReta);
   const key = player === config.player2_name ? 'abi_max_player2' : 'abi_max_player1';
   let v = num(config[key]);
   if (!(v > 0)) v = num(config.abi_max) || 2;
@@ -2361,8 +2363,38 @@ function resumoCelulaGrade(txt) {
 let GRADE_CTX = {
   unidades: [],
   grades: [],
-  unidadeDe: {}
+  unidadeDe: {},
+  regras: []
 };
+// regra da unidade (fase 1): a da unidade mais funda com a chave (ela ou de cima), a mais nova até a data.
+// null = nenhuma unidade tem a regra: vale a configuração do time
+function regraDaUnidade(chave, unidadeId, data) {
+  const rs = GRADE_CTX.regras || [];
+  if (!unidadeId || !rs.length) return null;
+  const U = Object.fromEntries((GRADE_CTX.unidades || []).map(u => [u.id, u]));
+  const u = U[unidadeId];
+  if (!u) return null;
+  const d = String(data || todayISO()).slice(0, 10);
+  const r = rs.filter(x => x.chave === chave && String(x.vigente_desde) <= d && U[x.unidade_id] && String(u.caminho).startsWith(U[x.unidade_id].caminho)).sort((a, b) => U[b.unidade_id].caminho.length - U[a.unidade_id].caminho.length || (a.vigente_desde < b.vigente_desde ? 1 : -1))[0];
+  return r ? r.valor : null;
+}
+function regraDoJogador(chave, player, data) {
+  return regraDaUnidade(chave, (GRADE_CTX.unidadeDe || {})[String(player || '').trim().toLowerCase()], data);
+}
+// stop loss do jogador: o da reta dele, ou o do time
+function stopDe(config, player) {
+  const d = regraDoJogador('stop_dia_buyins', player),
+    s = regraDoJogador('stop_semana_pct', player);
+  return {
+    dia: d != null ? num(d) : num(config.stoploss_daily_buyins),
+    semana: s != null ? num(s) : num(config.stoploss_weekly_pct)
+  };
+}
+// teto de ABI de um torneio sem grade: a regra da reta em que ele foi jogado, na data; senão a do jogador / do time
+function tetoDoTorneio(t, config) {
+  const r = t.unidade_id ? regraDaUnidade('abi_max', t.unidade_id, t.entry_date) : null;
+  return r != null && num(r) > 0 ? num(r) : abiMaxFor(config, t.player, t.entry_date);
+}
 // status de grade de um torneio: pela grade da reta (quando o time tem) ou pelo teto de ABI dos Ajustes
 function statusGrade(t, config) {
   // salvo com pessoa e sem unidade: é de antes da entrada no time, quando as regras do time não valiam (não ganha selo)
@@ -2387,7 +2419,7 @@ function statusGrade(t, config) {
     status: 'dentro',
     motivo: ''
   };
-  const mx = abiMaxFor(config, t.player, t.entry_date);
+  const mx = tetoDoTorneio(t, config);
   return num(t.buyin) > mx ? {
     status: 'fora',
     motivo: `buy-in ${fmt(t.buyin)} · teto ${fmt(mx)}`,
@@ -2870,15 +2902,17 @@ function StopLossCard({
   bancaAtual
 }) {
   const today = todayISO();
-  const dayBI = num(config.stoploss_daily_buyins),
-    wkPct = num(config.stoploss_weekly_pct);
   const [open, setOpen] = useState(null); // null = automático (abre sozinho se alguém passou de 70%)
-  if (!(dayBI > 0) && !(wkPct > 0)) return null;
+  if (!players.some(p => {
+    const s = stopDe(config, p);
+    return s.dia > 0 || s.semana > 0;
+  })) return null;
   const rows = players.map((p, i) => {
+    const st = stopDe(config, p); // no time: o stop da reta do jogador
     const abiMax = abiMaxFor(config, p, today);
-    const slDay = dayBI * abiMax;
+    const slDay = st.dia * abiMax;
     const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
-    const wkLim = wkPct * bancaAtual;
+    const wkLim = st.semana * bancaAtual;
     const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
     const pct = Math.max(slDay > 0 ? dayLoss / slDay * 100 : 0, wkLim > 0 ? wkLoss / wkLim * 100 : 0);
     return {
@@ -2889,7 +2923,8 @@ function StopLossCard({
       dayLoss,
       wkLim,
       wkLoss,
-      pct
+      pct,
+      st
     };
   });
   const worst = Math.max(0, ...rows.map(r => r.pct));
@@ -2994,12 +3029,12 @@ function StopLossCard({
       fontSize: 13.5
     }
   }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-    label: `Hoje · limite ${dayBI} buy-ins`,
+    label: `Hoje · limite ${r.st.dia} buy-ins`,
     used: r.dayLoss,
     limit: r.slDay,
-    detail: `${(r.dayLoss / (r.abiMax || 1)).toFixed(1).replace('.', ',')} de ${dayBI} bi`
+    detail: `${(r.dayLoss / (r.abiMax || 1)).toFixed(1).replace('.', ',')} de ${r.st.dia} bi`
   }), r.wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-    label: `Semana · limite ${pctFmt(wkPct * 100)} da banca`,
+    label: `Semana · limite ${pctFmt(r.st.semana * 100)} da banca`,
     used: r.wkLoss,
     limit: r.wkLim,
     detail: `${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`
@@ -8042,6 +8077,7 @@ function EstruturaModal({
 /* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
 function ContratoModal({
   atual,
+  titulo,
   onSalvar,
   onClose
 }) {
@@ -8099,7 +8135,7 @@ function ContratoModal({
       fontWeight: 600,
       margin: 0
     }
-  }, "Contrato do time"), /*#__PURE__*/React.createElement("button", {
+  }, titulo || 'Contrato do time'), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
     "aria-label": "Fechar",
     style: {
@@ -8183,6 +8219,51 @@ function ContratoModal({
     }
   }, "Salvar contrato")));
 }
+
+// regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
+const REGRAS_RETA = [{
+  k: 'abi_max',
+  rot: 'ABI máximo (reta sem grade)',
+  kind: 'money',
+  padrao: c => num(c.abi_max_player1) || num(c.abi_max) || 2,
+  txt: v => fmt(v)
+}, {
+  k: 'stop_dia_buyins',
+  rot: 'Stop loss diário',
+  kind: 'money',
+  padrao: c => num(c.stoploss_daily_buyins),
+  txt: v => `${num(v)} buy-ins`
+}, {
+  k: 'stop_semana_pct',
+  rot: 'Stop loss semanal',
+  kind: 'percent',
+  padrao: c => num(c.stoploss_weekly_pct),
+  txt: v => `${pctFmt(num(v) * 100)} da banca`
+}, {
+  k: 'sites',
+  rot: 'Sites permitidos',
+  kind: 'list',
+  padrao: c => c.sites_permitidos || [],
+  txt: v => (Array.isArray(v) ? v : []).join(', ') || '—'
+}, {
+  k: 'modalidades',
+  rot: 'Modalidades',
+  kind: 'list',
+  padrao: c => c.modalidades_permitidas || [],
+  txt: v => (Array.isArray(v) ? v : []).join(', ') || '—'
+}, {
+  k: 'reserva_por_sala',
+  rot: 'Reserva por sala no saque',
+  kind: 'money',
+  padrao: () => 0,
+  txt: v => num(v) > 0 ? `${fmt(v)} por sala` : 'nenhuma'
+}, {
+  k: 'bloquear_promocao_com_mk',
+  rot: 'Não promover com MK',
+  kind: 'bool',
+  padrao: () => false,
+  txt: v => v === true ? 'ligado' : 'desligado'
+}];
 
 // saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
 // o que vai pra conta individual nova dele e o que fica com o time. Confirma digitando SAIU.
@@ -8423,6 +8504,7 @@ function TimeApp({
   const [link, setLink] = useState(null); // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto, setSaqueAberto] = useState(false);
   const [saidaDe, setSaidaDe] = useState(null); // saída: {p, previa} (a prévia do acerto vem do servidor)
+  const [regraSel, setRegraSel] = useState(null); // regras por reta: a unidade aberta no cartão
   const [planilha, setPlanilha] = useState(null);
   const [reloadAberto, setReloadAberto] = useState(false);
   const [periodo, setPeriodo] = useState('mes');
@@ -8585,11 +8667,20 @@ function TimeApp({
     unidade_id: uid_,
     entry_date: hoje
   }, d.unidades, d.grades);
-  const regraEf = (uid_, chave) => {
+  // a regra que vale numa unidade (ela ou a de cima mais perto), com a origem; null = vale o padrão do time
+  const regraComOrigem = (uid_, chave) => {
     const t = U[uid_];
     if (!t) return null;
-    const r = d.regras.filter(x => x.chave === chave && String(x.vigente_desde) <= hoje && U[x.unidade_id] && String(t.caminho).startsWith(U[x.unidade_id].caminho)).sort((a, b) => U[b.unidade_id].caminho.length - U[a.unidade_id].caminho.length || (a.vigente_desde < b.vigente_desde ? 1 : -1))[0];
+    return d.regras.filter(x => x.chave === chave && String(x.vigente_desde) <= hoje && U[x.unidade_id] && String(t.caminho).startsWith(U[x.unidade_id].caminho)).sort((a, b) => U[b.unidade_id].caminho.length - U[a.unidade_id].caminho.length || (a.vigente_desde < b.vigente_desde ? 1 : -1))[0] || null;
+  };
+  const regraEf = (uid_, chave) => {
+    const r = regraComOrigem(uid_, chave);
     return r ? r.valor : null;
+  };
+  const contratoEf = uid_ => {
+    const t = U[uid_];
+    if (!t) return null;
+    return d.contratos.filter(c => !c.pessoa_id && c.unidade_id && U[c.unidade_id] && String(c.inicio || '') <= hoje && String(t.caminho).startsWith(U[c.unidade_id].caminho)).sort((a, b) => U[b.unidade_id].caminho.length - U[a.unidade_id].caminho.length || String(b.inicio).localeCompare(String(a.inicio)) || String(b.criado_em).localeCompare(String(a.criado_em)))[0] || null;
   };
   const linhas = resumo || [];
   const linhaDe = pid => linhas.find(l => l.pessoa_id === pid);
@@ -9060,7 +9151,33 @@ function TimeApp({
       onClick: () => rodar('cancelar_saque', {
         p_id: s.id
       }, 'Pedido cancelado.')
-    }, "Cancelar"))))), minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
+    }, "Cancelar"))))), minhaUnidade && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      },
+      "data-minhas-regras": true
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Regras da sua reta"), REGRAS_RETA.filter(rr => rr.k !== 'bloquear_promocao_com_mk').map(rr => {
+      const r = regraComOrigem(minhaUnidade, rr.k),
+        v = r ? r.valor : rr.padrao(config || {});
+      return /*#__PURE__*/React.createElement("div", {
+        key: rr.k,
+        "data-minha-regra": rr.k,
+        style: {
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 10,
+          padding: '5px 0',
+          borderTop: `1px solid ${C.border}`,
+          fontSize: 13.5
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, rr.rot), /*#__PURE__*/React.createElement("b", null, rr.txt(v)));
+    })), minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -9310,19 +9427,24 @@ function TimeApp({
         }, `${u.nome} arquivada.`);
       }
     })
-  }), contratoAberto && raiz && /*#__PURE__*/React.createElement(ContratoModal, {
-    atual: contratoRaiz?.faixas,
-    onClose: () => setContratoAberto(false),
-    onSalvar: async (faixas, ini) => {
-      const r = await rodar('definir_contrato', {
-        p_unidade: raiz.id,
-        p_pessoa: null,
-        p_faixas: faixas,
-        p_inicio: ini || todayISO()
-      }, 'Contrato salvo.');
-      if (r) setContratoAberto(false);
-    }
-  }));
+  }), contratoAberto && raiz && (() => {
+    const alvo = contratoAberto === true ? raiz : U[contratoAberto];
+    if (!alvo) return null;
+    return /*#__PURE__*/React.createElement(ContratoModal, {
+      atual: (alvo.id === raiz.id ? contratoRaiz : contratoEf(alvo.id))?.faixas,
+      titulo: alvo.id === raiz.id ? 'Contrato do time' : `Contrato da ${alvo.nome}`,
+      onClose: () => setContratoAberto(false),
+      onSalvar: async (faixas, ini) => {
+        const r = await rodar('definir_contrato', {
+          p_unidade: alvo.id,
+          p_pessoa: null,
+          p_faixas: faixas,
+          p_inicio: ini || todayISO()
+        }, 'Contrato salvo.');
+        if (r) setContratoAberto(false);
+      }
+    });
+  })());
   const linkBox = link && /*#__PURE__*/React.createElement(LinkPronto, {
     titulo: link.titulo,
     url: link.url,
@@ -11152,7 +11274,143 @@ function TimeApp({
         marginTop: 6,
         lineHeight: 1.5
       }
-    }, mkBloq ? 'Ligado: o servidor recusa promover jogador com make-up negativo.' : 'Desligado: dá pra promover, a tela só avisa que o jogador está em MK.')), /*#__PURE__*/React.createElement("div", {
+    }, mkBloq ? 'Ligado: o servidor recusa promover jogador com make-up negativo.' : 'Desligado: dá pra promover, a tela só avisa que o jogador está em MK.')), (() => {
+      const unis = d.unidades;
+      if (!unis.length) return null;
+      const selU = U[regraSel] || unis.find(u => u.mae_id && pode('configurar_regras', u.id)) || unis.find(u => u.mae_id) || raiz;
+      if (!selU) return null;
+      const podeSel = pode('configurar_regras', selU.id),
+        ehRaiz = !selU.mae_id;
+      const mudar = (rr, v) => {
+        if (rr.kind === 'bool') return rodar('definir_regra', {
+          p_unidade: selU.id,
+          p_chave: rr.k,
+          p_valor: !(v === true),
+          p_desde: null
+        }, `${rr.rot}: ${v === true ? 'desligado' : 'ligado'} na ${selU.nome}.`);
+        setPerg({
+          label: `${rr.rot} · ${ehRaiz ? 'time inteiro' : selU.nome}`,
+          hint: rr.kind === 'list' ? 'Separe por vírgula.' : 'Vale daqui pra frente, pra quem joga nesta unidade e nas de baixo (que não tiverem a própria).',
+          kind: rr.kind,
+          valor: v,
+          onSave: async x => {
+            setPerg(null);
+            if (rr.kind === 'list' && !(Array.isArray(x) && x.length)) return;
+            await rodar('definir_regra', {
+              p_unidade: selU.id,
+              p_chave: rr.k,
+              p_valor: x,
+              p_desde: null
+            }, `${rr.rot} da ${ehRaiz ? 'equipe' : selU.nome} salvo.`);
+          }
+        });
+      };
+      const c = contratoEf(selU.id),
+        cProprio = c && c.unidade_id === selU.id;
+      return /*#__PURE__*/React.createElement(Card, {
+        style: {
+          padding: 20
+        },
+        "data-regras-reta": true
+      }, /*#__PURE__*/React.createElement("h3", {
+        style: tituloS
+      }, "Regras por reta"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12.5,
+          color: C.inkSoft,
+          marginBottom: 10,
+          lineHeight: 1.5
+        }
+      }, "Cada unidade herda da de cima; sem regra em nenhuma, vale o padr\xE3o do time (Regras de jogo). Mude s\xF3 onde a reta \xE9 diferente."), /*#__PURE__*/React.createElement("select", {
+        "data-regra-unidade": true,
+        value: selU.id,
+        onChange: e => setRegraSel(e.target.value),
+        style: {
+          ...inputStyle,
+          width: 'auto',
+          marginBottom: 6
+        }
+      }, unis.map(u => /*#__PURE__*/React.createElement("option", {
+        key: u.id,
+        value: u.id
+      }, u.mae_id ? caminhoNome(u) : 'Time inteiro'))), REGRAS_RETA.map(rr => {
+        const r = regraComOrigem(selU.id, rr.k),
+          proprio = !!(r && r.unidade_id === selU.id),
+          v = r ? r.valor : rr.padrao(config || {});
+        const origem = r ? proprio ? ehRaiz ? 'do time' : 'desta unidade' : `herdado de ${U[r.unidade_id]?.nome}` : 'padrão do time';
+        const editavel = podeSel && (!ehRaiz || ['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k));
+        return /*#__PURE__*/React.createElement("div", {
+          key: rr.k,
+          "data-regra": rr.k,
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            padding: '8px 0',
+            borderTop: `1px solid ${C.border}`,
+            fontSize: 13.5
+          }
+        }, /*#__PURE__*/React.createElement("span", {
+          style: {
+            flex: 1,
+            minWidth: 170,
+            color: C.inkSoft
+          }
+        }, rr.rot), /*#__PURE__*/React.createElement("b", {
+          "data-regra-valor": true
+        }, rr.txt(v)), /*#__PURE__*/React.createElement("span", {
+          "data-regra-origem": true,
+          style: {
+            fontSize: 12,
+            color: C.inkSoft
+          }
+        }, "\xB7 ", origem), editavel && /*#__PURE__*/React.createElement("button", {
+          style: btnS,
+          onClick: () => mudar(rr, v)
+        }, "Mudar"), editavel && proprio && /*#__PURE__*/React.createElement("button", {
+          style: btnS,
+          onClick: () => rodar('limpar_regra', {
+            p_unidade: selU.id,
+            p_chave: rr.k
+          }, `${rr.rot}: ${selU.nome} volta a herdar.`)
+        }, "Herdar"));
+      }), !ehRaiz && /*#__PURE__*/React.createElement("div", {
+        "data-regra": "contrato",
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          padding: '8px 0',
+          borderTop: `1px solid ${C.border}`,
+          fontSize: 13.5
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          flex: 1,
+          minWidth: 170,
+          color: C.inkSoft
+        }
+      }, "Contrato"), /*#__PURE__*/React.createElement("b", {
+        "data-regra-valor": true
+      }, faixasTexto((c || contratoRaiz)?.faixas)), /*#__PURE__*/React.createElement("span", {
+        "data-regra-origem": true,
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, "\xB7 ", cProprio ? 'desta unidade' : c && c.unidade_id !== raiz?.id ? `herdado de ${U[c.unidade_id]?.nome}` : 'do time'), podeSel && /*#__PURE__*/React.createElement("button", {
+        style: btnS,
+        onClick: () => setContratoAberto(selU.id)
+      }, "Mudar"), podeSel && cProprio && /*#__PURE__*/React.createElement("button", {
+        style: btnS,
+        onClick: () => rodar('limpar_regra', {
+          p_unidade: selU.id,
+          p_chave: 'contrato'
+        }, `Contrato: ${selU.nome} volta a herdar.`)
+      }, "Herdar")));
+    })(), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft
@@ -11803,6 +12061,25 @@ function SaqueModal({
   });
   const [prev, setPrev] = useState(null);
   const [err, setErr] = useState('');
+  const [sug, setSug] = useState(null); // sugestão do servidor: devolve o MU e saca deixando a reserva em cada sala
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const {
+          data,
+          error
+        } = await sb.rpc('sugerir_saque', {
+          p_pessoa: pessoa
+        });
+        if (vivo && !error && data) setSug(data);
+      } catch (e) {}
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [pessoa]);
+  const br = v => String(Number(v) || 0).replace('.', ',');
   useEffect(() => {
     const b = parseValor(f.banca),
       dv = parseValor(f.devolucao) || 0,
@@ -11899,7 +12176,38 @@ function SaqueModal({
     }
   }, /*#__PURE__*/React.createElement(IcoX, {
     s: 20
-  }))), campo('banca', 'Banca atual (todas as salas)', 'ex.: 625'), campo('devolucao', 'Devolver de MU', 'ex.: 310'), campo('cashout', 'Cashout (lucro que você quer sacar)', 'ex.: 165'), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }))), sug && sug.em_mk && /*#__PURE__*/React.createElement("div", {
+    "data-saque-sugestao": "mk",
+    style: {
+      background: C.goldSoft,
+      color: '#6b4e1a',
+      borderRadius: 12,
+      padding: '10px 12px',
+      fontSize: 13,
+      lineHeight: 1.5
+    }
+  }, "Em MK: a banca no sistema (", fmt(sug.banca), ") est\xE1 abaixo do MU (", fmt(sug.mu), "). Saque de lucro s\xF3 depois de sair do MK."), sug && !sug.em_mk && (Number(sug.devolucao) > 0 || Number(sug.cashout) > 0) && /*#__PURE__*/React.createElement("div", {
+    "data-saque-sugestao": true,
+    style: {
+      background: C.bg,
+      borderRadius: 12,
+      padding: '10px 12px',
+      fontSize: 13,
+      lineHeight: 1.5
+    }
+  }, "Sugest\xE3o: devolver ", /*#__PURE__*/React.createElement("b", null, fmt(sug.devolucao)), " de MU e sacar ", /*#__PURE__*/React.createElement("b", null, fmt(sug.cashout)), Number(sug.reserva_total) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, ", deixando ", fmt(sug.reserva_por_sala), " em ", Number(sug.salas) > 1 ? `cada uma das ${sug.salas} salas` : 'cada sala', " (banca depois ", fmt(sug.banca_depois), ")") : null, ".", /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => setF(x => ({
+      ...x,
+      banca: br(sug.banca),
+      devolucao: br(sug.devolucao),
+      cashout: br(sug.cashout)
+    }))
+  }, "Usar sugest\xE3o"))), campo('banca', 'Banca atual (todas as salas)', 'ex.: 625'), campo('devolucao', 'Devolver de MU', 'ex.: 310'), campo('cashout', 'Cashout (lucro que você quer sacar)', 'ex.: 165'), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
   }, "Observa\xE7\xE3o (opcional)"), /*#__PURE__*/React.createElement("input", {
     style: inputStyle,
@@ -12288,7 +12596,7 @@ function Dashboard({
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime = async () => {
     try {
-      const [pe, vi, ac, un, sq, gr] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status', 'pago').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas')]);
+      const [pe, vi, ac, un, sq, gr, rg] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status', 'pago').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'), sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde')]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe = {};
       (pe.data || []).forEach(x => {
@@ -12298,7 +12606,8 @@ function Dashboard({
       GRADE_CTX = {
         unidades: un.data || [],
         grades: gr.error ? [] : gr.data || [],
-        unidadeDe
+        unidadeDe,
+        regras: rg.error ? [] : rg.data || []
       };
       const pessoas = (pe.data || []).filter(x => x.status !== 'saiu');
       const ativos = new Set((vi.data || []).filter(v => !v.fim).map(v => v.pessoa_id));
@@ -13532,8 +13841,14 @@ function Dashboard({
   };
   const abiMax = num(config.abi_max),
     piso = num(config.piso_minimo);
-  const sites = config.sites_permitidos && config.sites_permitidos.length ? config.sites_permitidos : ['PokerStars', 'GG Poker'];
-  const modalidades = config.modalidades_permitidas && config.modalidades_permitidas.length ? config.modalidades_permitidas : ['MTT', 'Spin', 'Cash', 'Sit & Go'];
+  const sitesTime = config.sites_permitidos && config.sites_permitidos.length ? config.sites_permitidos : ['PokerStars', 'GG Poker'];
+  const modalidadesTime = config.modalidades_permitidas && config.modalidades_permitidas.length ? config.modalidades_permitidas : ['MTT', 'Spin', 'Cash', 'Sit & Go'];
+  // no time, quem joga usa os da reta dele (regra por reta); sem regra, os do time
+  const meuNomeTime = modoTime && timeGente.eu ? timeGente.eu.nome : null;
+  const sitesReta = meuNomeTime ? regraDoJogador('sites', meuNomeTime) : null,
+    modsReta = meuNomeTime ? regraDoJogador('modalidades', meuNomeTime) : null;
+  const sites = Array.isArray(sitesReta) && sitesReta.length ? sitesReta : sitesTime;
+  const modalidades = Array.isArray(modsReta) && modsReta.length ? modsReta : modalidadesTime;
   const CURWK = weekEnding(todayISO());
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
@@ -13647,7 +13962,7 @@ function Dashboard({
   });
   players.forEach(p => {
     const r = curWeek[p] ? curWeek[p].resultado : 0;
-    const lim = num(config.stoploss_weekly_pct) * bancaAtual;
+    const lim = stopDe(config, p).semana * bancaAtual;
     if (lim > 0 && r < 0 && r <= -lim) alerts.push({
       key: 'slsem:' + p + ':' + CURWK,
       tone: C.red,
@@ -13655,7 +13970,7 @@ function Dashboard({
     });
   });
   daily.filter(e => weekEnding(e.entry_date) === CURWK).forEach(e => {
-    const sl = num(config.stoploss_daily_buyins) * abiMaxFor(config, e.player, e.entry_date);
+    const sl = stopDe(config, e.player).dia * abiMaxFor(config, e.player, e.entry_date);
     if (sl > 0 && resultadoDia(e) <= -sl) alerts.push({
       key: 'sldia:' + e.player + ':' + e.entry_date,
       tone: C.red,
@@ -18036,13 +18351,13 @@ function Dashboard({
     val: config.sites_permitidos,
     kind: 'list',
     key: 'sites_permitidos',
-    show: sites.join(', ')
+    show: sitesTime.join(', ')
   }, {
     label: 'Modalidades permitidas',
     val: config.modalidades_permitidas,
     kind: 'list',
     key: 'modalidades_permitidas',
-    show: modalidades.join(', ')
+    show: modalidadesTime.join(', ')
   }] : [{
     label: 'Jogador 1',
     val: config.player1_name,
@@ -18124,13 +18439,13 @@ function Dashboard({
     val: config.sites_permitidos,
     kind: 'list',
     key: 'sites_permitidos',
-    show: sites.join(', ')
+    show: sitesTime.join(', ')
   }, {
     label: 'Modalidades permitidas',
     val: config.modalidades_permitidas,
     kind: 'list',
     key: 'modalidades_permitidas',
-    show: modalidades.join(', ')
+    show: modalidadesTime.join(', ')
   }]).map(row => /*#__PURE__*/React.createElement("div", {
     key: row.key,
     style: {
