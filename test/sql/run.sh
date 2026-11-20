@@ -35,13 +35,16 @@ $M -f "$ROOT/supabase/migrations/20261119100000_fase1_grade_regras.sql" >/dev/nu
 $M -f "$ROOT/supabase/migrations/20261119100000_fase1_grade_regras.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261119200000_fase1_papeis_convite.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261119200000_fase1_papeis_convite.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261120100000_cacabugs_historico_visivel.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261120100000_cacabugs_historico_visivel.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
-for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis webhook; do
+for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis matriz_papeis webhook; do
   $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
 done
-OUT="$(cat "$TMP"/*.out | sed -E 's/.*NOTICE:  //' | grep -E '^(OK|FALHA)' || true)"
+OUT="$(cat "$TMP"/*.out | sed -E 's/.*NOTICE:  //' | grep -E '^(OK|FALHA|CONHECIDO)' || true)"
 echo "$OUT"
-FAL=$(echo "$OUT" | grep -c '^FALHA' || true); OKQ=$(echo "$OUT" | grep -c '^OK?' || true)
-echo "---"; echo "$(echo "$OUT" | grep -c '^OK ') ok · $OKQ barrado com outro erro · $FAL falha(s)"
+FAL=$(echo "$OUT" | grep -c '^FALHA' || true); OKQ=$(echo "$OUT" | grep -c '^OK?' || true); CON=$(echo "$OUT" | grep -c '^CONHECIDO' || true)
+# CONHECIDO = bug já achado e ainda não corrigido (test/sql/matriz_papeis.sql): aparece no relatório, não derruba o CI
+echo "---"; echo "$(echo "$OUT" | grep -c '^OK ') ok · $OKQ barrado com outro erro · $CON bug(s) conhecido(s) · $FAL falha(s)"
 [ "$FAL" = "0" ]

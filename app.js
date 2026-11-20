@@ -8300,6 +8300,8 @@ function TimeApp({
     });
   };
   const podeAlgum = cap => d.unidades.some(u => pode(cap, u.id));
+  // painel do aluno é tela de desempenho: só pra quem vê desempenho da reta dele (financeiro tem a banca na lista)
+  const verPainel = l => l.status === 'ativo' && !!onVerJogador && pode('ver_desempenho', l.unidade_id);
   const nomeUnidade = u => u ? `${u.nome}${u.rotulo ? ` · ${u.rotulo}` : ''}` : '—';
   const caminhoNome = u => {
     const ids = String(u.caminho).split('/').filter(Boolean);
@@ -9447,14 +9449,14 @@ function TimeApp({
       const g = gradePorPessoa[l.pessoa_id];
       const dd = diasDesde(l.ultimo_lancamento);
       const conv = l.status === 'convidado';
-      const acoes = [...(l.status === 'ativo' && onVerJogador ? [['Ver painel do aluno', () => onVerJogador(l.nome)]] : []), ...(pode('promover', l.unidade_id) && l.status === 'ativo' ? [['Mover de reta (promover)', () => moverJogador(p, l.unidade_id)]] : []), ...(pode('aprovar_saques', l.unidade_id) && l.status === 'ativo' ? [['Capital mandado (MU)', () => capital(p)]] : []), ...(l.status === 'convidado' && pode('gerir_pessoas', l.unidade_id) ? [['Link pessoal', () => linkPessoal(p, l.unidade_id)]] : []), ...(pode('gerir_pessoas', l.unidade_id) || souAdmin ? [['Renomear', () => renomear(p)]] : []), ...(pode('gerir_pessoas', l.unidade_id) && p.user_id !== uid ? [['Registrar saída', () => saida(p), true]] : [])];
+      const acoes = [...(verPainel(l) ? [['Ver painel do aluno', () => onVerJogador(l.nome, l)]] : []), ...(pode('promover', l.unidade_id) && l.status === 'ativo' ? [['Mover de reta (promover)', () => moverJogador(p, l.unidade_id)]] : []), ...(pode('aprovar_saques', l.unidade_id) && l.status === 'ativo' ? [['Capital mandado (MU)', () => capital(p)]] : []), ...(l.status === 'convidado' && pode('gerir_pessoas', l.unidade_id) ? [['Link pessoal', () => linkPessoal(p, l.unidade_id)]] : []), ...(pode('gerir_pessoas', l.unidade_id) || souAdmin ? [['Renomear', () => renomear(p)]] : []), ...(pode('gerir_pessoas', l.unidade_id) && p.user_id !== uid ? [['Registrar saída', () => saida(p), true]] : [])];
       return /*#__PURE__*/React.createElement("tr", {
         key: l.pessoa_id,
         "data-jogador": l.nome
       }, /*#__PURE__*/React.createElement("td", {
         style: tdS
-      }, l.status === 'ativo' && onVerJogador ? /*#__PURE__*/React.createElement("button", {
-        onClick: () => onVerJogador(l.nome),
+      }, verPainel(l) ? /*#__PURE__*/React.createElement("button", {
+        onClick: () => onVerJogador(l.nome, l),
         style: {
           border: 'none',
           background: 'transparent',
@@ -11392,12 +11394,15 @@ function Dashboard({
     } catch (e) {}
     setView(m === 'gestao' ? 'g_visao' : 'painel');
   };
-  const abrirAluno = n => {
+  const [alunoResumo, setAlunoResumo] = useState(null); // linha do aluno na lista (banca e MU do servidor)
+  const abrirAluno = (n, linha) => {
     setAlunoAberto(n);
+    setAlunoResumo(linha || null);
     setView('painel');
   };
   const fecharAluno = () => {
     setAlunoAberto(null);
+    setAlunoResumo(null);
     setView('g_jogadores');
   };
   // nome escrito com espaço ou maiúscula diferente ("hero " x "Hero") vira o nome do jogador antes de qualquer conta:
@@ -12809,7 +12814,14 @@ function Dashboard({
   const resultadosTotal = cent(daily.reduce((s, e) => s + resultadoDia(e), 0));
   const movimentosTotal = cent(ledger.reduce((s, l) => s + num(l.entrada) - num(l.saida), 0));
   const sacadoTotal = cent(wds.reduce((s, w) => s + num(w.valor_sacado), 0));
-  const bancaAtual = cent(num(config.banca_inicial) + resultadosTotal + movimentosTotal - sacadoTotal);
+  const bancaFatos = cent(num(config.banca_inicial) + resultadosTotal + movimentosTotal - sacadoTotal);
+  // painel de aluno aberto pela gestão: banca e MU do SERVIDOR, os mesmos da lista de jogadores. Quem olha pode não ler
+  // todos os fatos do aluno (o de antes do time fica na raiz; professor só de desempenho não lê dinheiro), então a
+  // soma do que chegou aqui não é a banca. Sem permissão de ver o dinheiro dele, o painel não mostra banca.
+  const dinAluno = somenteLeitura && !!alunoResumo && alunoResumo.banca != null;
+  const semDinheiro = somenteLeitura && !dinAluno;
+  const bancaAtual = dinAluno ? cent(alunoResumo.banca) : bancaFatos;
+  const muTela = dinAluno ? alunoResumo.mu : sitSel ? sitSel.mu : null;
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial = (player, wallet) => {
     const w = wallets.find(x => x.player === player && x.wallet === wallet);
@@ -13291,11 +13303,11 @@ function Dashboard({
         id: 'stats',
         label: 'Stats',
         Icon: IcoStats
-      }, {
+      }, ...(semDinheiro ? [] : [{
         id: 'banca',
         label: 'Banca',
         Icon: IcoStack
-      }, ...(alunoAberto ? [] : [{
+      }]), ...(alunoAberto ? [] : [{
         id: 'time',
         label: 'Meu time',
         Icon: IcoShield
@@ -13304,7 +13316,7 @@ function Dashboard({
         label: 'Ajustes',
         Icon: IcoGear
       }])];
-      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', 'banca'] : ['painel', 'torneios', 'stats', 'time'];
+      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'stats', 'time'];
     }
   }
   const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
@@ -13531,7 +13543,7 @@ function Dashboard({
       color: P,
       marginTop: 2
     }
-  }, fmt(bancaAtual))), /*#__PURE__*/React.createElement("button", {
+  }, semDinheiro ? '—' : fmt(bancaAtual))), /*#__PURE__*/React.createElement("button", {
     onClick: sair,
     style: {
       padding: '10px',
@@ -13903,14 +13915,23 @@ function Dashboard({
     }
   }, /*#__PURE__*/React.createElement(IcoStack, {
     s: 17
-  }), solo ? 'Minha banca' : 'Banca central da pool'), /*#__PURE__*/React.createElement("div", {
+  }), somenteLeitura ? `Banca de ${alunoAberto}` : solo ? 'Minha banca' : 'Banca central da pool'), semDinheiro ? /*#__PURE__*/React.createElement("div", {
+    "data-sem-dinheiro": true,
+    style: {
+      fontSize: 14.5,
+      fontWeight: 600,
+      marginTop: 8,
+      opacity: .92
+    }
+  }, "Voc\xEA n\xE3o v\xEA o financeiro deste aluno.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    "data-banca-hero": true,
     style: {
       fontFamily: "'Space Grotesk',sans-serif",
       fontSize: 42,
       fontWeight: 600,
       marginTop: 6
     }
-  }, fmt(bancaAtual)), /*#__PURE__*/React.createElement("div", {
+  }, fmt(bancaAtual)), !somenteLeitura && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '6px 16px',
@@ -13936,8 +13957,8 @@ function Dashboard({
       fontSize: 13.5,
       opacity: .92
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), modoTime && sitSel && sitSel.mu != null && (() => {
-    const mk = mkDe(bancaAtual, sitSel.mu);
+  }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), modoTime && muTela != null && (() => {
+    const mk = mkDe(bancaAtual, muTela);
     return /*#__PURE__*/React.createElement("div", {
       "data-painel-mk": true,
       style: {
@@ -13951,12 +13972,12 @@ function Dashboard({
         gap: '4px 14px',
         flexWrap: 'wrap'
       }
-    }, /*#__PURE__*/React.createElement("span", null, "MU ", fmt(sitSel.mu)), /*#__PURE__*/React.createElement("span", null, mk < 0 ? `MK ${fmtSinal(mk)}` : `Profit ${fmtSinal(mk)}`), /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("span", null, "MU ", fmt(muTela)), /*#__PURE__*/React.createElement("span", null, mk < 0 ? `MK ${fmtSinal(mk)}` : `Profit ${fmtSinal(mk)}`), /*#__PURE__*/React.createElement("span", {
       style: {
         opacity: .85
       }
     }, mk < 0 ? 'saque só depois de sair do MK' : 'fora de MK: dá pra pedir saque'));
-  })()), /*#__PURE__*/React.createElement(ResumoTorneios, {
+  })())), /*#__PURE__*/React.createElement(ResumoTorneios, {
     tours: tours,
     players: players,
     solo: solo,

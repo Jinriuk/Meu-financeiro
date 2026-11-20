@@ -82,6 +82,10 @@ await cenario('financeiro', samba('fin'), async (page) => {
   const t = await page.locator('main').innerText();
   ok(/US\$\s1\.650,00/.test(t) && /\+US\$\s350,00/.test(t), 'banca somada e profit sem contar a convidada');
   ok(await page.locator('[data-dinheiro-de="Iza N."]').count() === 0, 'convidada sem dinheiro no time não aparece na tabela');
+  await aba(page, 'Jogadores');
+  ok(await page.locator('[data-jogador="Caio R."]').getByRole('button', { name: 'Caio R.', exact: true }).count() === 0, 'financeiro não abre o painel do aluno (é tela de desempenho; a banca dele está na lista)');
+  await page.locator('[data-acoes="Caio R."]').click();
+  ok(await page.getByRole('menuitem', { name: 'Ver painel do aluno' }).count() === 0, '…nem pelo menu ⋯');
 });
 
 // 3) professor que joga: chave de modo e "Minhas retas"
@@ -94,6 +98,33 @@ await cenario('professor', samba('prof'), async (page) => {
   await page.locator('[data-modo-btn="gestao"]').first().click();
   await page.waitForTimeout(500);
   ok(await page.locator('[data-kpis]').count() === 1, 'volta pra gestão');
+});
+
+// 3b) professor abre o painel do aluno: banca e MU do SERVIDOR (os mesmos da lista), não a soma do que ele consegue ler
+await cenario('painel pelo professor', samba('prof'), async (page) => {
+  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
+  await aba(page, 'Jogadores');
+  await page.locator('[data-jogador="Caio R."]').getByRole('button', { name: 'Caio R.', exact: true }).click();
+  await page.locator('[data-aluno-aberto]').waitFor({ timeout: 8000 });
+  ok(/Banca de Caio R\.\s*US\$\s181,00/.test(await page.locator('main').innerText()), 'banca do Caio = a da lista (US$ 181,00), mesmo sem as salas dele carregadas aqui');
+  const mk = await page.locator('[data-painel-mk]').innerText();
+  ok(/MU US\$\s300,00/.test(mk) && /MK −US\$\s119,00/.test(mk), 'MU e MK do servidor: 181 − 300 = MK −119 (o mesmo da lista)');
+});
+
+// 3c) quem vê só desempenho abre o painel sem dinheiro nenhum
+const soDesempenho = samba('prof');
+soDesempenho.acesso = [{ pessoa_id: 'p0', unidade_id: 'u2', capacidades: ['ver_desempenho'] }];
+soDesempenho.__rpc.resumo_time = soDesempenho.__rpc.resumo_time.map(l => ({ ...l, banca: null, mu: null, lucro_sacado: null }));
+soDesempenho.__rpcErro = { situacao_jogador: 'sem permissão' };
+await cenario('painel só desempenho', soDesempenho, async (page) => {
+  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
+  await aba(page, 'Jogadores');
+  await page.locator('[data-jogador="Caio R."]').getByRole('button', { name: 'Caio R.', exact: true }).click();
+  await page.locator('[data-aluno-aberto]').waitFor({ timeout: 8000 });
+  ok(await page.locator('[data-sem-dinheiro]').count() === 1 && await page.locator('[data-banca-hero]').count() === 0 && await page.locator('[data-painel-mk]').count() === 0,
+    'sem permissão de ver o dinheiro: o painel diz isso em vez de mostrar uma banca montada pela metade');
+  ok(await page.getByRole('button', { name: /^Banca$/ }).count() === 0, '…e não tem a aba Banca');
+  ok(/TORNEIOS JOGADOS\s*1\s*em 1 dia/i.test(await page.locator('main').innerText()), 'o desempenho continua lá (o torneio do Caio)');
 });
 
 // 4) link de convite de gestão: a tela diz o papel

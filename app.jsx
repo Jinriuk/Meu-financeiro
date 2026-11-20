@@ -2517,6 +2517,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const pode=(cap,uid_)=>{ const t=U[uid_]; if(!t) return false;
     return meus.some(a=>{ const u=U[a.unidade_id]; return u&&String(t.caminho).startsWith(u.caminho)&&(a.capacidades.includes(cap)||a.capacidades.includes('administrar')); }); };
   const podeAlgum=cap=>d.unidades.some(u=>pode(cap,u.id));
+  // painel do aluno é tela de desempenho: só pra quem vê desempenho da reta dele (financeiro tem a banca na lista)
+  const verPainel=l=>l.status==='ativo'&&!!onVerJogador&&pode('ver_desempenho',l.unidade_id);
   const nomeUnidade=u=>u?`${u.nome}${u.rotulo?` · ${u.rotulo}`:''}`:'—';
   const caminhoNome=u=>{ const ids=String(u.caminho).split('/').filter(Boolean); return ids.map(i=>U[i]?.nome).filter(Boolean).slice(1).join(' › ')||u.nome; };
   const ativo=pid=>d.vinculos.find(v=>v.pessoa_id===pid&&!v.fim);
@@ -2773,7 +2775,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
             {temDin&&col('banca','Banca')}{temDin&&col('mk','Make-up')}{col('grade','Grade 7 dias')}{col('ultimo','Último lançamento')}<th style={thS}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
           <tbody>{lista.map(l=>{ const p=d.pessoas.find(x=>x.id===l.pessoa_id)||{id:l.pessoa_id,nome:l.nome}; const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado';
             const acoes=[
-              ...(l.status==='ativo'&&onVerJogador?[['Ver painel do aluno',()=>onVerJogador(l.nome)]]:[]),
+              ...(verPainel(l)?[['Ver painel do aluno',()=>onVerJogador(l.nome,l)]]:[]),
               ...(pode('promover',l.unidade_id)&&l.status==='ativo'?[['Mover de reta (promover)',()=>moverJogador(p,l.unidade_id)]]:[]),
               ...(pode('aprovar_saques',l.unidade_id)&&l.status==='ativo'?[['Capital mandado (MU)',()=>capital(p)]]:[]),
               ...(l.status==='convidado'&&pode('gerir_pessoas',l.unidade_id)?[['Link pessoal',()=>linkPessoal(p,l.unidade_id)]]:[]),
@@ -2781,7 +2783,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
               ...(pode('gerir_pessoas',l.unidade_id)&&p.user_id!==uid?[['Registrar saída',()=>saida(p),true]]:[]),
             ];
             return <tr key={l.pessoa_id} data-jogador={l.nome}>
-              <td style={tdS}>{l.status==='ativo'&&onVerJogador?<button onClick={()=>onVerJogador(l.nome)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
+              <td style={tdS}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
                 {l.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}<div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></td>
               {temPerf&&<td style={tdS}>{conv?'—':(l.torneios??'—')}{!conv&&l.abi!=null&&l.torneios?<div style={{fontSize:12,color:C.inkSoft}}>ABI {fmt(l.abi)}</div>:null}</td>}
               {temPerf&&<td style={{...tdS,color:l.lucro>0?C.greenMid:l.lucro<0?C.red:C.ink}}>{conv||l.lucro==null||!l.torneios?'—':fmtSinal(l.lucro)}
@@ -3209,8 +3211,9 @@ function Dashboard({session,profile}){
   const podeTrocarModo=modoTime&&!!timeGente.temGestao&&!!timeGente.joga&&!alunoAberto;
   const somenteLeitura=modoTime&&!!alunoAberto;
   const trocarModo=m=>{ setModoSel(m); try{ localStorage.setItem('gb_modo',m); }catch(e){} setView(m==='gestao'?'g_visao':'painel'); };
-  const abrirAluno=n=>{ setAlunoAberto(n); setView('painel'); };
-  const fecharAluno=()=>{ setAlunoAberto(null); setView('g_jogadores'); };
+  const [alunoResumo,setAlunoResumo]=useState(null);   // linha do aluno na lista (banca e MU do servidor)
+  const abrirAluno=(n,linha)=>{ setAlunoAberto(n); setAlunoResumo(linha||null); setView('painel'); };
+  const fecharAluno=()=>{ setAlunoAberto(null); setAlunoResumo(null); setView('g_jogadores'); };
   // nome escrito com espaço ou maiúscula diferente ("hero " x "Hero") vira o nome do jogador antes de qualquer conta:
   // senão entra na banca e some da semana. No time, só ficam as linhas do jogador na tela.
   const nomesBase=modoTime?[jogadorSel]:(configRaw?[configRaw.player1_name,configRaw.player2_name]:[]);
@@ -3831,7 +3834,14 @@ function Dashboard({session,profile}){
   const resultadosTotal = cent(daily.reduce((s,e)=>s+resultadoDia(e),0));
   const movimentosTotal = cent(ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0));
   const sacadoTotal = cent(wds.reduce((s,w)=>s+num(w.valor_sacado),0));
-  const bancaAtual = cent(num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal);
+  const bancaFatos = cent(num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal);
+  // painel de aluno aberto pela gestão: banca e MU do SERVIDOR, os mesmos da lista de jogadores. Quem olha pode não ler
+  // todos os fatos do aluno (o de antes do time fica na raiz; professor só de desempenho não lê dinheiro), então a
+  // soma do que chegou aqui não é a banca. Sem permissão de ver o dinheiro dele, o painel não mostra banca.
+  const dinAluno = somenteLeitura && !!alunoResumo && alunoResumo.banca!=null;
+  const semDinheiro = somenteLeitura && !dinAluno;
+  const bancaAtual = dinAluno ? cent(alunoResumo.banca) : bancaFatos;
+  const muTela = dinAluno ? alunoResumo.mu : (sitSel ? sitSel.mu : null);
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
   // usa walletBucket pra que site/carteira fora da lista (ou saque "Não informar" = null) caiam em "Outros"
@@ -4001,9 +4011,10 @@ function Dashboard({session,profile}){
         {id:'config',label:'Minha conta',Icon:IcoUser}];
       MAIN_TABS=nav.slice(0,4).map(n=>n.id);
     } else {
-      nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},{id:'banca',label:'Banca',Icon:IcoStack},
+      nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},
+        ...(semDinheiro?[]:[{id:'banca',label:'Banca',Icon:IcoStack}]),
         ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Ajustes',Icon:IcoGear}])];
-      MAIN_TABS=alunoAberto?['painel','torneios','stats','banca']:['painel','torneios','stats','time'];
+      MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','stats','time'];
     }
   }
   const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
@@ -4110,7 +4121,7 @@ function Dashboard({session,profile}){
           <div style={{color:C.inkSoft,marginTop:2}}>{timeGente.joga?'Também joga: troque em Meu jogo.':'Esta conta só gere o time.'}</div></div>
         :<div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
           <div style={{fontSize:12.5,color:P,fontWeight:700}}>{somenteLeitura?`Banca de ${alunoAberto}`:'Banca atual'}</div>
-          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{fmt(bancaAtual)}</div>
+          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,color:P,marginTop:2}}>{semDinheiro?'—':fmt(bancaAtual)}</div>
         </div>}
         <button onClick={sair} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
       </div>
@@ -4179,22 +4190,24 @@ function Dashboard({session,profile}){
           <button onClick={dispensarInstall} aria-label="Dispensar" style={{width:30,height:30,borderRadius:9,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoX s={16}/></button>
         </Card>}
         <Card style={{padding:22,background:`linear-gradient(135deg,${P},#3B305E)`,border:'none',color:'#fff'}}>
-          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>{solo?'Minha banca':'Banca central da pool'}</div>
-          <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
-          <div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,opacity:.85,fontWeight:600,fontSize:14}}><IcoStack s={17}/>{somenteLeitura?`Banca de ${alunoAberto}`:solo?'Minha banca':'Banca central da pool'}</div>
+          {semDinheiro?<div data-sem-dinheiro style={{fontSize:14.5,fontWeight:600,marginTop:8,opacity:.92}}>Você não vê o financeiro deste aluno.</div>:<>
+          <div data-banca-hero style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:42,fontWeight:600,marginTop:6}}>{fmt(bancaAtual)}</div>
+          {!somenteLeitura&&<div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Inicial {fmt(config.banca_inicial)}</span>
             <span>Jogos {resultadosTotal>=0?'+':'−'}{fmt(Math.abs(resultadosTotal))}</span>
             {movimentosTotal!==0&&<span>Aportes {movimentosTotal>=0?'+':'−'}{fmt(Math.abs(movimentosTotal))}</span>}
             {sacadoTotal>0&&<span>Saques −{fmt(sacadoTotal)}</span>}
-          </div>
+          </div>}
           {!(modoTime&&!(piso>0))&&<><div style={{marginTop:12}}><Bar2 pct={piso>0?(bancaAtual/piso)*100:100} color="#fff" track="rgba(255,255,255,.22)"/></div>
           <div style={{display:'flex',justifyContent:'space-between',marginTop:8,fontSize:13.5,opacity:.92}}>
             <span>Piso mínimo {fmt(piso)}</span>
             <span>{bancaAtual>=piso?`${fmt(bancaAtual-piso)} acima do piso`:'abaixo do piso!'}</span>
           </div></>}
-          {modoTime&&sitSel&&sitSel.mu!=null&&(()=>{ const mk=mkDe(bancaAtual,sitSel.mu); return <div data-painel-mk style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600,display:'flex',gap:'4px 14px',flexWrap:'wrap'}}>
-            <span>MU {fmt(sitSel.mu)}</span><span>{mk<0?`MK ${fmtSinal(mk)}`:`Profit ${fmtSinal(mk)}`}</span>
+          {modoTime&&muTela!=null&&(()=>{ const mk=mkDe(bancaAtual,muTela); return <div data-painel-mk style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600,display:'flex',gap:'4px 14px',flexWrap:'wrap'}}>
+            <span>MU {fmt(muTela)}</span><span>{mk<0?`MK ${fmtSinal(mk)}`:`Profit ${fmtSinal(mk)}`}</span>
             <span style={{opacity:.85}}>{mk<0?'saque só depois de sair do MK':'fora de MK: dá pra pedir saque'}</span></div>; })()}
+          </>}
         </Card>
 
         {/* avisos como pop-up: aparecem uma vez e somem (nada de card fixo poluindo o Painel) */}
