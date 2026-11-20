@@ -80,9 +80,15 @@ export async function abrirApp(db, { largura = 1280, altura = 900, semSessao = f
       const umSo = /vnd\.pgrst\.object/.test(req.headers()['accept'] || '');
       return route.fulfill({ status: 200, json: umSo ? lista[0] : lista });
     }
-    const linhas = (db[tabela] || []).map(r => ({ ...r }));
+    // db.__erroLeitura = { tabela: 'mensagem' } simula a leitura falhando (rede, tempo esgotado)
+    const falhaLer = (db.__erroLeitura || {})[tabela]; if (falhaLer) return route.fulfill({ status: 500, json: { code: '57014', message: falhaLer } });
+    // como o PostgREST: no máximo 1.000 linhas por consulta (teto padrão do projeto), com offset/limit da paginação
+    const todas = (db[tabela] || []).map(r => ({ ...r }));
+    const de = Number(url.searchParams.get('offset') || 0), lim = Math.min(Number(url.searchParams.get('limit') || 1000), 1000);
+    const linhas = todas.slice(de, de + lim);
+    if (db.__leituras) db.__leituras.push({ tabela, de, n: linhas.length });
     const umSo = /vnd\.pgrst\.object/.test(req.headers()['accept'] || '');
-    return route.fulfill({ json: umSo ? (linhas[0] || null) : linhas, headers: { 'content-range': `0-${Math.max(0, linhas.length - 1)}/${linhas.length}` } });
+    return route.fulfill({ json: umSo ? (linhas[0] || null) : linhas, headers: { 'content-range': `${de}-${Math.max(de, de + linhas.length - 1)}/${todas.length}` } });
   });
   await page.addInitScript(([k, v, sem]) => { if (!sem) localStorage.setItem(k, v); localStorage.setItem('gb_install', '1'); }, [`sb-${ref}-auth-token`, JSON.stringify(sessao), semSessao]);
   await page.goto(`http://localhost:${srv.address().port}${caminho}`);
