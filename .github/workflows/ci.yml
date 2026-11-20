@@ -60,6 +60,7 @@ jobs:
           node test/ui/carga.mjs
           node test/ui/protecoes.mjs
           node test/ui/entrada.mjs
+          node test/ui/saida.mjs
 
       - name: Segurança no banco (F0.5/F0.6) num Postgres local com o recorte de produção
         run: bash test/sql/run.sh

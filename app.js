@@ -8184,6 +8184,221 @@ function ContratoModal({
   }, "Salvar contrato")));
 }
 
+// saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
+// o que vai pra conta individual nova dele e o que fica com o time. Confirma digitando SAIU.
+function SaidaModal({
+  nome,
+  previa,
+  onBanca,
+  onConfirmar,
+  onClose
+}) {
+  const a = previa.acerto || {},
+    r = previa.resultado || {},
+    lv = previa.leva || {},
+    pend = previa.pendencias || [];
+  const [banca, setBanca] = useState(String(a.banca_sistema ?? 0));
+  const [recebido, setRecebido] = useState('');
+  const [conf, setConf] = useState('');
+  const [indo, setIndo] = useState(false);
+  const B = parseValor(banca),
+    R = String(recebido).trim() === '' ? null : parseValor(recebido);
+  const temDinheiro = Number(a.banca) !== 0 || Number(a.mu) !== 0 || Number(a.lifetime) !== 0;
+  const travado = previa.dono || previa.eu || pend.length > 0 || temDinheiro && previa.precisa_aprovar_saques;
+  const ok = !travado && B >= 0 && (R == null || R >= 0) && conf.trim().toUpperCase() === 'SAIU' && !indo;
+  const linha = (rot, val, extra = {}) => /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 10,
+      padding: '4px 0',
+      fontSize: 13.5,
+      ...extra
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft
+    }
+  }, rot), /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.ink
+    }
+  }, val));
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+      zIndex: 50
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-saida-modal": true,
+    className: "ftfade",
+    style: {
+      background: C.surface,
+      width: '100%',
+      maxWidth: 500,
+      maxHeight: '92vh',
+      overflowY: 'auto',
+      borderRadius: '24px 24px 0 0',
+      padding: '22px 22px calc(22px + env(safe-area-inset-bottom))',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Sa\xEDda de ", nome), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    "aria-label": "Fechar",
+    style: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      border: 'none',
+      background: C.bg,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 20
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft
+    }
+  }, "No time desde ", previa.entrada ? dataBR(previa.entrada) : '—', " \xB7 ", r.torneios || 0, " torneio", Number(r.torneios) !== 1 ? 's' : '', " \xB7 resultado ", fmtSinal(Number(r.lucro) || 0)), (previa.dono || previa.eu) && /*#__PURE__*/React.createElement("div", {
+    "data-saida-travada": true,
+    style: {
+      color: C.red,
+      fontWeight: 700,
+      fontSize: 13.5
+    }
+  }, previa.dono ? 'O dono do time não sai por aqui: fale com o suporte.' : 'Ninguém registra a própria saída.'), pend.length > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-saida-pendencias": true,
+    style: {
+      background: C.redSoft,
+      borderRadius: 12,
+      padding: '10px 12px',
+      fontSize: 13.5,
+      color: C.ink
+    }
+  }, "Resolva antes da sa\xEDda: ", /*#__PURE__*/React.createElement("b", null, pend.join(', ')), ". O acerto sairia errado."), temDinheiro && previa.precisa_aprovar_saques && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontWeight: 700,
+      fontSize: 13.5
+    }
+  }, "Tem dinheiro do time com ", nome, ": o acerto precisa de quem aprova saques nesta reta."), temDinheiro && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "sd-banca"
+  }, "Banca final (somando as salas)"), /*#__PURE__*/React.createElement("input", {
+    id: "sd-banca",
+    "data-saida-banca": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    value: banca,
+    onChange: e => setBanca(e.target.value),
+    onBlur: () => {
+      if (B >= 0) onBanca(B);
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "No sistema: ", fmt(a.banca_sistema), ". Confira com ele e corrija se precisar.")), /*#__PURE__*/React.createElement("div", {
+    "data-saida-acerto": true,
+    style: {
+      background: C.bg,
+      borderRadius: 12,
+      padding: '8px 12px'
+    }
+  }, linha('Banca final', fmt(a.banca)), linha('MU (capital do time)', fmt(a.mu)), Number(a.mk_congelado) > 0 ? linha('Em MK: fica congelado no acerto', fmt(a.mk_congelado), {
+    color: C.red
+  }) : linha('Profit (banca − MU)', fmtSinal(Number(a.profit) || 0)), linha('Time recolhe o capital', fmt(a.devolucao)), Number(a.cashout) > 0 && (a.parte_time != null ? /*#__PURE__*/React.createElement(React.Fragment, null, linha(`Lucro dividido pelo contrato (${fmt(a.cashout)})`, `${nome} fica com ${fmt(a.parte_jogador)}`), linha('Parte do time no lucro', fmt(a.parte_time))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.red,
+      fontWeight: 600,
+      padding: '4px 0'
+    }
+  }, "Sem contrato: combine a divis\xE3o dos ", fmt(a.cashout), " de lucro e registre o recebido.")), a.total_time != null && linha('Total pro time', fmt(a.total_time), {
+    borderTop: `1px solid ${C.border}`,
+    marginTop: 4,
+    paddingTop: 8
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "sd-rec"
+  }, "Recebido pelo time (se j\xE1 recebeu)"), /*#__PURE__*/React.createElement("input", {
+    id: "sd-rec",
+    "data-saida-recebido": true,
+    style: inputStyle,
+    inputMode: "decimal",
+    placeholder: "em branco: fica a receber no Financeiro",
+    value: recebido,
+    onChange: e => setRecebido(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    "data-saida-leva": true,
+    style: {
+      fontSize: 13,
+      color: C.ink,
+      lineHeight: 1.5
+    }
+  }, previa.tem_conta ? /*#__PURE__*/React.createElement(React.Fragment, null, "Vai pra uma conta individual nova de ", nome, " (15 dias de teste): ", lv.torneios || 0, " torneio", Number(lv.torneios) !== 1 ? 's' : '', ", ", lv.maos || 0, " registro", Number(lv.maos) !== 1 ? 's' : '', " de m\xE3os, ", lv.salas || 0, " sala", Number(lv.salas) !== 1 ? 's' : '', " e os movimentos. ") : /*#__PURE__*/React.createElement(React.Fragment, null, nome, " n\xE3o tem conta no app: s\xF3 fecha o v\xEDnculo. "), "O time fica com o acerto, os saques, o MU, os reloads e a planilha."), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "sd-conf"
+  }, "Digite SAIU pra confirmar"), /*#__PURE__*/React.createElement("input", {
+    id: "sd-conf",
+    "data-saida-confirma": true,
+    style: inputStyle,
+    value: conf,
+    onChange: e => setConf(e.target.value),
+    disabled: travado
+  })), /*#__PURE__*/React.createElement("button", {
+    disabled: !ok,
+    onClick: async () => {
+      setIndo(true);
+      await onConfirmar({
+        banca: temDinheiro ? B : null,
+        recebido: temDinheiro ? R : null
+      });
+      setIndo(false);
+    },
+    style: {
+      padding: '14px 0',
+      borderRadius: 14,
+      border: 'none',
+      background: C.red,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 15.5,
+      cursor: 'pointer',
+      opacity: ok ? 1 : .5
+    }
+  }, "Registrar sa\xEDda")));
+}
+
 /* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
    Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
 function TimeApp({
@@ -8207,6 +8422,7 @@ function TimeApp({
   const [perg, setPerg] = useState(null); // QuickEditModal: {label,hint,kind,opts,valor,onSave}
   const [link, setLink] = useState(null); // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto, setSaqueAberto] = useState(false);
+  const [saidaDe, setSaidaDe] = useState(null); // saída: {p, previa} (a prévia do acerto vem do servidor)
   const [planilha, setPlanilha] = useState(null);
   const [reloadAberto, setReloadAberto] = useState(false);
   const [periodo, setPeriodo] = useState('mes');
@@ -8272,7 +8488,7 @@ function TimeApp({
   };
   const carregar = async () => {
     const q = (t, cols = '*') => lerTudo(() => sb.from(t).select(cols).order('id')); // paginado: o servidor corta em 1.000 linhas
-    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada')]);
+    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd, acs] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada'), q('acerto_saida')]);
     const pessoas = p.data || [],
       vinculos = v.data || [];
     const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
@@ -8298,7 +8514,8 @@ function TimeApp({
       grades: gr.error ? [] : gr.data || [],
       regras: rg.error ? [] : rg.data || [],
       codigo: tc.error ? null : (tc.data || [])[0] || null,
-      pedidos: pd.error ? [] : (pd.data || []).filter(x => x.status === 'pendente').sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em)))
+      pedidos: pd.error ? [] : (pd.data || []).filter(x => x.status === 'pendente').sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em))),
+      acertos: acs.error ? [] : (acs.data || []).sort((x, y) => String(y.registrado_em).localeCompare(String(x.registrado_em)))
     });
   };
   useEffect(() => {
@@ -8531,18 +8748,31 @@ function TimeApp({
       }, `Agora é ${nn}.`);
     }
   });
-  const saida = p => setPerg({
-    label: `Saída de ${p.nome}`,
-    hint: 'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',
-    kind: 'text',
-    valor: '',
-    onSave: async t => {
-      setPerg(null);
-      if (String(t).trim().toUpperCase() === 'SAIU') await rodar('registrar_saida', {
-        p_alvo: p.id
-      }, `Saída de ${p.nome} registrada.`);
+  const previaSaida = async (p, banca) => {
+    const {
+      data,
+      error
+    } = await sb.rpc('previa_saida', {
+      p_pessoa: p.id,
+      p_banca: banca ?? null
+    });
+    if (error) {
+      setAviso({
+        erro: true,
+        texto: error.message || 'Não deu certo.'
+      });
+      return null;
     }
-  });
+    return data;
+  };
+  const saida = async p => {
+    setAviso(null);
+    const pv = await previaSaida(p, null);
+    if (pv) setSaidaDe({
+      p,
+      previa: pv
+    });
+  };
   const gerarConvite = async ({
     quem,
     reta,
@@ -8909,7 +9139,31 @@ function TimeApp({
 
   /* ================= GESTÃO ================= */
   const souAdmin = !!(raiz && pode('administrar', raiz.id));
-  const modais = /*#__PURE__*/React.createElement(React.Fragment, null, perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+  const modais = /*#__PURE__*/React.createElement(React.Fragment, null, saidaDe && /*#__PURE__*/React.createElement(SaidaModal, {
+    nome: saidaDe.p.nome,
+    previa: saidaDe.previa,
+    onClose: () => setSaidaDe(null),
+    onBanca: async b => {
+      const pv = await previaSaida(saidaDe.p, b);
+      if (pv) setSaidaDe(x => x && {
+        ...x,
+        previa: pv
+      });
+    },
+    onConfirmar: async ({
+      banca,
+      recebido
+    }) => {
+      const p = saidaDe.p;
+      const r = await rodar('registrar_saida', {
+        p_alvo: p.id,
+        p_banca: banca,
+        p_recebido: recebido,
+        p_obs: null
+      }, `Saída de ${p.nome} registrada. O histórico dele foi pra conta individual nova; o acerto está no Financeiro.`);
+      if (r) setSaidaDe(null);
+    }
+  }), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
     label: perg.label,
     hint: perg.hint,
     kind: perg.kind,
@@ -10362,7 +10616,69 @@ function TimeApp({
         fontWeight: 700,
         color: s.status === 'pago' ? C.greenMid : C.red
       }
-    }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '')))), modais);
+    }, SAQUE_ROTULO[s.status], s.status === 'pago' && Number(s.diferenca) ? ` · diferença ${fmt(s.diferenca)}` : '')))), d.acertos.length > 0 && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Sa\xEDdas do time"), d.acertos.slice(0, 20).map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.id,
+      "data-acerto": nomeDe(x.pessoa_id),
+      style: {
+        padding: '10px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13.5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("b", null, nomeDe(x.pessoa_id)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "\xB7 saiu ", dataBR(x.saida), x.entrada ? ` (no time desde ${dataBR(x.entrada)})` : ''), Number(x.mk_congelado) > 0 && /*#__PURE__*/React.createElement(Tag, {
+      tom: "bad"
+    }, "MK congelado ", fmt(x.mk_congelado)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: 'auto',
+        fontWeight: 700,
+        color: x.status === 'recebido' ? C.greenMid : C.gold
+      }
+    }, x.status === 'recebido' ? `recebido ${fmt(x.recebido)}${Number(x.diferenca) ? ` · diferença ${fmt(x.diferenca)}` : ''}` : 'a receber')), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft,
+        marginTop: 4,
+        lineHeight: 1.5
+      }
+    }, "Banca ", fmt(x.banca), " \xB7 MU ", fmt(x.mu), " \xB7 capital de volta ", fmt(x.devolucao), Number(x.cashout) > 0 ? ` · lucro ${fmt(x.cashout)} (${x.parte_jogador != null ? `jogador ${fmt(x.parte_jogador)}, time ${fmt(x.parte_time)}` : 'sem contrato'})` : '', x.total_time != null ? ` · time recebe ${fmt(x.total_time)}` : '', " \xB7 resultado no time ", fmtSinal(Number(x.resultado?.lucro) || 0)), x.status === 'a_receber' && pode('aprovar_saques', x.unidade_id) && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 8
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setPerg({
+        label: `Quanto o time recebeu de ${nomeDe(x.pessoa_id)}?`,
+        hint: x.total_time != null ? `Pelo acerto: ${fmt(x.total_time)}.` : 'Sem contrato: o que foi combinado.',
+        kind: 'money',
+        valor: x.total_time ?? 0,
+        onSave: async v => {
+          setPerg(null);
+          const r = await rodar('confirmar_acerto', {
+            p_id: x.id,
+            p_recebido: v
+          });
+          if (r && typeof r === 'object') setAviso({
+            erro: r.diferenca != null && Number(r.diferenca) !== 0,
+            texto: r.diferenca != null && Number(r.diferenca) !== 0 ? `Recebimento confirmado com diferença de ${fmt(r.diferenca)}.` : 'Recebimento do acerto confirmado.'
+          });
+        }
+      })
+    }, "Confirmar recebimento"))))), modais);
   }
 
   /* ---------- EQUIPE E CONVITES ---------- */
@@ -11661,6 +11977,14 @@ function Dashboard({
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState(false); // alguma tabela não veio: mantém o que já estava na tela e avisa
   const [meusPedidos, setMeusPedidos] = useState([]); // conta individual: pedidos pra entrar num time pelo código
+  const [minhasSaidas, setMinhasSaidas] = useState([]); // conta individual de quem saiu de um time: o acerto (opção B)
+  const [saidaVista, setSaidaVista] = useState(() => {
+    try {
+      return localStorage.getItem('gb_saida_vista') || '';
+    } catch (e) {
+      return '';
+    }
+  });
   const [avisoPedido, setAvisoPedido] = useState(null); // {erro,texto} do último pedido pelo código
   const [codTime, setCodTime] = useState('');
   const [viewSel, setView] = useState('painel');
@@ -12100,6 +12424,14 @@ function Dashboard({
             ascending: false
           }).limit(5);
           setMeusPedidos(mp || []);
+        } catch (e) {}
+        try {
+          const {
+            data: ms
+          } = await sb.from('acerto_saida').select('id,time_nome,saida,banca,mu,mk_congelado,devolucao,parte_jogador,total_time').order('registrado_em', {
+            ascending: false
+          }).limit(1);
+          setMinhasSaidas(ms || []);
         } catch (e) {}
       }
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
@@ -14051,6 +14383,7 @@ function Dashboard({
           saque: 'g_financeiro',
           reload: 'g_financeiro',
           abertura: 'g_financeiro',
+          saida: 'g_financeiro',
           entrada: 'g_jogadores',
           grade: 'g_grades'
         }[av.tipo] || 'g_visao');else setView('time');
@@ -14083,7 +14416,44 @@ function Dashboard({
     modo: gestaoAtiva ? 'gestao' : 'jogo',
     onTrocar: trocarModo,
     compacto: true
-  })), soloConta && meusPedidos.filter(x => x.status === 'pendente').slice(0, 1).map(x => /*#__PURE__*/React.createElement("div", {
+  })), soloConta && minhasSaidas.filter(x => x.id !== saidaVista).slice(0, 1).map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.id,
+    "data-saida-time": true,
+    style: {
+      display: 'flex',
+      gap: 10,
+      alignItems: 'flex-start',
+      padding: '11px 14px',
+      marginBottom: 14,
+      borderRadius: 13,
+      background: C.plumSoft,
+      border: `1.5px solid ${P}`,
+      fontSize: 13.5,
+      color: C.ink,
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, "Voc\xEA saiu do time ", /*#__PURE__*/React.createElement("b", null, x.time_nome || ''), " em ", dataBR(x.saida), ". O seu hist\xF3rico (torneios, m\xE3os, salas e movimentos) veio com voc\xEA pra esta conta, com 15 dias de teste.", ' ', "Acerto: banca ", fmt(x.banca), ", capital do time ", fmt(x.mu), Number(x.mk_congelado) > 0 ? `, MK de ${fmt(x.mk_congelado)} congelado` : '', x.parte_jogador != null && Number(x.parte_jogador) > 0 ? `, você ficou com ${fmt(x.parte_jogador)} do lucro` : '', "."), /*#__PURE__*/React.createElement("button", {
+    "aria-label": "Fechar",
+    onClick: () => {
+      setSaidaVista(x.id);
+      try {
+        localStorage.setItem('gb_saida_vista', x.id);
+      } catch (e) {}
+    },
+    style: {
+      border: 'none',
+      background: 'transparent',
+      cursor: 'pointer',
+      color: C.inkSoft,
+      padding: 2
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 16
+  })))), soloConta && meusPedidos.filter(x => x.status === 'pendente').slice(0, 1).map(x => /*#__PURE__*/React.createElement("div", {
     key: x.id,
     "data-pedido-pendente": true,
     style: {

@@ -2464,6 +2464,57 @@ function ContratoModal({atual,onSalvar,onClose}){
   </div>;
 }
 
+// saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
+// o que vai pra conta individual nova dele e o que fica com o time. Confirma digitando SAIU.
+function SaidaModal({nome,previa,onBanca,onConfirmar,onClose}){
+  const a=previa.acerto||{}, r=previa.resultado||{}, lv=previa.leva||{}, pend=previa.pendencias||[];
+  const [banca,setBanca]=useState(String(a.banca_sistema??0)); const [recebido,setRecebido]=useState(''); const [conf,setConf]=useState(''); const [indo,setIndo]=useState(false);
+  const B=parseValor(banca), R=String(recebido).trim()===''?null:parseValor(recebido);
+  const temDinheiro=Number(a.banca)!==0||Number(a.mu)!==0||Number(a.lifetime)!==0;
+  const travado=previa.dono||previa.eu||pend.length>0||(temDinheiro&&previa.precisa_aprovar_saques);
+  const ok=!travado&&B>=0&&(R==null||R>=0)&&conf.trim().toUpperCase()==='SAIU'&&!indo;
+  const linha=(rot,val,extra={})=><div style={{display:'flex',justifyContent:'space-between',gap:10,padding:'4px 0',fontSize:13.5,...extra}}><span style={{color:C.inkSoft}}>{rot}</span><b style={{color:C.ink}}>{val}</b></div>;
+  return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
+    <div onClick={e=>e.stopPropagation()} data-saida-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:500,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Saída de {nome}</h3>
+        <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+      </div>
+      <div style={{fontSize:13,color:C.inkSoft}}>No time desde {previa.entrada?dataBR(previa.entrada):'—'} · {r.torneios||0} torneio{Number(r.torneios)!==1?'s':''} · resultado {fmtSinal(Number(r.lucro)||0)}</div>
+      {(previa.dono||previa.eu)&&<div data-saida-travada style={{color:C.red,fontWeight:700,fontSize:13.5}}>{previa.dono?'O dono do time não sai por aqui: fale com o suporte.':'Ninguém registra a própria saída.'}</div>}
+      {pend.length>0&&<div data-saida-pendencias style={{background:C.redSoft,borderRadius:12,padding:'10px 12px',fontSize:13.5,color:C.ink}}>Resolva antes da saída: <b>{pend.join(', ')}</b>. O acerto sairia errado.</div>}
+      {temDinheiro&&previa.precisa_aprovar_saques&&<div style={{color:C.red,fontWeight:700,fontSize:13.5}}>Tem dinheiro do time com {nome}: o acerto precisa de quem aprova saques nesta reta.</div>}
+      {temDinheiro&&<>
+        <div><label style={labelStyle} htmlFor="sd-banca">Banca final (somando as salas)</label>
+          <input id="sd-banca" data-saida-banca style={inputStyle} inputMode="decimal" value={banca} onChange={e=>setBanca(e.target.value)} onBlur={()=>{ if(B>=0) onBanca(B); }}/>
+          <div style={{fontSize:12,color:C.inkSoft,marginTop:4}}>No sistema: {fmt(a.banca_sistema)}. Confira com ele e corrija se precisar.</div></div>
+        <div data-saida-acerto style={{background:C.bg,borderRadius:12,padding:'8px 12px'}}>
+          {linha('Banca final',fmt(a.banca))}{linha('MU (capital do time)',fmt(a.mu))}
+          {Number(a.mk_congelado)>0
+            ?linha('Em MK: fica congelado no acerto',fmt(a.mk_congelado),{color:C.red})
+            :linha('Profit (banca − MU)',fmtSinal(Number(a.profit)||0))}
+          {linha('Time recolhe o capital',fmt(a.devolucao))}
+          {Number(a.cashout)>0&&(a.parte_time!=null
+            ?<>{linha(`Lucro dividido pelo contrato (${fmt(a.cashout)})`,`${nome} fica com ${fmt(a.parte_jogador)}`)}{linha('Parte do time no lucro',fmt(a.parte_time))}</>
+            :<div style={{fontSize:13,color:C.red,fontWeight:600,padding:'4px 0'}}>Sem contrato: combine a divisão dos {fmt(a.cashout)} de lucro e registre o recebido.</div>)}
+          {a.total_time!=null&&linha('Total pro time',fmt(a.total_time),{borderTop:`1px solid ${C.border}`,marginTop:4,paddingTop:8})}
+        </div>
+        <div><label style={labelStyle} htmlFor="sd-rec">Recebido pelo time (se já recebeu)</label>
+          <input id="sd-rec" data-saida-recebido style={inputStyle} inputMode="decimal" placeholder="em branco: fica a receber no Financeiro" value={recebido} onChange={e=>setRecebido(e.target.value)}/></div>
+      </>}
+      <div data-saida-leva style={{fontSize:13,color:C.ink,lineHeight:1.5}}>
+        {previa.tem_conta
+          ?<>Vai pra uma conta individual nova de {nome} (15 dias de teste): {lv.torneios||0} torneio{Number(lv.torneios)!==1?'s':''}, {lv.maos||0} registro{Number(lv.maos)!==1?'s':''} de mãos, {lv.salas||0} sala{Number(lv.salas)!==1?'s':''} e os movimentos. </>
+          :<>{nome} não tem conta no app: só fecha o vínculo. </>}
+        O time fica com o acerto, os saques, o MU, os reloads e a planilha.</div>
+      <div><label style={labelStyle} htmlFor="sd-conf">Digite SAIU pra confirmar</label>
+        <input id="sd-conf" data-saida-confirma style={inputStyle} value={conf} onChange={e=>setConf(e.target.value)} disabled={travado}/></div>
+      <button disabled={!ok} onClick={async()=>{ setIndo(true); await onConfirmar({banca:temDinheiro?B:null,recebido:temDinheiro?R:null}); setIndo(false); }}
+        style={{padding:'14px 0',borderRadius:14,border:'none',background:C.red,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:ok?1:.5}}>Registrar saída</button>
+    </div>
+  </div>;
+}
+
 /* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
    Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
 function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
@@ -2476,6 +2527,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const [perg,setPerg]=useState(null);         // QuickEditModal: {label,hint,kind,opts,valor,onSave}
   const [link,setLink]=useState(null);         // link pessoal gerado fora do convite: {titulo,url,texto}
   const [saqueAberto,setSaqueAberto]=useState(false);
+  const [saidaDe,setSaidaDe]=useState(null);   // saída: {p, previa} (a prévia do acerto vem do servidor)
   const [planilha,setPlanilha]=useState(null);
   const [reloadAberto,setReloadAberto]=useState(false);
   const [periodo,setPeriodo]=useState('mes');
@@ -2507,9 +2559,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   };
   const carregar=async()=>{
     const q=(t,cols='*')=>lerTudo(()=>sb.from(t).select(cols).order('id'));   // paginado: o servidor corta em 1.000 linhas
-    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
+    const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd,acs]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
       q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade'),
-      sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada')]);
+      sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
@@ -2518,7 +2570,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
       acessos:a.data||[],convites:cv.error?[]:(cv.data||[]),saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,
       grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[]),
-      codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em)))});
+      codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em))),
+      acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em)))});
   };
   useEffect(()=>{ carregar(); },[]);
   useEffect(()=>{ setAviso(null); setMenuDe(null); },[secao]);
@@ -2589,8 +2642,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, teu convite pro time no GrinderBank:`}); };
   const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',kind:'text',valor:p.nome,
     onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(nn&&nn!==p.nome) await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nn},`Agora é ${nn}.`); }});
-  const saida=p=>setPerg({label:`Saída de ${p.nome}`,hint:'Fecha o vínculo hoje e tira o acesso da conta. O histórico fica no time. Digite SAIU pra confirmar.',kind:'text',valor:'',
-    onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='SAIU') await rodar('registrar_saida',{p_alvo:p.id},`Saída de ${p.nome} registrada.`); }});
+  const previaSaida=async(p,banca)=>{ const {data,error}=await sb.rpc('previa_saida',{p_pessoa:p.id,p_banca:banca??null});
+    if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; } return data; };
+  const saida=async p=>{ setAviso(null); const pv=await previaSaida(p,null); if(pv) setSaidaDe({p,previa:pv}); };
   const gerarConvite=async({quem,reta,onde,joga,jogaEm,tipo,nome})=>{
     const chama=async(fn,args)=>{ const {data,error}=await sb.rpc(fn,args); if(error) throw new Error(error.message||'Não deu certo.'); return data; };
     try{
@@ -2674,6 +2728,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
   /* ================= GESTÃO ================= */
   const souAdmin=!!(raiz&&pode('administrar',raiz.id));
   const modais=<>
+    {saidaDe&&<SaidaModal nome={saidaDe.p.nome} previa={saidaDe.previa} onClose={()=>setSaidaDe(null)}
+      onBanca={async b=>{ const pv=await previaSaida(saidaDe.p,b); if(pv) setSaidaDe(x=>x&&{...x,previa:pv}); }}
+      onConfirmar={async({banca,recebido})=>{ const p=saidaDe.p; const r=await rodar('registrar_saida',{p_alvo:p.id,p_banca:banca,p_recebido:recebido,p_obs:null},
+        `Saída de ${p.nome} registrada. O histórico dele foi pra conta individual nova; o acerto está no Financeiro.`); if(r) setSaidaDe(null); }}/>}
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
     {convite&&<ConviteModal unidades={d.unidades} podeGerir={u=>pode('gerir_pessoas',u)} podeAdmin={u=>pode('administrar',u)} inicial={convite} nomeUnidade={nomeUnidade} onGerar={gerarConvite} onClose={()=>setConvite(null)}/>}
     {gradeAberta&&U[gradeAberta]&&(()=>{ const u=U[gradeAberta], g=gradeEf(u.id);
@@ -2968,6 +3026,19 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           <span style={{flex:1,minWidth:200}}><b>{nomeDe(s.pessoa_id)}</b> · {dataBR(s.pago_em||s.solicitado_em)} · time {fmt(s.recebido??s.total_time)} · jogador {fmt(s.parte_jogador)}</span>
           <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:C.red}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}</span></div>)}
       </Card>}
+      {d.acertos.length>0&&<Card style={{padding:20}}>
+        <h3 style={tituloS}>Saídas do time</h3>
+        {d.acertos.slice(0,20).map(x=><div key={x.id} data-acerto={nomeDe(x.pessoa_id)} style={{padding:'10px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><b>{nomeDe(x.pessoa_id)}</b><span style={{color:C.inkSoft}}>· saiu {dataBR(x.saida)}{x.entrada?` (no time desde ${dataBR(x.entrada)})`:''}</span>
+            {Number(x.mk_congelado)>0&&<Tag tom="bad">MK congelado {fmt(x.mk_congelado)}</Tag>}
+            <span style={{marginLeft:'auto',fontWeight:700,color:x.status==='recebido'?C.greenMid:C.gold}}>{x.status==='recebido'?`recebido ${fmt(x.recebido)}${Number(x.diferenca)?` · diferença ${fmt(x.diferenca)}`:''}`:'a receber'}</span></div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca {fmt(x.banca)} · MU {fmt(x.mu)} · capital de volta {fmt(x.devolucao)}{Number(x.cashout)>0?` · lucro ${fmt(x.cashout)} (${x.parte_jogador!=null?`jogador ${fmt(x.parte_jogador)}, time ${fmt(x.parte_time)}`:'sem contrato'})`:''}{x.total_time!=null?` · time recebe ${fmt(x.total_time)}`:''} · resultado no time {fmtSinal(Number(x.resultado?.lucro)||0)}</div>
+          {x.status==='a_receber'&&pode('aprovar_saques',x.unidade_id)&&<div style={{marginTop:8}}><button style={btnS} onClick={()=>setPerg({label:`Quanto o time recebeu de ${nomeDe(x.pessoa_id)}?`,
+            hint:x.total_time!=null?`Pelo acerto: ${fmt(x.total_time)}.`:'Sem contrato: o que foi combinado.',kind:'money',valor:x.total_time??0,
+            onSave:async v=>{ setPerg(null); const r=await rodar('confirmar_acerto',{p_id:x.id,p_recebido:v}); if(r&&typeof r==='object') setAviso({erro:r.diferenca!=null&&Number(r.diferenca)!==0,
+              texto:r.diferenca!=null&&Number(r.diferenca)!==0?`Recebimento confirmado com diferença de ${fmt(r.diferenca)}.`:'Recebimento do acerto confirmado.'}); }})}>Confirmar recebimento</button></div>}
+        </div>)}
+      </Card>}
       {modais}
     </div>;
   }
@@ -3254,6 +3325,8 @@ function Dashboard({session,profile}){
   const [loading,setLoading]=useState(true);
   const [erroCarga,setErroCarga]=useState(false);    // alguma tabela não veio: mantém o que já estava na tela e avisa
   const [meusPedidos,setMeusPedidos]=useState([]);    // conta individual: pedidos pra entrar num time pelo código
+  const [minhasSaidas,setMinhasSaidas]=useState([]);  // conta individual de quem saiu de um time: o acerto (opção B)
+  const [saidaVista,setSaidaVista]=useState(()=>{ try{ return localStorage.getItem('gb_saida_vista')||''; }catch(e){ return ''; } });
   const [avisoPedido,setAvisoPedido]=useState(null);  // {erro,texto} do último pedido pelo código
   const [codTime,setCodTime]=useState('');
   const [viewSel,setView]=useState('painel');
@@ -3451,7 +3524,8 @@ function Dashboard({session,profile}){
       if(falhas.length) registrarErro('carga','lista não carregou: '+falhas.map(([r])=>r.error.message).join(' | '),{tabelas:falhas.length});
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
       // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
-      if(myWs&&myWs.kind==='solo'){ try{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); }catch(e){} }
+      if(myWs&&myWs.kind==='solo'){ try{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); }catch(e){}
+        try{ const {data:ms}=await sb.from('acerto_saida').select('id,time_nome,saida,banca,mu,mk_congelado,devolucao,parte_jogador,total_time').order('registrado_em',{ascending:false}).limit(1); setMinhasSaidas(ms||[]); }catch(e){} }
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
       try{ const {data:un}=await sb.from('unidade').select('id').limit(1); const tem=!!(un&&un.length); setTemTime(tem);
         if(tem){ const {data:av}=await sb.from('aviso').select('*').order('criado_em',{ascending:false}).limit(50); setAvisos(av||[]); } }catch(e){}
@@ -4256,13 +4330,17 @@ function Dashboard({session,profile}){
             onLimpar={async()=>{ setAvApagados(l=>[...l,...alertasPainel.map(x=>x.key)]); setAvLocais([]);
               if(avisos.length){ setAvisos([]); try{ await sb.rpc('apagar_avisos'); }catch(e){} } }}
             onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel){
-              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
+              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
               else setView('time'); } }}/>
           <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
         </div>
       </div>
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
       {/* time: carregando quem é quem (evita piscar a tela de jogador pra quem só gere) */}
+      {soloConta&&minhasSaidas.filter(x=>x.id!==saidaVista).slice(0,1).map(x=><div key={x.id} data-saida-time style={{display:'flex',gap:10,alignItems:'flex-start',padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.plumSoft,border:`1.5px solid ${P}`,fontSize:13.5,color:C.ink,lineHeight:1.5}}>
+        <div style={{flex:1}}>Você saiu do time <b>{x.time_nome||''}</b> em {dataBR(x.saida)}. O seu histórico (torneios, mãos, salas e movimentos) veio com você pra esta conta, com 15 dias de teste.
+          {' '}Acerto: banca {fmt(x.banca)}, capital do time {fmt(x.mu)}{Number(x.mk_congelado)>0?`, MK de ${fmt(x.mk_congelado)} congelado`:''}{x.parte_jogador!=null&&Number(x.parte_jogador)>0?`, você ficou com ${fmt(x.parte_jogador)} do lucro`:''}.</div>
+        <button aria-label="Fechar" onClick={()=>{ setSaidaVista(x.id); try{ localStorage.setItem('gb_saida_vista',x.id); }catch(e){} }} style={{border:'none',background:'transparent',cursor:'pointer',color:C.inkSoft,padding:2}}><IcoX s={16}/></button></div>)}
       {soloConta&&meusPedidos.filter(x=>x.status==='pendente').slice(0,1).map(x=><div key={x.id} data-pedido-pendente style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.plumSoft,border:`1.5px solid ${P}`,fontSize:13.5,color:C.ink,lineHeight:1.5}}>
         Pedido pra entrar no time <b>{x.time_nome||''}</b> enviado em {dataBR(x.criado_em)}. Quando a gestão aprovar, esta conta entra no time. O seu histórico vai junto e o de antes da entrada fica só com você.</div>)}
       {avisoPedido&&avisoPedido.erro&&<div data-pedido-erro role="alert" style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.redSoft,border:`1.5px solid ${C.red}`,fontSize:13.5,color:C.ink}}>

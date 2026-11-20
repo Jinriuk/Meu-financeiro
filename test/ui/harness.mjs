@@ -69,7 +69,9 @@ export async function abrirApp(db, { largura = 1280, altura = 900, semSessao = f
     if (url.pathname.startsWith('/auth/v1/')) return route.fulfill({ json: {} });
     if (url.pathname.startsWith('/rest/v1/rpc/')) { const nome = url.pathname.split('/').pop(); escritas.push({ tabela: 'rpc.' + nome, metodo: req.method(), corpo: req.postData() });
       const falha = (db.__rpcErro || {})[nome]; if (falha) return route.fulfill({ status: 400, json: { code: 'P0001', message: falha } });
-      return route.fulfill({ json: (db.__rpc || {})[nome] ?? null }); }
+      // db.__rpc[nome] pode ser uma função dos argumentos (ex.: a prévia refeita com outro valor)
+      const v = (db.__rpc || {})[nome]; let args = {}; try { args = JSON.parse(req.postData() || '{}'); } catch (e) {}
+      return route.fulfill({ json: (typeof v === 'function' ? v(args) : v) ?? null }); }
     if (url.pathname.startsWith('/functions/v1/')) return route.fulfill({ json: {} });
     const tabela = url.pathname.replace('/rest/v1/', '');
     if (req.method() !== 'GET') {

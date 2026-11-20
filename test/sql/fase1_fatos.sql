@@ -147,9 +147,11 @@ select teste.igual('Quem é de fora não vê nada do Time F', $q$select (select 
 select teste.como('c0000000-0000-0000-0000-0000000000c1');
 select teste.ok('Admin registra a saída da Maria', $q$select public.registrar_saida('f0000000-0000-0000-0000-0000000000f5')$q$);
 select teste.como('c0000000-0000-0000-0000-0000000000c5');
-select teste.igual('Maria, depois de sair, não lê mais nada do time', $q$select (select count(*) from public.tournaments)+(select count(*) from public.pool_config)+(select count(*) from public.unidade)||''$q$, '0');
+select teste.igual('Maria, depois de sair, não lê mais nada do time', $q$select (select count(*) from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1')+(select count(*) from public.pool_config where workspace_id='d0000000-0000-0000-0000-0000000000d1')+(select count(*) from public.unidade)||''$q$, '0');
+select teste.igual('…e vê os torneios dela na conta individual nova (saída opção B: o histórico vai com ela)', $q$select count(*)||'' from public.tournaments where player='Maria'$q$, '1');
 reset role;
-select teste.igual('…e os torneios dela continuam no time, na Reta B', $q$select string_agg(u.nome, ',') from public.tournaments t join public.unidade u on u.id=t.unidade_id where t.player='Maria'$q$, 'Reta B');
+select teste.igual('…o time não ficou com os torneios dela; a conta nova é dela', $q$select (select count(*) from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1' and lower(player)='maria')||'/'||
+  (select w.kind||':'||m.role from public.tournaments t join public.workspaces w on w.id=t.workspace_id join public.workspace_members m on m.workspace_id=w.id where t.player='Maria' and m.user_id='c0000000-0000-0000-0000-0000000000c5')$q$, '0/solo:owner');
 
 -- ---------- pool de sócios: estruturar sem mudar nada do que eles veem ----------
 insert into public.tournaments(workspace_id,entry_date,player,buyin,prize) values

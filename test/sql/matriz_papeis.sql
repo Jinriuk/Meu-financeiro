@@ -243,15 +243,17 @@ select teste.igual('o J1 vê os 3 torneios, as 3 salas e o movimento com o nome 
   $q$select (select count(*) from public.tournaments where player = 'Joga Um B')||'/'||(select count(*) from public.player_wallets where player = 'Joga Um B')||'/'||
             (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/3/1 antigo:0');
 
--- ---------- 11) saída: o aluno sai; a gestão continua com o histórico ----------
+-- ---------- 11) saída (opção B): o aluno sai e leva o histórico detalhado; o time fica com o acerto ----------
 select teste.como('ac000000-0000-0000-0000-0000000000c2');
 select teste.ok('J2 lança um torneio', $q$insert into public.tournaments(entry_date, player, buyin, prize) values (current_date - 1, 'Joga Dois', 3, 0)$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000b2');
 select teste.erro('P2 (sem gerir pessoas) NÃO registra saída', $q$select public.registrar_saida(teste.id('pJ2'))$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
 select teste.ok('A registra a saída do J2', $q$select public.registrar_saida(teste.id('pJ2'))$q$);
-select teste.igual('torneio do J2 depois da saída: a gestão guarda; o J2 perde o acesso ao time',
-  $q$select teste.quem_ve($c$select count(*)::text from public.tournaments where pessoa_id = teste.id('pJ2')$c$)$q$, 'A=1 F=0 P1=0 P2=1 J1=0 J2=0 X=0');
+select teste.igual('torneio do J2 depois da saída: foi com ele pra conta individual nova; ninguém do time vê',
+  $q$select teste.quem_ve($c$select count(*)::text from public.tournaments where player = 'Joga Dois'$c$)$q$, 'A=0 F=0 P1=0 P2=0 J1=0 J2=1 X=0');
+select teste.igual('…o acerto da saída fica com quem vê dinheiro na reta dele (e com ele)',
+  $q$select teste.quem_ve($c$select count(*)::text from public.acerto_saida where pessoa_id = teste.id('pJ2')$c$)$q$, 'A=1 F=1 P1=0 P2=1 J1=0 J2=1 X=0');
 
 -- ---------- 12) avisos são de cada um ----------
 select teste.igual('ninguém lê aviso de outra pessoa', $q$select teste.quem_ve($c$select (count(*) filter (where user_id <> auth.uid()))::text from public.aviso$c$)$q$,
