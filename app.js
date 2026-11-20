@@ -2731,55 +2731,88 @@ const Empty = ({
     fontSize: 14
   }
 }, children);
-// marca: clientes (solo) veem a logo GrinderBank; a pool interna (team) mantém a ficha genérica
+// marca do topo: no time, a logo e o nome DELE, com o GrinderBank pequeno embaixo; fora de time, o GrinderBank
 const Brand = ({
   small,
-  team
-}) => /*#__PURE__*/React.createElement("div", {
-  style: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10
-  }
-}, team ? /*#__PURE__*/React.createElement("div", {
-  style: {
-    width: small ? 34 : 38,
-    height: small ? 34 : 38,
-    borderRadius: 12,
-    background: 'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',
-    boxShadow: 'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',
-    display: 'grid',
-    placeItems: 'center',
-    color: '#fff'
-  }
-}, /*#__PURE__*/React.createElement(IcoChip, {
-  s: small ? 19 : 21
-})) : /*#__PURE__*/React.createElement("img", {
-  src: "icon-192.png",
-  alt: "GrinderBank",
-  width: small ? 34 : 38,
-  height: small ? 34 : 38,
-  style: {
-    borderRadius: 11,
-    display: 'block',
-    boxShadow: '0 4px 12px -6px rgba(76,62,146,.5)'
-  }
-}), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-  style: {
-    fontFamily: "'Space Grotesk',sans-serif",
-    fontWeight: 700,
-    fontSize: small ? 17 : 19,
-    lineHeight: 1,
-    letterSpacing: '-0.02em'
-  }
-}, team ? 'Pool de Poker' : 'GrinderBank'), /*#__PURE__*/React.createElement("div", {
-  style: {
-    fontSize: 11.5,
-    color: C.inkSoft,
-    fontWeight: 600,
-    letterSpacing: '.01em'
-  }
-}, team ? 'staking · make-up · saques' : 'seu grind sob controle')));
+  team,
+  marca
+}) => {
+  const lado = small ? 34 : 38,
+    nome = team ? marca && marca.nome || 'Time' : 'GrinderBank';
+  return /*#__PURE__*/React.createElement("div", {
+    "data-marca": team ? nome : undefined,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      minWidth: 0
+    }
+  }, team ? marca && marca.logo ? /*#__PURE__*/React.createElement("img", {
+    src: marca.logo,
+    alt: nome,
+    width: lado,
+    height: lado,
+    "data-marca-logo": true,
+    style: {
+      borderRadius: 11,
+      display: 'block',
+      objectFit: 'contain',
+      background: '#fff',
+      boxShadow: '0 4px 12px -6px rgba(76,62,146,.5)',
+      flexShrink: 0
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: lado,
+      height: lado,
+      borderRadius: 12,
+      flexShrink: 0,
+      background: 'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',
+      display: 'grid',
+      placeItems: 'center',
+      color: '#fff',
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontWeight: 700,
+      fontSize: small ? 16 : 18
+    }
+  }, String(nome).trim().charAt(0).toUpperCase() || /*#__PURE__*/React.createElement(IcoChip, {
+    s: small ? 19 : 21
+  })) : /*#__PURE__*/React.createElement("img", {
+    src: "icon-192.png",
+    alt: "GrinderBank",
+    width: lado,
+    height: lado,
+    style: {
+      borderRadius: 11,
+      display: 'block',
+      boxShadow: '0 4px 12px -6px rgba(76,62,146,.5)'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontWeight: 700,
+      fontSize: small ? nome.length > 18 ? 15 : 17 : nome.length > 13 ? 16 : 19,
+      lineHeight: 1.05,
+      letterSpacing: '-0.02em',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      maxWidth: 170
+    }
+  }, nome), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.inkSoft,
+      fontWeight: 600,
+      letterSpacing: '.01em'
+    }
+  }, team ? 'por GrinderBank' : 'seu grind sob controle')));
+};
 function Badge({
   text
 }) {
@@ -4924,13 +4957,26 @@ function Login({
       padding: '12px 14px',
       marginBottom: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, conv.marca_logo && /*#__PURE__*/React.createElement("img", {
+    src: conv.marca_logo,
+    alt: conv.marca_nome || conv.time,
+    "data-convite-logo": true,
+    width: 56,
+    height: 56,
+    style: {
+      display: 'block',
+      margin: '0 auto 8px',
+      borderRadius: 14,
+      objectFit: 'contain',
+      background: '#fff'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 800,
       fontSize: 14,
       color: P
     }
-  }, "Convite pro time ", conv.time), /*#__PURE__*/React.createElement("div", {
+  }, "Convite pro time ", conv.marca_nome || conv.time), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.ink,
@@ -8233,13 +8279,165 @@ function ContratoModal({
   }, "Salvar contrato")));
 }
 
+// a logo enviada vira uma imagem pequena (cabe em 256×256) antes de ir pro servidor: WebP quando o navegador sabe, senão PNG
+function reduzirLogo(file) {
+  return new Promise((ok, erro) => {
+    if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) return erro(new Error('Use uma imagem PNG, JPG ou WebP.'));
+    const fr = new FileReader();
+    fr.onerror = () => erro(new Error('Não consegui ler a imagem.'));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => erro(new Error('Não consegui abrir a imagem.'));
+      img.onload = () => {
+        const k = Math.min(1, 256 / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round(img.width * k)),
+          h = Math.max(1, Math.round(img.height * k));
+        const cv = document.createElement('canvas');
+        cv.width = w;
+        cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        let url = cv.toDataURL('image/webp', 0.9);
+        if (!/^data:image\/webp/.test(url)) url = cv.toDataURL('image/png');
+        if (url.length > 400000) return erro(new Error('A imagem ficou grande demais. Tente uma mais simples.'));
+        ok(url);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+// nome e logo do time (o admin em Regras do time; o gestor geral na Plataforma)
+function MarcaEditor({
+  nomeTime,
+  atual,
+  temLogo,
+  onSalvar
+}) {
+  const logo0 = atual && atual.logo || (temLogo ? '__atual' : null); // '__atual': o time tem logo mas quem edita não vê a imagem (gestor geral)
+  const [nome, setNome] = useState(atual && atual.nome || '');
+  const [logo, setLogo] = useState(logo0);
+  const [erro, setErro] = useState('');
+  const [indo, setIndo] = useState(false);
+  const mudou = nome.trim() !== (atual && atual.nome || '').trim() || logo !== logo0;
+  return /*#__PURE__*/React.createElement("div", {
+    "data-marca-editor": true,
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12
+    }
+  }, logo && logo !== '__atual' ? /*#__PURE__*/React.createElement("img", {
+    src: logo,
+    alt: "Logo do time",
+    "data-marca-previa": true,
+    width: 64,
+    height: 64,
+    style: {
+      borderRadius: 14,
+      objectFit: 'contain',
+      background: '#fff',
+      border: `1px solid ${C.border}`
+    }
+  }) : /*#__PURE__*/React.createElement("div", {
+    "data-marca-sem-previa": true,
+    style: {
+      width: 64,
+      height: 64,
+      borderRadius: 14,
+      border: `1.5px dashed ${C.border}`,
+      display: 'grid',
+      placeItems: 'center',
+      color: C.inkSoft,
+      fontSize: 11,
+      textAlign: 'center'
+    }
+  }, logo ? 'tem logo' : 'sem logo'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...btnS,
+      display: 'inline-block'
+    }
+  }, logo ? 'Trocar a logo' : 'Enviar a logo', /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "image/png,image/jpeg,image/webp",
+    "data-marca-arquivo": true,
+    style: {
+      display: 'none'
+    },
+    onChange: async e => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      setErro('');
+      try {
+        setLogo(await reduzirLogo(f));
+      } catch (x) {
+        setErro(x.message);
+      }
+    }
+  })), logo && /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => setLogo(null)
+  }, "Tirar a logo"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "mc-nome"
+  }, "Nome que aparece no app"), /*#__PURE__*/React.createElement("input", {
+    id: "mc-nome",
+    "data-marca-nome": true,
+    style: inputStyle,
+    maxLength: 40,
+    value: nome,
+    placeholder: nomeTime || 'Nome do time',
+    onChange: e => setNome(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "Aparece no topo do app pra todo mundo do time e no link de convite. O GrinderBank fica pequeno, embaixo do nome. A imagem \xE9 reduzida antes de ir (PNG, JPG ou WebP)."), erro && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 13,
+      fontWeight: 600
+    }
+  }, erro), /*#__PURE__*/React.createElement("button", {
+    disabled: !mudou || indo,
+    style: {
+      ...btnP,
+      alignSelf: 'flex-start',
+      opacity: mudou && !indo ? 1 : .5
+    },
+    onClick: async () => {
+      setIndo(true);
+      await onSalvar({
+        p_nome: nome.trim(),
+        p_logo: logo === '__atual' ? null : logo || ''
+      });
+      setIndo(false);
+    }
+  }, "Salvar marca"));
+}
+
 // gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
 // registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
 const ACAO_ROTULO = {
   criar_time: 'criou o time',
   mudar_assentos: 'mudou os assentos',
-  novo_link_admin: 'gerou link novo do admin'
+  novo_link_admin: 'gerou link novo do admin',
+  marca: 'mudou a marca'
 };
+const PRECO_JOGADOR_USD = 5; // mensalidade por jogador ativo (preço do dono, 20/11); a cobrança é por fora, aqui é só a conta
 function PlataformaApp() {
   const [times, setTimes] = useState(null);
   const [acoes, setAcoes] = useState([]);
@@ -8251,6 +8449,7 @@ function PlataformaApp() {
   });
   const [link, setLink] = useState(null);
   const [perg, setPerg] = useState(null);
+  const [marcaDe, setMarcaDe] = useState(null);
   const carregar = async () => {
     const [t, a] = await Promise.all([sb.rpc('times_da_plataforma'), sb.rpc('acoes_plataforma', {
       p_limite: 30
@@ -8421,7 +8620,41 @@ function PlataformaApp() {
       color: C.inkSoft,
       fontWeight: 500
     }
-  }, times.length)), times == null ? /*#__PURE__*/React.createElement("div", {
+  }, times.length)), times && times.length > 0 && (() => {
+    const jog = times.reduce((s, t) => s + (t.jogadores || 0), 0);
+    return /*#__PURE__*/React.createElement("div", {
+      "data-mensalidade-total": true,
+      style: {
+        display: 'flex',
+        gap: 18,
+        flexWrap: 'wrap',
+        alignItems: 'baseline',
+        margin: '0 0 12px',
+        padding: '12px 14px',
+        borderRadius: 13,
+        background: C.greenSoft
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.inkSoft,
+        fontWeight: 600
+      }
+    }, "Mensalidade de todos os times"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontFamily: "'Space Grotesk',sans-serif",
+        fontSize: 22,
+        fontWeight: 700,
+        color: C.greenMid
+      }
+    }, "US$ ", jog * PRECO_JOGADOR_USD, "/m\xEAs")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        lineHeight: 1.5
+      }
+    }, jog, " jogador", jog === 1 ? '' : 'es', " ativo", jog === 1 ? '' : 's', " \xD7 US$ ", PRECO_JOGADOR_USD, ". Conta s\xF3 quem joga hoje (professor, financeiro e admin que n\xE3o jogam n\xE3o entram). A cobran\xE7a \xE9 por fora: aqui \xE9 s\xF3 a conta."));
+  })(), times == null ? /*#__PURE__*/React.createElement("div", {
     className: "spin"
   }) : !times.length ? /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8438,7 +8671,7 @@ function PlataformaApp() {
       width: '100%',
       borderCollapse: 'collapse'
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Time', 'Pessoas', 'Jogadores', 'Assentos', 'Admin', 'Último lançamento', ''].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Time', 'Pessoas', 'Jogadores', 'Mensalidade', 'Assentos', 'Admin', 'Último lançamento', ''].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: thS
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, times.map(t => /*#__PURE__*/React.createElement("tr", {
@@ -8454,7 +8687,13 @@ function PlataformaApp() {
       fontSize: 12,
       color: C.inkSoft
     }
-  }, " \xB7 pool") : null), /*#__PURE__*/React.createElement("td", {
+  }, " \xB7 pool") : null, t.marca_nome && t.marca_nome !== t.nome || t.tem_logo ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      fontWeight: 500
+    }
+  }, t.marca_nome && t.marca_nome !== t.nome ? `aparece como ${t.marca_nome}` : '', t.marca_nome && t.marca_nome !== t.nome && t.tem_logo ? ' · ' : '', t.tem_logo ? 'com logo' : '') : null), /*#__PURE__*/React.createElement("td", {
     style: tdS
   }, t.pessoas, t.convidados ? /*#__PURE__*/React.createElement("span", {
     style: {
@@ -8464,6 +8703,9 @@ function PlataformaApp() {
   }, " (", t.convidados, " convidad", t.convidados > 1 ? 'os' : 'o', ")") : null), /*#__PURE__*/React.createElement("td", {
     style: tdS
   }, t.jogadores), /*#__PURE__*/React.createElement("td", {
+    style: tdS,
+    "data-mensalidade": true
+  }, "US$ ", (t.jogadores || 0) * PRECO_JOGADOR_USD), /*#__PURE__*/React.createElement("td", {
     style: tdS
   }, t.assentos == null ? 'sem limite' : t.assentos), /*#__PURE__*/React.createElement("td", {
     style: tdS
@@ -8479,6 +8721,9 @@ function PlataformaApp() {
       gap: 6
     }
   }, /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => setMarcaDe(t)
+  }, "Marca"), /*#__PURE__*/React.createElement("button", {
     style: btnS,
     onClick: () => setPerg({
       label: `Assentos do ${t.nome}`,
@@ -8527,7 +8772,35 @@ function PlataformaApp() {
     currentValue: perg.valor,
     onClose: () => setPerg(null),
     onSave: perg.onSave
-  }));
+  }), marcaDe && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setMarcaDe(null),
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-marca-modal": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(`Marca do ${marcaDe.nome}`, () => setMarcaDe(null)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "Voc\xEA n\xE3o v\xEA a logo atual (os dados do time s\xE3o s\xF3 do time). Pode trocar, tirar ou mudar o nome; fica no registro."), /*#__PURE__*/React.createElement(MarcaEditor, {
+    nomeTime: marcaDe.nome,
+    atual: {
+      nome: marcaDe.marca_nome || '',
+      logo: null
+    },
+    temLogo: !!marcaDe.tem_logo,
+    onSalvar: async a => {
+      const r = await rodar('definir_marca', {
+        ...a,
+        p_ws: marcaDe.id
+      }, `Marca do ${marcaDe.nome} salva.`);
+      if (r) setMarcaDe(null);
+    }
+  }))));
 }
 
 // escolhe a sala: uma das que o jogador já tem, ou outra pelo nome (capital, reload)
@@ -9156,7 +9429,10 @@ function TimeApp({
   config,
   banca,
   onVerJogador,
-  onIr
+  onIr,
+  marca,
+  nomeTime,
+  onMarca
 }) {
   const uid = session.user.id;
   const [d, setD] = useState(null);
@@ -12152,7 +12428,24 @@ function TimeApp({
         flexDirection: 'column',
         gap: 16
       }
-    }, header('Regras do time'), avisoBox, /*#__PURE__*/React.createElement(Card, {
+    }, header('Regras do time'), avisoBox, raiz && pode('administrar', raiz.id) && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      },
+      "data-marca-time": true
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Marca do time"), /*#__PURE__*/React.createElement(MarcaEditor, {
+      nomeTime: nomeTime,
+      atual: marca,
+      onSalvar: async a => {
+        const r = await rodar('definir_marca', {
+          ...a,
+          p_ws: null
+        }, 'Marca do time salva.');
+        if (r && onMarca) onMarca();
+      }
+    })), /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -13300,6 +13593,10 @@ function Dashboard({
   // time de staking com N jogadores (fase 1): cada aluno vê só os próprios dados, com o layout de um jogador;
   // gestor escolhe o aluno. O pool de 2 (kind 'team') continua igual.
   const modoTime = !!ws && ws.kind === 'time';
+  const marcaTime = ws ? {
+    nome: ws.marca_nome || ws.name,
+    logo: ws.marca_logo || null
+  } : null; // logo e nome do time no topo
   const solo = soloConta || modoTime; // layout de UM jogador (conta individual ou aluno do time)
   const [configRaw, setConfig] = useState(null);
   const [toursRaw, setTours] = useState([]);
@@ -15584,7 +15881,8 @@ function Dashboard({
       gap: 6
     }
   }, /*#__PURE__*/React.createElement(Brand, {
-    team: !solo
+    team: !soloConta,
+    marca: marcaTime
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 6
@@ -15618,7 +15916,7 @@ function Dashboard({
     style: {
       fontWeight: 800
     }
-  }, ws?.name || 'Time', " \xB7 ", timeGente.souAdmin ? 'admin' : PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase() || 'gestão'), /*#__PURE__*/React.createElement("div", {
+  }, marcaTime?.nome || 'Time', " \xB7 ", timeGente.souAdmin ? 'admin' : PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase() || 'gestão'), /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.inkSoft,
       marginTop: 2
@@ -15673,7 +15971,8 @@ function Dashboard({
     className: "bottomnav"
   }, /*#__PURE__*/React.createElement(Brand, {
     small: true,
-    team: !solo
+    team: !soloConta,
+    marca: marcaTime
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -19316,7 +19615,13 @@ function Dashboard({
     config: config,
     banca: bancaAtual,
     onVerJogador: abrirAluno,
-    onIr: setView
+    onIr: setView,
+    marca: ws ? {
+      nome: ws.marca_nome || '',
+      logo: ws.marca_logo || null
+    } : null,
+    nomeTime: ws?.name,
+    onMarca: loadAll
   }), (view === 'config' || view === 'g_regras') && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: view === 'g_regras' ? {

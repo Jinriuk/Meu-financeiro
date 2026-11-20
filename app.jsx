@@ -1248,13 +1248,17 @@ function NavBtn({Icon,label,active,onClick,mobile}){
 }
 const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
-// marca: clientes (solo) veem a logo GrinderBank; a pool interna (team) mantém a ficha genérica
-const Brand = ({small,team}) => <div style={{display:'flex',alignItems:'center',gap:10}}>
+// marca do topo: no time, a logo e o nome DELE, com o GrinderBank pequeno embaixo; fora de time, o GrinderBank
+const Brand = ({small,team,marca}) => { const lado=small?34:38, nome=team?((marca&&marca.nome)||'Time'):'GrinderBank';
+  return <div data-marca={team?nome:undefined} style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
   {team
-    ? <div style={{width:small?34:38,height:small?34:38,borderRadius:12,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff'}}><IcoChip s={small?19:21}/></div>
-    : <img src="icon-192.png" alt="GrinderBank" width={small?34:38} height={small?34:38} style={{borderRadius:11,display:'block',boxShadow:'0 4px 12px -6px rgba(76,62,146,.5)'}}/>}
-  <div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?17:19,lineHeight:1,letterSpacing:'-0.02em'}}>{team?'Pool de Poker':'GrinderBank'}</div><div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'staking · make-up · saques':'seu grind sob controle'}</div></div>
-</div>;
+    ? (marca&&marca.logo
+      ? <img src={marca.logo} alt={nome} width={lado} height={lado} data-marca-logo style={{borderRadius:11,display:'block',objectFit:'contain',background:'#fff',boxShadow:'0 4px 12px -6px rgba(76,62,146,.5)',flexShrink:0}}/>
+      : <div style={{width:lado,height:lado,borderRadius:12,flexShrink:0,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff',fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?16:18}}>{String(nome).trim().charAt(0).toUpperCase()||<IcoChip s={small?19:21}/>}</div>)
+    : <img src="icon-192.png" alt="GrinderBank" width={lado} height={lado} style={{borderRadius:11,display:'block',boxShadow:'0 4px 12px -6px rgba(76,62,146,.5)'}}/>}
+  <div style={{minWidth:0}}><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?(nome.length>18?15:17):(nome.length>13?16:19),lineHeight:1.05,letterSpacing:'-0.02em',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:170}}>{nome}</div>
+    <div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'por GrinderBank':'seu grind sob controle'}</div></div>
+</div>; };
 function Badge({text}){
   const t=STATUS_TONE[text]||{tone:C.inkSoft,bg:C.bg};
   return <span style={{padding:'3px 10px',borderRadius:99,fontSize:11,fontWeight:800,color:t.tone,background:t.bg,whiteSpace:'nowrap'}}>{text}</span>;
@@ -1818,7 +1822,8 @@ function Login({aviso}){
       {aviso&&<div data-link-aviso style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14,fontSize:13,color:C.ink,lineHeight:1.5}}>{aviso}</div>}
       {conv&&(conv.valido
         ?<div data-convite="ok" style={{background:C.plumSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
-          <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.time}</div>
+          {conv.marca_logo&&<img src={conv.marca_logo} alt={conv.marca_nome||conv.time} data-convite-logo width={56} height={56} style={{display:'block',margin:'0 auto 8px',borderRadius:14,objectFit:'contain',background:'#fff'}}/>}
+          <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.marca_nome||conv.time}</div>
           <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{(()=>{ const pap=papelDe(conv.capacidades||[]);
             if(pap) return <>Você entra como <b>{conv.pessoa}</b>, <b>{(PAPEL_ROT[pap]||'gestão').toLowerCase()}</b> do time{conv.joga_em?<>, e também joga na <b>{conv.joga_em}</b></>:null}.</>;
             return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
@@ -2493,12 +2498,51 @@ function ContratoModal({atual,titulo,onSalvar,onClose}){
   </div>;
 }
 
+// a logo enviada vira uma imagem pequena (cabe em 256×256) antes de ir pro servidor: WebP quando o navegador sabe, senão PNG
+function reduzirLogo(file){ return new Promise((ok,erro)=>{
+  if(!file||!/^image\/(png|jpeg|webp)$/.test(file.type)) return erro(new Error('Use uma imagem PNG, JPG ou WebP.'));
+  const fr=new FileReader(); fr.onerror=()=>erro(new Error('Não consegui ler a imagem.'));
+  fr.onload=()=>{ const img=new Image(); img.onerror=()=>erro(new Error('Não consegui abrir a imagem.'));
+    img.onload=()=>{ const k=Math.min(1,256/Math.max(img.width||1,img.height||1)); const w=Math.max(1,Math.round(img.width*k)), h=Math.max(1,Math.round(img.height*k));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
+      let url=cv.toDataURL('image/webp',0.9); if(!/^data:image\/webp/.test(url)) url=cv.toDataURL('image/png');
+      if(url.length>400000) return erro(new Error('A imagem ficou grande demais. Tente uma mais simples.'));
+      ok(url); };
+    img.src=fr.result; };
+  fr.readAsDataURL(file); }); }
+// nome e logo do time (o admin em Regras do time; o gestor geral na Plataforma)
+function MarcaEditor({nomeTime,atual,temLogo,onSalvar}){
+  const logo0=(atual&&atual.logo)||(temLogo?'__atual':null);   // '__atual': o time tem logo mas quem edita não vê a imagem (gestor geral)
+  const [nome,setNome]=useState((atual&&atual.nome)||''); const [logo,setLogo]=useState(logo0);
+  const [erro,setErro]=useState(''); const [indo,setIndo]=useState(false);
+  const mudou=nome.trim()!==((atual&&atual.nome)||'').trim()||logo!==logo0;
+  return <div data-marca-editor style={{display:'flex',flexDirection:'column',gap:10}}>
+    <div style={{display:'flex',alignItems:'center',gap:12}}>
+      {logo&&logo!=='__atual'?<img src={logo} alt="Logo do time" data-marca-previa width={64} height={64} style={{borderRadius:14,objectFit:'contain',background:'#fff',border:`1px solid ${C.border}`}}/>
+        :<div data-marca-sem-previa style={{width:64,height:64,borderRadius:14,border:`1.5px dashed ${C.border}`,display:'grid',placeItems:'center',color:C.inkSoft,fontSize:11,textAlign:'center'}}>{logo?'tem logo':'sem logo'}</div>}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+        <label style={{...btnS,display:'inline-block'}}>{logo?'Trocar a logo':'Enviar a logo'}
+          <input type="file" accept="image/png,image/jpeg,image/webp" data-marca-arquivo style={{display:'none'}}
+            onChange={async e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; setErro(''); try{ setLogo(await reduzirLogo(f)); }catch(x){ setErro(x.message); } }}/></label>
+        {logo&&<button style={btnS} onClick={()=>setLogo(null)}>Tirar a logo</button>}
+      </div></div>
+    <div><label style={labelStyle} htmlFor="mc-nome">Nome que aparece no app</label>
+      <input id="mc-nome" data-marca-nome style={inputStyle} maxLength={40} value={nome} placeholder={nomeTime||'Nome do time'} onChange={e=>setNome(e.target.value)}/></div>
+    <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Aparece no topo do app pra todo mundo do time e no link de convite. O GrinderBank fica pequeno, embaixo do nome. A imagem é reduzida antes de ir (PNG, JPG ou WebP).</div>
+    {erro&&<div style={{color:C.red,fontSize:13,fontWeight:600}}>{erro}</div>}
+    <button disabled={!mudou||indo} style={{...btnP,alignSelf:'flex-start',opacity:mudou&&!indo?1:.5}}
+      onClick={async()=>{ setIndo(true); await onSalvar({p_nome:nome.trim(),p_logo:logo==='__atual'?null:(logo||'')}); setIndo(false); }}>Salvar marca</button>
+  </div>;
+}
+
 // gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
 // registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
-const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin'};
+const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin',marca:'mudou a marca'};
+const PRECO_JOGADOR_USD=5;   // mensalidade por jogador ativo (preço do dono, 20/11); a cobrança é por fora, aqui é só a conta
 function PlataformaApp(){
   const [times,setTimes]=useState(null); const [acoes,setAcoes]=useState([]); const [aviso,setAviso]=useState(null);
   const [novo,setNovo]=useState({nome:'',assentos:'',admin:''}); const [link,setLink]=useState(null); const [perg,setPerg]=useState(null);
+  const [marcaDe,setMarcaDe]=useState(null);
   const carregar=async()=>{ const [t,a]=await Promise.all([sb.rpc('times_da_plataforma'),sb.rpc('acoes_plataforma',{p_limite:30})]);
     if(t.error){ setAviso({erro:true,texto:t.error.message||'Não consegui carregar os times.'}); setTimes([]); } else setTimes(t.data||[]);
     setAcoes(a.error?[]:(a.data||[])); };
@@ -2528,17 +2572,26 @@ function PlataformaApp(){
     </Card>
     <Card style={{padding:20}}>
       <h3 style={tituloS}>Times {times&&<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{times.length}</span>}</h3>
+      {times&&times.length>0&&(()=>{ const jog=times.reduce((s,t)=>s+(t.jogadores||0),0);
+        return <div data-mensalidade-total style={{display:'flex',gap:18,flexWrap:'wrap',alignItems:'baseline',margin:'0 0 12px',padding:'12px 14px',borderRadius:13,background:C.greenSoft}}>
+          <div><div style={{fontSize:12,color:C.inkSoft,fontWeight:600}}>Mensalidade de todos os times</div>
+            <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,color:C.greenMid}}>US$ {jog*PRECO_JOGADOR_USD}/mês</div></div>
+          <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>{jog} jogador{jog===1?'':'es'} ativo{jog===1?'':'s'} × US$ {PRECO_JOGADOR_USD}. Conta só quem joga hoje (professor, financeiro e admin que não jogam não entram). A cobrança é por fora: aqui é só a conta.</div>
+        </div>; })()}
       {times==null?<div className="spin"/>:!times.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhum time ainda.</div>:
       <div style={{overflowX:'auto'}}><table data-times style={{width:'100%',borderCollapse:'collapse'}}>
-        <thead><tr>{['Time','Pessoas','Jogadores','Assentos','Admin','Último lançamento',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+        <thead><tr>{['Time','Pessoas','Jogadores','Mensalidade','Assentos','Admin','Último lançamento',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
         <tbody>{times.map(t=><tr key={t.id} data-time-plataforma={t.nome}>
-          <td style={{...tdS,fontWeight:700}}>{t.nome}{t.tipo==='pool'?<span style={{fontSize:12,color:C.inkSoft}}> · pool</span>:null}</td>
+          <td style={{...tdS,fontWeight:700}}>{t.nome}{t.tipo==='pool'?<span style={{fontSize:12,color:C.inkSoft}}> · pool</span>:null}
+            {(t.marca_nome&&t.marca_nome!==t.nome)||t.tem_logo?<div style={{fontSize:12,color:C.inkSoft,fontWeight:500}}>{t.marca_nome&&t.marca_nome!==t.nome?`aparece como ${t.marca_nome}`:''}{t.marca_nome&&t.marca_nome!==t.nome&&t.tem_logo?' · ':''}{t.tem_logo?'com logo':''}</div>:null}</td>
           <td style={tdS}>{t.pessoas}{t.convidados?<span style={{fontSize:12,color:C.inkSoft}}> ({t.convidados} convidad{t.convidados>1?'os':'o'})</span>:null}</td>
           <td style={tdS}>{t.jogadores}</td>
+          <td style={tdS} data-mensalidade>US$ {(t.jogadores||0)*PRECO_JOGADOR_USD}</td>
           <td style={tdS}>{t.assentos==null?'sem limite':t.assentos}</td>
           <td style={tdS}>{t.admins||'—'}{!t.tem_dono?<> <Tag tom="warn">sem dono</Tag></>:null}</td>
           <td style={tdS}>{t.ultimo_lancamento?dataBR(t.ultimo_lancamento):'—'}</td>
           <td style={tdS}><div style={{display:'flex',gap:6}}>
+            <button style={btnS} onClick={()=>setMarcaDe(t)}>Marca</button>
             <button style={btnS} onClick={()=>setPerg({label:`Assentos do ${t.nome}`,hint:'Convite além disso é recusado no servidor. 0 = sem limite.',kind:'money',valor:t.assentos??0,
               onSave:async v=>{ setPerg(null); const n=Math.round(Number(v)||0); await rodar('mudar_assentos',{p_ws:t.id,p_assentos:n>0?n:null},`Assentos do ${t.nome}: ${n>0?n:'sem limite'}.`); }})}>Assentos</button>
             {t.admin_pendente&&<button style={btnS} onClick={async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null); if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }}>Link do admin</button>}
@@ -2550,6 +2603,12 @@ function PlataformaApp(){
         <b>{dataBR(a.criado_em)}</b> · {ACAO_ROTULO[a.acao]||a.acao}{a.time_nome?` · ${a.time_nome}`:''}{a.acao==='mudar_assentos'&&a.detalhes?` (${a.detalhes.antes??'sem limite'} → ${a.detalhes.depois??'sem limite'})`:''}</div>)}
     </Card>}
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+    {marcaDe&&<div onClick={()=>setMarcaDe(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-marca-modal className="ftfade" style={caixaModal}>
+      {topoModal(`Marca do ${marcaDe.nome}`,()=>setMarcaDe(null))}
+      <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Você não vê a logo atual (os dados do time são só do time). Pode trocar, tirar ou mudar o nome; fica no registro.</div>
+      <MarcaEditor nomeTime={marcaDe.nome} atual={{nome:marcaDe.marca_nome||'',logo:null}} temLogo={!!marcaDe.tem_logo}
+        onSalvar={async a=>{ const r=await rodar('definir_marca',{...a,p_ws:marcaDe.id},`Marca do ${marcaDe.nome} salva.`); if(r) setMarcaDe(null); }}/>
+    </div></div>}
   </div>;
 }
 
@@ -2682,7 +2741,7 @@ function SaidaModal({nome,previa,onBanca,onConfirmar,onClose}){
 
 /* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
    Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
-function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
+function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeTime,onMarca}){
   const uid=session.user.id;
   const [d,setD]=useState(null);
   const [cortes,setCortes]=useState({});       // conferência da planilha: até que dia os saldos dela valem (por planilha)
@@ -3351,6 +3410,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
     return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
       {header('Regras do time')}
       {avisoBox}
+      {raiz&&pode('administrar',raiz.id)&&<Card style={{padding:20}} data-marca-time>
+        <h3 style={tituloS}>Marca do time</h3>
+        <MarcaEditor nomeTime={nomeTime} atual={marca} onSalvar={async a=>{ const r=await rodar('definir_marca',{...a,p_ws:null},'Marca do time salva.'); if(r&&onMarca) onMarca(); }}/>
+      </Card>}
       <Card style={{padding:20}}>
         <h3 style={tituloS}>Contrato</h3>
         <div data-contrato style={{fontSize:14,marginBottom:12,lineHeight:1.5}}>{faixasTexto(contratoRaiz?.faixas)}</div>
@@ -3598,6 +3661,7 @@ function Dashboard({session,profile}){
   // time de staking com N jogadores (fase 1): cada aluno vê só os próprios dados, com o layout de um jogador;
   // gestor escolhe o aluno. O pool de 2 (kind 'team') continua igual.
   const modoTime = !!ws&&ws.kind==='time';
+  const marcaTime = ws?{nome:ws.marca_nome||ws.name,logo:ws.marca_logo||null}:null;   // logo e nome do time no topo
   const solo = soloConta||modoTime;                // layout de UM jogador (conta individual ou aluno do time)
   const [configRaw,setConfig]=useState(null);
   const [toursRaw,setTours]=useState([]);
@@ -4589,12 +4653,12 @@ function Dashboard({session,profile}){
   return <div className="wrap">
     {/* sidebar desktop */}
     <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
-      <Brand team={!solo}/><div style={{height:6}}/>
+      <Brand team={!soloConta} marca={marcaTime}/><div style={{height:6}}/>
       {podeTrocarModo&&<ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo}/>}
       {nav.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>setView(n.id)}/>)}
       <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
         {gestaoAtiva?<div style={{padding:14,borderRadius:16,background:C.plumSoft,fontSize:12.5,color:P,lineHeight:1.45}}>
-          <div style={{fontWeight:800}}>{ws?.name||'Time'} · {timeGente.souAdmin?'admin':PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase()||'gestão'}</div>
+          <div style={{fontWeight:800}}>{marcaTime?.nome||'Time'} · {timeGente.souAdmin?'admin':PAPEL_ROT[papelDe(timeGente.caps)]?.toLowerCase()||'gestão'}</div>
           <div style={{color:C.inkSoft,marginTop:2}}>{timeGente.joga?'Também joga: troque em Meu jogo.':'Esta conta só gere o time.'}</div></div>
         :<div style={{padding:15,borderRadius:16,background:C.plumSoft}}>
           <div style={{fontSize:12.5,color:P,fontWeight:700}}>{somenteLeitura?`Banca de ${alunoAberto}`:'Banca atual'}</div>
@@ -4607,7 +4671,7 @@ function Dashboard({session,profile}){
     <main style={{flex:1,padding:'22px 16px calc(112px + env(safe-area-inset-bottom))',maxWidth:'100%',minWidth:0}}>
       {/* header mobile */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
-        <div className="bottomnav"><Brand small team={!solo}/></div>
+        <div className="bottomnav"><Brand small team={!soloConta} marca={marcaTime}/></div>
         <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
           <Sininho avisos={todosAvisos}
             onAbrir={async()=>{ setAvLidos(l=>[...new Set([...l,...alertasPainel.map(x=>x.key)])]);
@@ -5401,7 +5465,8 @@ function Dashboard({session,profile}){
       {/* ---------------- CONFIG ---------------- */}
       {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
       {view==='plataforma'&&souGestorGeral&&<PlataformaApp/>}
-      {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}/>}
+      {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}
+        marca={ws?{nome:ws.marca_nome||'',logo:ws.marca_logo||null}:null} nomeTime={ws?.name} onMarca={loadAll}/>}
       {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
         {!(gestaoAtiva&&view==='config')&&<>
         <Card style={{padding:20}}>
