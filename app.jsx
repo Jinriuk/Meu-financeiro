@@ -91,6 +91,9 @@ const PLAYER_COLORS = [P, C.gold]; // jogador 1 / jogador 2
 const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 const num = v => Number(v)||0;
+// dinheiro no centavo: soma de float deixa resto (0,1+0,2 = 0,30000000000000004) e um make-up de 0,000…04 já muda
+// status ("Bloqueado por make-up" com US$ 0,00). Meio centavo vai pra longe do zero, igual ao round() do banco.
+const cent = v => { const n=Number(v); if(!Number.isFinite(n)) return 0; const r=Math.sign(n)*Math.round(Math.abs(n)*100+1e-6)/100; return r===0?0:r; };
 const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'USD'});
 const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
 const mKey = d => (d||'').slice(0,7);
@@ -197,12 +200,25 @@ const abiMaxFor = (config, player, date) => {
   }
   return v;
 };
+// O Supabase devolve no máximo 1.000 linhas por consulta (teto padrão do projeto). Sem paginar, a conta com mais de
+// 1.000 torneios via banca, Diário e Mês errados sem aviso. Lê de 1.000 em 1.000 até a última página; `montar` refaz a
+// consulta a cada página, com ordem estável (a coluna única por último). Erro em qualquer página = erro: meia lista
+// mostraria a banca errada como se estivesse certa.
+async function lerTudo(montar, lote=1000){
+  const out=[];
+  for(let de=0;;de+=lote){
+    const {data,error}=await montar().range(de,de+lote-1);
+    if(error) return {data:null,error};
+    const pg=data||[]; for(const x of pg) out.push(x);
+    if(pg.length<lote) return {data:out,error:null};
+  }
+}
 // monta o "Diário" a partir dos torneios: 1 linha por jogador por dia (fonte da verdade = torneios)
 function deriveDaily(tours){
   const map={};
   tours.forEach(t=>{
-    const k=t.player+'|'+t.entry_date;
-    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:t.player, qtd_torneios:0, qtd_entradas:0, total_buyins:0, buyins_nominal:0, tickets:0, maior_buyin:0, maior_premiacao:0, bounties:0, resultado:0};
+    const k=String(t.player??'').trim().toLowerCase()+'|'+t.entry_date;   // "hero " e "Hero" são o mesmo jogador
+    if(!map[k]) map[k]={id:k, entry_date:t.entry_date, player:String(t.player??'').trim(), qtd_torneios:0, qtd_entradas:0, total_buyins:0, buyins_nominal:0, tickets:0, maior_buyin:0, maior_premiacao:0, bounties:0, resultado:0};
     const m=map[k], inv=totalInvestido(t);
     m.qtd_torneios+=1;
     m.qtd_entradas+=1+num(t.reentries);
@@ -214,7 +230,8 @@ function deriveDaily(tours){
     m.bounties+=bountyTorneio(t);
     m.resultado+=lucroTorneio(t);
   });
-  return Object.values(map).sort((a,b)=>a.entry_date<b.entry_date?1:-1);
+  return Object.values(map).map(m=>({...m,total_buyins:cent(m.total_buyins),buyins_nominal:cent(m.buyins_nominal),bounties:cent(m.bounties),resultado:cent(m.resultado)}))
+    .sort((a,b)=>a.entry_date<b.entry_date?1:-1);
 }
 // Processa as semanas em ordem cronológica, carregando o make-up de uma pra outra.
 function computeWeeks(daily, config){
@@ -222,17 +239,19 @@ function computeWeeks(daily, config){
   const makeInit={[config.player1_name]:num(config.makeup_inicial_player1),[config.player2_name]:num(config.makeup_inicial_player2)};
   const out={};
   players.forEach(p=>{
-    const entries=daily.filter(e=>e.player===p);
+    if(!String(p??'').trim()){ out[p]=[]; return; }   // pool sem 2º jogador / gestor que não joga
+    const entries=daily.filter(e=>nomeIgual(e.player,p));
     const weeks=[...new Set(entries.map(e=>weekEnding(e.entry_date)))].sort();
-    let makeUp=makeInit[p]||0;
+    let makeUp=cent(makeInit[p]||0);
+    // tudo no centavo: comparar "make-up > 0" ou "pago < autorizado" com resto de float dá status errado
     out[p]=weeks.map(wk=>{
       const wkEntries=entries.filter(e=>weekEnding(e.entry_date)===wk);
-      const resultado=wkEntries.reduce((s,e)=>s+resultadoDia(e),0);
+      const resultado=cent(wkEntries.reduce((s,e)=>s+resultadoDia(e),0));
       const makeAnterior=makeUp;
-      const makeFinal=Math.max(0, makeAnterior-resultado);
-      const lucroDiv=Math.max(0, resultado-makeAnterior);
-      const parteJog=lucroDiv*num(config.player_pct);
-      const partePool=lucroDiv*(1-num(config.player_pct));
+      const makeFinal=cent(Math.max(0, makeAnterior-resultado));
+      const lucroDiv=cent(Math.max(0, resultado-makeAnterior));
+      const parteJog=cent(lucroDiv*num(config.player_pct));
+      const partePool=cent(lucroDiv-parteJog);            // o resto é da pool: as duas partes somam o lucro, sem centavo perdido
       const saqueAut=makeFinal===0 ? parteJog : 0;
       makeUp=makeFinal;
       return {week:wk, player:p, resultado, makeAnterior, makeFinal, lucroDiv, parteJog, partePool, saqueAut, entries:wkEntries};
@@ -241,11 +260,12 @@ function computeWeeks(daily, config){
   return out;
 }
 function saqueStatus(w, bancaAtual, piso, valorSacado){
-  if(w.makeFinal>0) return 'Bloqueado por make-up';
-  if(w.saqueAut===0) return 'Sem valor a sacar';
-  if(bancaAtual - w.saqueAut < piso) return 'Bloqueado por banca abaixo do piso';
-  if(valorSacado===0) return 'Autorizado';
-  if(valorSacado < w.saqueAut) return 'Parcialmente autorizado';
+  const aut=cent(w.saqueAut), pago=cent(valorSacado);
+  if(cent(w.makeFinal)>0) return 'Bloqueado por make-up';
+  if(aut===0) return 'Sem valor a sacar';
+  if(cent(bancaAtual-aut) < cent(piso)) return 'Bloqueado por banca abaixo do piso';
+  if(pago===0) return 'Autorizado';
+  if(pago < aut) return 'Parcialmente autorizado';
   return 'Pago';
 }
 const STATUS_TONE = {
@@ -2467,9 +2487,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
     }catch(e){ setAviso({erro:true,texto:'Não consegui abrir essa planilha ('+(e.message||'arquivo inválido')+').'}); }
   };
   const carregar=async()=>{
-    const q=t=>sb.from(t).select('*');
+    const q=(t,cols='*')=>lerTudo(()=>sb.from(t).select(cols).order('id'));   // paginado: o servidor corta em 1.000 linhas
     const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
-      sb.from('convite').select('id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade')]);
+      q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade')]);
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
@@ -3159,6 +3179,7 @@ function Dashboard({session,profile}){
   const [walletsRaw,setWallets]=useState([]);      // saldo inicial por jogador+plataforma
   const [wdsRaw,setWds]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [erroCarga,setErroCarga]=useState(false);    // alguma tabela não veio: mantém o que já estava na tela e avisa
   const [viewSel,setView]=useState('painel');
   const view=viewSel;
   const [modal,setModal]=useState(null);       // string type | {type, initial}
@@ -3190,13 +3211,17 @@ function Dashboard({session,profile}){
   const trocarModo=m=>{ setModoSel(m); try{ localStorage.setItem('gb_modo',m); }catch(e){} setView(m==='gestao'?'g_visao':'painel'); };
   const abrirAluno=n=>{ setAlunoAberto(n); setView('painel'); };
   const fecharAluno=()=>{ setAlunoAberto(null); setView('g_jogadores'); };
-  const doJogador=arr=>modoTime?(arr||[]).filter(r=>nomeIgual(r.player,jogadorSel)):arr;
-  const tours=useMemo(()=>doJogador(toursRaw),[toursRaw,modoTime,jogadorSel]);
-  const ledger=useMemo(()=>doJogador(ledgerRaw),[ledgerRaw,modoTime,jogadorSel]);
-  const wallets=useMemo(()=>doJogador(walletsRaw),[walletsRaw,modoTime,jogadorSel]);
+  // nome escrito com espaço ou maiúscula diferente ("hero " x "Hero") vira o nome do jogador antes de qualquer conta:
+  // senão entra na banca e some da semana. No time, só ficam as linhas do jogador na tela.
+  const nomesBase=modoTime?[jogadorSel]:(configRaw?[configRaw.player1_name,configRaw.player2_name]:[]);
+  const canon=r=>{ const c=nomesBase.find(n=>n&&nomeIgual(n,r.player)); return c&&c!==r.player?{...r,player:c}:r; };
+  const doJogador=arr=>modoTime?(arr||[]).filter(r=>nomeIgual(r.player,jogadorSel)).map(canon):(arr||[]).map(canon);
+  const tours=useMemo(()=>doJogador(toursRaw),[toursRaw,modoTime,jogadorSel,configRaw]);
+  const ledger=useMemo(()=>doJogador(ledgerRaw),[ledgerRaw,modoTime,jogadorSel,configRaw]);
+  const wallets=useMemo(()=>doJogador(walletsRaw),[walletsRaw,modoTime,jogadorSel,configRaw]);
   // no time, os saques pagos (devolução + cashout saem das salas) entram como saque na banca do aluno
-  const wds=useMemo(()=>modoTime?doJogador(timeGente.saquesPagos):wdsRaw,[wdsRaw,modoTime,jogadorSel,timeGente]);
-  const hh=useMemo(()=>doJogador(hhRaw),[hhRaw,modoTime,jogadorSel]);
+  const wds=useMemo(()=>doJogador(modoTime?timeGente.saquesPagos:wdsRaw),[wdsRaw,modoTime,jogadorSel,timeGente,configRaw]);
+  const hh=useMemo(()=>doJogador(hhRaw),[hhRaw,modoTime,jogadorSel,configRaw]);
   // no time, a config é a do time e o "jogador 1" é o aluno na tela (nunca gravado: Ajustes não edita nome no time)
   // banca inicial e make-up inicial da config são coisa do pool de 2: no time a banca do aluno começa pelas salas dele
   const config=useMemo(()=>modoTime&&configRaw?{...configRaw,player1_name:jogadorSel||'',player2_name:'',
@@ -3283,7 +3308,7 @@ function Dashboard({session,profile}){
     try{
       const [pe,vi,ac,un,sq,gr]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
         sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome'),
-        sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago'),
+        lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago').order('id')),
         sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas')]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
@@ -3319,16 +3344,25 @@ function Dashboard({session,profile}){
       // status calculado com o relógio do servidor; sem a função (banco antigo) cai na conta local
       try{ const {data:st,error:se}=await sb.rpc('meu_status'); if(!se&&st&&typeof st==='object') setSrvStatus(st); }catch(e){}
       // carga UNIFORME: o RLS por workspace entrega a cada conta só o que é dela
+      // listas que crescem: paginadas (o servidor corta em 1.000 linhas); o id no fim deixa a ordem estável entre páginas
+      const todas=(tabela,cols,col,asc)=>lerTudo(()=>{ let q=sb.from(tabela).select(cols); if(col) q=q.order(col,{ascending:asc}); return q.order('id',{ascending:true}); });
       const [wsr,cfg,t,l,pw,w,hhr,cc]=await Promise.all([
         sb.from('workspaces').select('*'),
         sb.from('pool_config').select('*').order('created_at',{ascending:true}),
-        sb.from('tournaments').select('*').order('entry_date',{ascending:false}),
-        sb.from('bankroll_ledger').select('*').order('entry_date'),
-        sb.from('player_wallets').select('*'),
-        sb.from('withdrawals').select('*').order('week_ending_date',{ascending:false}),
-        sb.from('hh_tournament_stats').select(HH_COLS).order('entry_date',{ascending:false}),
-        sb.from('config_changes').select('*').order('created_at',{ascending:false}),
+        todas('tournaments','*','entry_date',false),
+        todas('bankroll_ledger','*','entry_date',true),
+        todas('player_wallets','*'),
+        todas('withdrawals','*','week_ending_date',false),
+        todas('hh_tournament_stats',HH_COLS,'entry_date',false),
+        todas('config_changes','*','created_at',false),
       ]);
+      // tabela que não veio (rede, tempo esgotado): NÃO troca a lista da tela por vazia (a banca ficaria errada sem
+      // aviso); mantém o que já estava e mostra a faixa "não consegui atualizar"
+      const listas=[[t,setTours],[l,setLedger],[pw,setWallets],[w,setWds],[hhr,setHh],[cc,setChgs]];
+      const falhas=listas.filter(([r])=>r.error);
+      const aplicarListas=()=>{ for(const [r,set] of listas) if(!r.error) set(r.data); };
+      setErroCarga(falhas.length>0);
+      if(falhas.length) registrarErro('carga','lista não carregou: '+falhas.map(([r])=>r.error.message).join(' | '),{tabelas:falhas.length});
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
       try{ const {data:un}=await sb.from('unidade').select('id').limit(1); const tem=!!(un&&un.length); setTemTime(tem);
@@ -3342,7 +3376,7 @@ function Dashboard({session,profile}){
       if(!c&&!cfg.error&&ehSolo){
         // solo sem config = primeiro uso: onboarding de 3 passos cria a config com o nome da pessoa
         setNeedsSetup(true);
-        setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
+        aplicarListas();
         return;
       }
       // time sem config gravada: usa a padrão em memória (aluno não grava config; quem configura salva nos Ajustes)
@@ -3354,7 +3388,7 @@ function Dashboard({session,profile}){
       }
       if(!c){ console.error('pool_config indisponível, tentando de novo…',cfg.error); if(!configRef.current) setTimeout(loadAll,2500); return; }
       setNeedsSetup(false);
-      setConfig(c); setTours(t.data||[]); setLedger(l.data||[]); setWallets(pw.data||[]); setWds(w.data||[]); setHh(hhr.data||[]); setChgs(cc.data||[]);
+      setConfig(c); aplicarListas();
     }catch(e){ console.error(e); }
   };
   useEffect(()=>{(async()=>{ await loadAll(); setLoading(false); })();},[]);
@@ -3794,10 +3828,10 @@ function Dashboard({session,profile}){
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
      (atualiza sozinha a cada torneio lançado; saque de jogador entra pela aba Saques) */
-  const resultadosTotal = daily.reduce((s,e)=>s+resultadoDia(e),0);
-  const movimentosTotal = ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0);
-  const sacadoTotal = wds.reduce((s,w)=>s+num(w.valor_sacado),0);
-  const bancaAtual = num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal;
+  const resultadosTotal = cent(daily.reduce((s,e)=>s+resultadoDia(e),0));
+  const movimentosTotal = cent(ledger.reduce((s,l)=>s+num(l.entrada)-num(l.saida),0));
+  const sacadoTotal = cent(wds.reduce((s,w)=>s+num(w.valor_sacado),0));
+  const bancaAtual = cent(num(config.banca_inicial)+resultadosTotal+movimentosTotal-sacadoTotal);
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
   const walletInicial=(player,wallet)=>{ const w=wallets.find(x=>x.player===player&&x.wallet===wallet); return w?num(w.saldo_inicial):0; };
   // usa walletBucket pra que site/carteira fora da lista (ou saque "Não informar" = null) caiam em "Outros"
@@ -4104,6 +4138,10 @@ function Dashboard({session,profile}){
       </div>
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
       {/* time: carregando quem é quem (evita piscar a tela de jogador pra quem só gere) */}
+      {erroCarga&&<div data-erro-carga role="alert" style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.goldSoft,border:`1.5px solid ${C.gold}`,fontSize:13.5,color:C.ink}}>
+        <span style={{flex:1,minWidth:200}}><b>Não consegui atualizar tudo do servidor.</b> Os números abaixo podem estar desatualizados.</span>
+        <button onClick={()=>loadAll()} style={{padding:'7px 13px',borderRadius:10,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>Tentar de novo</button>
+      </div>}
       {modoTime&&!timeGente.carregado&&<div style={{display:'grid',placeItems:'center',padding:60}}><div className="spin"/></div>}
       {/* gestor olhando o painel de um aluno: faixa fixa com o nome e o caminho de volta */}
       {somenteLeitura&&<div data-aluno-aberto style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
