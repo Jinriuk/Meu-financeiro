@@ -35,7 +35,8 @@ await cenario('aluno', time({
   grade: [{ id: 'g1', workspace_id: 'w1', unidade_id: 'u2', vigente_desde: '2026-11-01', simulada: true, celulas: GRADE }],
   tournaments: [tour('t1', 'Daily Main', 'GG Poker', 2.5, '2026-11-17'), tour('t2', 'Hot $44', 'GG Poker', 44, '2026-11-17'),
                 tour('t3', 'Daily Main', 'GG Poker', 3, '2026-11-16'), tour('t4', 'Sunday Storm', 'PokerStars', 11, '2026-11-15'),
-                tour('t5', 'Daily Main', 'GG Poker', 2.5, '2026-11-14', { reentries: 1 })],
+                tour('t5', 'Daily Main', 'GG Poker', 2.5, '2026-11-14', { reentries: 1 }),
+                tour('t6', 'Antes do Time $44', 'GG Poker', 44, '2026-11-14', { unidade_id: null })],   // de antes da entrada no time
 }), async (page) => {
   await irPara(page, 'Torneios');
   await page.waitForTimeout(400);
@@ -46,6 +47,7 @@ await cenario('aluno', time({
   ok(await at.count() === 1 && /só vale com garantido 2k\+/.test(await at.first().innerText()), '$3 sem garantido no nome: ATENÇÃO com o motivo');
   const t = await page.locator('main').innerText();
   ok(/Sunday Storm/.test(t) && await page.locator('[data-selo-grade]').count() === 2, 'Sunday Storm de $11 (liberado pelo nome) e o $2,50 com 1 reentry não ganham selo, mesmo acima do teto de ABI $3 dos Ajustes');
+  ok(/Antes do Time \$44/.test(t), 'o torneio de $44 de antes da entrada no time aparece pro aluno (o histórico é dele) e não ganha selo: as regras do time não valiam');
   await page.getByRole('tab', { name: 'Diário', exact: true }).click(); await page.waitForTimeout(300);
   for (const b of await page.getByRole('button', { name: /^Hero · / }).all()) await b.click({ timeout: 4000 });
   ok(/Fora da grade — 1 torneio · semanal Regular: buy-in \$44,00 acima do teto \$3,00 · grade simulada/.test(await corpo(page)), 'Diário: o dia fica fora pela grade, com o motivo');

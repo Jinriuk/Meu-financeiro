@@ -1169,6 +1169,8 @@ function resumoCelulaGrade(txt){
 let GRADE_CTX={unidades:[],grades:[],unidadeDe:{}};
 // status de grade de um torneio: pela grade da reta (quando o time tem) ou pelo teto de ABI dos Ajustes
 function statusGrade(t,config){
+  // salvo com pessoa e sem unidade: é de antes da entrada no time, quando as regras do time não valiam (não ganha selo)
+  if(t.pessoa_id&&!t.unidade_id) return {status:'dentro',motivo:''};
   const tt=t.unidade_id?t:{...t,unidade_id:GRADE_CTX.unidadeDe[String(t.player||'').trim().toLowerCase()]||null};
   const g=gradeDoTorneio(tt,GRADE_CTX.unidades,GRADE_CTX.grades);
   if(g){ const r=classificarTorneioGrade(tt,g); if(r) return {...r,simulada:!!g.simulada,porGrade:true}; }
@@ -2931,10 +2933,15 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr}){
           <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
           {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
           {(()=>{ const padrao=/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em||''))?pl.atualizado_em:String(a.enviado_em||'').slice(0,10); const v=cortes[a.id]||padrao;
-            return <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:8}}>
+            // entrada no time: o 1º vínculo. Saldos de antes dela antecipam a entrada, no máximo até a data da planilha (o servidor confere)
+            const entrada=d.vinculos.filter(x=>x.pessoa_id===a.pessoa_id).map(x=>String(x.inicio||'').slice(0,10)).filter(Boolean).sort()[0]||null;
+            const vespera=entrada?addDaysISO(entrada,-1):null, minimo=vespera?(padrao&&padrao<vespera?padrao:vespera):null;
+            return <div style={{marginTop:8}}><div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <label style={{fontSize:13,color:C.ink,fontWeight:600}}>Saldos valem até</label>
-              <input type="date" data-corte={nomeDe(a.pessoa_id)} value={v} max={todayISO()} onChange={e=>setCortes(c=>({...c,[a.id]:e.target.value}))} style={{...inputStyle,width:'auto',padding:'7px 10px'}}/>
-              <span style={{fontSize:12,color:C.inkSoft}}>jogos e movimentos até esse dia já estão nos saldos da planilha; contam só os de depois</span>
+              <input type="date" data-corte={nomeDe(a.pessoa_id)} value={v} min={minimo||undefined} max={todayISO()} onChange={e=>setCortes(c=>({...c,[a.id]:e.target.value}))} style={{...inputStyle,width:'auto',padding:'7px 10px'}}/>
+              <span style={{fontSize:12,color:C.inkSoft}}>jogos e movimentos até esse dia já estão nos saldos da planilha; contam só os de depois</span></div>
+              {vespera&&v&&v<vespera&&<div data-antecipa={nomeDe(a.pessoa_id)} style={{fontSize:12.5,color:C.ink,marginTop:6,lineHeight:1.5}}>
+                {nomeDe(a.pessoa_id)} entrou no time em {dataBR(entrada)}. Com essa data, o que ele jogou a partir de {dataBR(addDaysISO(v,1))} passa a ser do time (a gestão vê e conta na banca). O que é de antes continua só dele.</div>}
             </div>; })()}
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
             <button style={btnP} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
@@ -4257,7 +4264,7 @@ function Dashboard({session,profile}){
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
       {/* time: carregando quem é quem (evita piscar a tela de jogador pra quem só gere) */}
       {soloConta&&meusPedidos.filter(x=>x.status==='pendente').slice(0,1).map(x=><div key={x.id} data-pedido-pendente style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.plumSoft,border:`1.5px solid ${P}`,fontSize:13.5,color:C.ink,lineHeight:1.5}}>
-        Pedido pra entrar no time <b>{x.time_nome||''}</b> enviado em {dataBR(x.criado_em)}. Quando a gestão aprovar, esta conta entra no time e o seu histórico vai junto.</div>)}
+        Pedido pra entrar no time <b>{x.time_nome||''}</b> enviado em {dataBR(x.criado_em)}. Quando a gestão aprovar, esta conta entra no time. O seu histórico vai junto e o de antes da entrada fica só com você.</div>)}
       {avisoPedido&&avisoPedido.erro&&<div data-pedido-erro role="alert" style={{padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.redSoft,border:`1.5px solid ${C.red}`,fontSize:13.5,color:C.ink}}>
         <b>O pedido pro time não foi:</b> {avisoPedido.texto}</div>}
       {erroCarga&&<div data-erro-carga role="alert" style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'11px 14px',marginBottom:14,borderRadius:13,background:C.goldSoft,border:`1.5px solid ${C.gold}`,fontSize:13.5,color:C.ink}}>
@@ -5076,7 +5083,7 @@ function Dashboard({session,profile}){
         {view!=='g_regras'&&<>
         {soloConta&&<Card data-entrar-time style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Entrar num time</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Seu time te passou um código (ex.: SAMBA-36510)? Peça pra entrar. Quando a gestão aprovar, esta conta vira do time e o seu histórico vai junto.</div>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Seu time te passou um código (ex.: SAMBA-36510)? Peça pra entrar. Quando a gestão aprovar, esta conta vira do time. O seu histórico vai junto, e o que é de antes da entrada só você vê.</div>
           {(()=>{ const pend=meusPedidos.find(x=>x.status==='pendente'); const rec=!pend&&meusPedidos[0]&&meusPedidos[0].status==='recusado'?meusPedidos[0]:null;
             const recarregar=async()=>{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); };
             if(pend) return <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>

@@ -2365,6 +2365,11 @@ let GRADE_CTX = {
 };
 // status de grade de um torneio: pela grade da reta (quando o time tem) ou pelo teto de ABI dos Ajustes
 function statusGrade(t, config) {
+  // salvo com pessoa e sem unidade: é de antes da entrada no time, quando as regras do time não valiam (não ganha selo)
+  if (t.pessoa_id && !t.unidade_id) return {
+    status: 'dentro',
+    motivo: ''
+  };
   const tt = t.unidade_id ? t : {
     ...t,
     unidade_id: GRADE_CTX.unidadeDe[String(t.player || '').trim().toLowerCase()] || null
@@ -10185,13 +10190,20 @@ function TimeApp({
       }, t)), (() => {
         const padrao = /^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em || '')) ? pl.atualizado_em : String(a.enviado_em || '').slice(0, 10);
         const v = cortes[a.id] || padrao;
+        // entrada no time: o 1º vínculo. Saldos de antes dela antecipam a entrada, no máximo até a data da planilha (o servidor confere)
+        const entrada = d.vinculos.filter(x => x.pessoa_id === a.pessoa_id).map(x => String(x.inicio || '').slice(0, 10)).filter(Boolean).sort()[0] || null;
+        const vespera = entrada ? addDaysISO(entrada, -1) : null,
+          minimo = vespera ? padrao && padrao < vespera ? padrao : vespera : null;
         return /*#__PURE__*/React.createElement("div", {
+          style: {
+            marginTop: 8
+          }
+        }, /*#__PURE__*/React.createElement("div", {
           style: {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            flexWrap: 'wrap',
-            marginTop: 8
+            flexWrap: 'wrap'
           }
         }, /*#__PURE__*/React.createElement("label", {
           style: {
@@ -10203,6 +10215,7 @@ function TimeApp({
           type: "date",
           "data-corte": nomeDe(a.pessoa_id),
           value: v,
+          min: minimo || undefined,
           max: todayISO(),
           onChange: e => setCortes(c => ({
             ...c,
@@ -10218,7 +10231,15 @@ function TimeApp({
             fontSize: 12,
             color: C.inkSoft
           }
-        }, "jogos e movimentos at\xE9 esse dia j\xE1 est\xE3o nos saldos da planilha; contam s\xF3 os de depois"));
+        }, "jogos e movimentos at\xE9 esse dia j\xE1 est\xE3o nos saldos da planilha; contam s\xF3 os de depois")), vespera && v && v < vespera && /*#__PURE__*/React.createElement("div", {
+          "data-antecipa": nomeDe(a.pessoa_id),
+          style: {
+            fontSize: 12.5,
+            color: C.ink,
+            marginTop: 6,
+            lineHeight: 1.5
+          }
+        }, nomeDe(a.pessoa_id), " entrou no time em ", dataBR(entrada), ". Com essa data, o que ele jogou a partir de ", dataBR(addDaysISO(v, 1)), " passa a ser do time (a gest\xE3o v\xEA e conta na banca). O que \xE9 de antes continua s\xF3 dele."));
       })(), /*#__PURE__*/React.createElement("div", {
         style: {
           display: 'flex',
@@ -14075,7 +14096,7 @@ function Dashboard({
       color: C.ink,
       lineHeight: 1.5
     }
-  }, "Pedido pra entrar no time ", /*#__PURE__*/React.createElement("b", null, x.time_nome || ''), " enviado em ", dataBR(x.criado_em), ". Quando a gest\xE3o aprovar, esta conta entra no time e o seu hist\xF3rico vai junto.")), avisoPedido && avisoPedido.erro && /*#__PURE__*/React.createElement("div", {
+  }, "Pedido pra entrar no time ", /*#__PURE__*/React.createElement("b", null, x.time_nome || ''), " enviado em ", dataBR(x.criado_em), ". Quando a gest\xE3o aprovar, esta conta entra no time. O seu hist\xF3rico vai junto e o de antes da entrada fica s\xF3 com voc\xEA.")), avisoPedido && avisoPedido.erro && /*#__PURE__*/React.createElement("div", {
     "data-pedido-erro": true,
     role: "alert",
     style: {
@@ -17843,7 +17864,7 @@ function Dashboard({
       marginBottom: 12,
       lineHeight: 1.5
     }
-  }, "Seu time te passou um c\xF3digo (ex.: SAMBA-36510)? Pe\xE7a pra entrar. Quando a gest\xE3o aprovar, esta conta vira do time e o seu hist\xF3rico vai junto."), (() => {
+  }, "Seu time te passou um c\xF3digo (ex.: SAMBA-36510)? Pe\xE7a pra entrar. Quando a gest\xE3o aprovar, esta conta vira do time. O seu hist\xF3rico vai junto, e o que \xE9 de antes da entrada s\xF3 voc\xEA v\xEA."), (() => {
     const pend = meusPedidos.find(x => x.status === 'pendente');
     const rec = !pend && meusPedidos[0] && meusPedidos[0].status === 'recusado' ? meusPedidos[0] : null;
     const recarregar = async () => {
