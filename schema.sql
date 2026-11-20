@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict xYbQSJlr8F2EAGt74LHY1K5drTc9YYArbhg7zUvdCNvN2yjn6QeXUB4mv7AaYOR
+\restrict A7xb2tAVbN1OT6t7hHN7Jb52mAkvl5N2pDiiFhz5PeZnZ6cTjM4cyPF1JUqtcPy
 
 -- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 -- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
@@ -132,6 +132,30 @@ begin
   update public.workspaces set plan=act.plan, trial_ends_at=null where id=wid;
   update public.plan_activations set status='used', used_at=now(), used_by=auth.uid() where id=act.id;
   return act.plan;
+end $$;
+
+
+--
+-- Name: arquivar_unidade(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.arquivar_unidade(p_alvo uuid) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare un record;
+begin
+  select * into un from public.unidade where id = p_alvo;
+  if un.id is null then raise exception 'unidade não existe'; end if;
+  if un.mae_id is null then raise exception 'a raiz do time não pode ser arquivada'; end if;
+  if not public.pode('administrar', un.mae_id) then raise exception 'só quem administra a unidade de cima arquiva' using errcode = 'insufficient_privilege'; end if;
+  if exists (select 1 from public.unidade f where f.mae_id = p_alvo and not f.arquivada) then
+    raise exception 'arquive antes as unidades que estão dentro desta'; end if;
+  if exists (select 1 from public.vinculo v join public.unidade t on t.id = v.unidade_id
+              where v.fim is null and t.caminho like un.caminho || '%') then
+    raise exception 'ainda tem jogador nesta unidade: mova ou registre a saída antes'; end if;
+  update public.unidade set arquivada = true where id = p_alvo;
+  update public.convite set revogado = true where unidade_id = p_alvo and not revogado;
 end $$;
 
 
@@ -327,6 +351,36 @@ end $$;
 
 
 --
+-- Name: caps_validas(text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.caps_validas(p_caps text[]) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO ''
+    AS $$
+  select p_caps is not null and cardinality(p_caps) > 0 and p_caps <@ array[
+    'ver_desempenho','gerir_pessoas','promover','configurar_regras','ver_financeiro','aprovar_saques','administrar']::text[];
+$$;
+
+
+--
+-- Name: checar_admin_do_time(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.checar_admin_do_time(p_ws uuid) RETURNS void
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+begin
+  if not exists (select 1 from public.acesso a join public.pessoa p on p.id = a.pessoa_id
+                  where a.unidade_id = public.raiz_do_ws(p_ws) and 'administrar' = any(a.capacidades)
+                    and p.user_id is not null and p.status = 'ativo') then
+    raise exception 'o time precisa de pelo menos um admin com conta: dê o papel de admin a outra pessoa antes' using errcode = 'check_violation';
+  end if;
+end $$;
+
+
+--
 -- Name: conferir_abertura(uuid, numeric, numeric); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -425,6 +479,43 @@ CREATE FUNCTION public.contrato_de(p uuid) RETURNS jsonb
       where c.pessoa_id is null and c.inicio <= current_date and pu.caminho like cu.caminho || '%'
       order by length(cu.caminho) desc, c.inicio desc, c.criado_em desc limit 1));
 $$;
+
+
+--
+-- Name: convidar_equipe(text, uuid[], text[], uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.convidar_equipe(p_nome text, p_unidades uuid[], p_caps text[], p_joga_em uuid DEFAULT NULL::uuid) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare ws uuid; u uuid; p uuid; v_nome text := left(btrim(coalesce(p_nome, '')), 60);
+begin
+  if v_nome = '' then raise exception 'nome de quem vai entrar'; end if;
+  if not public.caps_validas(p_caps) then raise exception 'papel inválido'; end if;
+  if p_unidades is null or cardinality(p_unidades) = 0 then raise exception 'escolha onde a pessoa vai cuidar'; end if;
+  if cardinality(p_unidades) > 50 then raise exception 'unidades demais'; end if;
+  select workspace_id into ws from public.unidade where id = p_unidades[1];
+  foreach u in array p_unidades loop
+    if not exists (select 1 from public.unidade where id = u and workspace_id = ws and not arquivada) then
+      raise exception 'unidade inválida ou arquivada'; end if;
+    if not public.pode('administrar', u) then
+      raise exception 'só quem administra convida professor, financeiro ou admin' using errcode = 'insufficient_privilege'; end if;
+  end loop;
+  if p_joga_em is not null and not exists (select 1 from public.unidade where id = p_joga_em and workspace_id = ws and not arquivada) then
+    raise exception 'reta de jogo inválida'; end if;
+  begin
+    insert into public.pessoa(workspace_id, nome) values (ws, v_nome) returning id into p;
+  exception when unique_violation then
+    raise exception 'já tem alguém com o nome "%" no time', v_nome;
+  end;
+  insert into public.acesso(pessoa_id, unidade_id, capacidades)
+  select p, x, (select array_agg(distinct c order by c) from unnest(p_caps) c) from (select distinct unnest(p_unidades) x) s;
+  if p_joga_em is not null then
+    insert into public.vinculo(pessoa_id, unidade_id, motivo) values (p, p_joga_em, 'entrada');
+  end if;
+  return p;
+end $$;
 
 
 --
@@ -665,6 +756,45 @@ begin
   insert into public.contrato(workspace_id, unidade_id, pessoa_id, faixas, inicio)
   values (ws, case when p_pessoa is null then p_unidade end, p_pessoa, p_faixas, coalesce(p_inicio, current_date)) returning id into novo;
   return novo;
+end $$;
+
+
+--
+-- Name: definir_papel(uuid, uuid[], text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.definir_papel(p_alvo uuid, p_unidades uuid[], p_caps text[]) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare pes record; u uuid; tira boolean := p_caps is null or cardinality(p_caps) = 0;
+begin
+  select * into pes from public.pessoa where id = p_alvo;
+  if pes.id is null or pes.status = 'saiu' then raise exception 'pessoa não está no time'; end if;
+  if not public.pode('administrar', public.raiz_do_ws(pes.workspace_id)) then
+    raise exception 'só o admin do time muda papéis' using errcode = 'insufficient_privilege'; end if;
+  if not tira then
+    if not public.caps_validas(p_caps) then raise exception 'papel inválido'; end if;
+    if p_unidades is null or cardinality(p_unidades) = 0 then raise exception 'escolha onde a pessoa vai cuidar'; end if;
+    foreach u in array p_unidades loop
+      if not exists (select 1 from public.unidade where id = u and workspace_id = pes.workspace_id and not arquivada) then
+        raise exception 'unidade inválida ou arquivada'; end if;
+    end loop;
+  end if;
+  delete from public.acesso where pessoa_id = p_alvo;
+  if not tira then
+    insert into public.acesso(pessoa_id, unidade_id, capacidades)
+    select p_alvo, x, (select array_agg(distinct c order by c) from unnest(p_caps) c) from (select distinct unnest(p_unidades) x) s;
+  end if;
+  perform public.checar_admin_do_time(pes.workspace_id);
+  -- sem papel e sem reta: a pessoa sai do time (o histórico de quem jogou fica)
+  if tira and not exists (select 1 from public.vinculo where pessoa_id = p_alvo and fim is null) then
+    update public.pessoa set status = 'saiu' where id = p_alvo;
+    update public.convite set revogado = true where pessoa_id = p_alvo and not revogado;
+    if pes.user_id is not null then
+      delete from public.workspace_members where workspace_id = pes.workspace_id and user_id = pes.user_id and role <> 'owner';
+    end if;
+  end if;
 end $$;
 
 
@@ -1189,6 +1319,18 @@ $$;
 
 
 --
+-- Name: raiz_do_ws(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.raiz_do_ws(p_ws uuid) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+  select id from public.unidade where workspace_id = p_ws and mae_id is null order by criado_em limit 1;
+$$;
+
+
+--
 -- Name: recalcular_fatos(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1289,6 +1431,60 @@ CREATE FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date D
    order by length(u.caminho) desc, r.vigente_desde desc
    limit 1;
 $$;
+
+
+--
+-- Name: renomear_pessoa(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.renomear_pessoa(p_alvo uuid, p_nome text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $_$
+declare pes record; v_nome text := left(btrim(coalesce(p_nome, '')), 60); u uuid; t text;
+begin
+  select * into pes from public.pessoa where id = p_alvo;
+  if pes.id is null or pes.status = 'saiu' then raise exception 'pessoa não está no time'; end if;
+  if v_nome = '' then raise exception 'nome vazio'; end if;
+  select unidade_id into u from public.vinculo where pessoa_id = p_alvo and fim is null;
+  if not (public.pode('administrar', public.raiz_do_ws(pes.workspace_id)) or (u is not null and public.pode('gerir_pessoas', u))) then
+    raise exception 'sem permissão pra renomear' using errcode = 'insufficient_privilege'; end if;
+  if v_nome = pes.nome then return; end if;
+  begin
+    update public.pessoa set nome = v_nome where id = p_alvo;
+  exception when unique_violation then
+    raise exception 'já tem alguém com o nome "%" no time', v_nome;
+  end;
+  -- os lançamentos se ligam à pessoa pelo nome: acompanham a troca (o gatilho religa à mesma pessoa)
+  for t in select c.table_name::text from information_schema.columns c
+            where c.table_schema = 'public' and c.column_name = 'player'
+              and c.table_name in ('tournaments','hh_tournament_stats','daily_entries','hh_import_log','bankroll_ledger','withdrawals','player_wallets')
+              and exists (select 1 from information_schema.columns c2 where c2.table_schema = 'public'
+                           and c2.table_name = c.table_name and c2.column_name = 'pessoa_id') loop
+    execute format('update public.%I set player = $1 where pessoa_id = $2 and player is distinct from $1', t) using v_nome, p_alvo;
+  end loop;
+end $_$;
+
+
+--
+-- Name: renomear_unidade(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.renomear_unidade(p_alvo uuid, p_nome text, p_rotulo text DEFAULT NULL::text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO ''
+    AS $$
+declare v_nome text := left(btrim(coalesce(p_nome, '')), 60);
+begin
+  if not exists (select 1 from public.unidade where id = p_alvo) then raise exception 'unidade não existe'; end if;
+  if not public.pode('administrar', p_alvo) then raise exception 'só quem administra a unidade renomeia' using errcode = 'insufficient_privilege'; end if;
+  if v_nome = '' then raise exception 'nome vazio'; end if;
+  begin
+    update public.unidade set nome = v_nome, rotulo = nullif(left(btrim(coalesce(p_rotulo, '')), 40), '') where id = p_alvo;
+  exception when unique_violation then
+    raise exception 'já tem uma unidade "%" no mesmo lugar', v_nome;
+  end;
+end $$;
 
 
 --
@@ -1614,7 +1810,7 @@ CREATE FUNCTION public.ver_convite(p_token text) RETURNS jsonb
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO ''
     AS $$
-declare c record;
+declare c record; caps text[]; joga text;
 begin
   select cv.*, w.name as time_nome, u.nome as unidade_nome, u.arquivada, p.nome as pessoa_nome
     into c
@@ -1622,6 +1818,10 @@ begin
     join public.unidade u on u.id = cv.unidade_id left join public.pessoa p on p.id = cv.pessoa_id
    where cv.token_hash = public.convite_hash(p_token);
   if c.id is null then return jsonb_build_object('valido', false, 'motivo', 'Convite não encontrado. Confere se o link veio inteiro.'); end if;
+  if c.pessoa_id is not null then
+    select array_agg(distinct x order by x) into caps from public.acesso a, unnest(a.capacidades) x where a.pessoa_id = c.pessoa_id;
+    select u2.nome into joga from public.vinculo v join public.unidade u2 on u2.id = v.unidade_id where v.pessoa_id = c.pessoa_id and v.fim is null;
+  end if;
   return jsonb_build_object(
     'valido', not (c.revogado or c.arquivada or c.expira_em <= now() or (c.usos_max is not null and c.usos >= c.usos_max)),
     'motivo', case when c.revogado then 'Esse convite foi cancelado. Pede um link novo pro gestor.'
@@ -1629,7 +1829,8 @@ begin
                    when c.expira_em <= now() then 'Esse convite venceu. Pede um link novo pro gestor.'
                    when c.usos_max is not null and c.usos >= c.usos_max then 'Esse convite já foi usado. Pede um link novo pro gestor.'
               end,
-    'time', c.time_nome, 'unidade', c.unidade_nome, 'pessoa', c.pessoa_nome, 'expira_em', c.expira_em);
+    'time', c.time_nome, 'unidade', c.unidade_nome, 'pessoa', c.pessoa_nome, 'expira_em', c.expira_em,
+    'capacidades', coalesce(to_jsonb(caps), '[]'::jsonb), 'joga_em', joga);
 end $$;
 
 
@@ -4822,6 +5023,15 @@ GRANT ALL ON FUNCTION public.aplicar_ativacao() TO service_role;
 
 
 --
+-- Name: FUNCTION arquivar_unidade(p_alvo uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.arquivar_unidade(p_alvo uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.arquivar_unidade(p_alvo uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.arquivar_unidade(p_alvo uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION avisar_erros(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4896,6 +5106,22 @@ GRANT ALL ON FUNCTION public.cancelar_saque(p_id uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION caps_validas(p_caps text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.caps_validas(p_caps text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.caps_validas(p_caps text[]) TO service_role;
+
+
+--
+-- Name: FUNCTION checar_admin_do_time(p_ws uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.checar_admin_do_time(p_ws uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.checar_admin_do_time(p_ws uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION conferir_abertura(p_pessoa uuid, p_mu numeric, p_cashout numeric); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4928,6 +5154,15 @@ GRANT ALL ON FUNCTION public.confirmar_recebimento(p_id uuid, p_recebido numeric
 
 REVOKE ALL ON FUNCTION public.contrato_de(p uuid) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.contrato_de(p uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION convidar_equipe(p_nome text, p_unidades uuid[], p_caps text[], p_joga_em uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.convidar_equipe(p_nome text, p_unidades uuid[], p_caps text[], p_joga_em uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.convidar_equipe(p_nome text, p_unidades uuid[], p_caps text[], p_joga_em uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.convidar_equipe(p_nome text, p_unidades uuid[], p_caps text[], p_joga_em uuid) TO service_role;
 
 
 --
@@ -5025,6 +5260,15 @@ GRANT ALL ON FUNCTION public.definir_acesso(p_alvo uuid, p_unidade uuid, p_caps 
 REVOKE ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) TO authenticated;
 GRANT ALL ON FUNCTION public.definir_contrato(p_unidade uuid, p_pessoa uuid, p_faixas jsonb, p_inicio date) TO service_role;
+
+
+--
+-- Name: FUNCTION definir_papel(p_alvo uuid, p_unidades uuid[], p_caps text[]); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.definir_papel(p_alvo uuid, p_unidades uuid[], p_caps text[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.definir_papel(p_alvo uuid, p_unidades uuid[], p_caps text[]) TO authenticated;
+GRANT ALL ON FUNCTION public.definir_papel(p_alvo uuid, p_unidades uuid[], p_caps text[]) TO service_role;
 
 
 --
@@ -5246,6 +5490,14 @@ GRANT ALL ON FUNCTION public.pode_ver_pessoa(alvo uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION raiz_do_ws(p_ws uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.raiz_do_ws(p_ws uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.raiz_do_ws(p_ws uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION recalcular_fatos(p uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -5287,6 +5539,24 @@ GRANT ALL ON FUNCTION public.registrar_saida(p_alvo uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) TO authenticated;
 GRANT ALL ON FUNCTION public.regra_efetiva(p_unidade uuid, p_chave text, p_data date) TO service_role;
+
+
+--
+-- Name: FUNCTION renomear_pessoa(p_alvo uuid, p_nome text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.renomear_pessoa(p_alvo uuid, p_nome text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.renomear_pessoa(p_alvo uuid, p_nome text) TO authenticated;
+GRANT ALL ON FUNCTION public.renomear_pessoa(p_alvo uuid, p_nome text) TO service_role;
+
+
+--
+-- Name: FUNCTION renomear_unidade(p_alvo uuid, p_nome text, p_rotulo text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.renomear_unidade(p_alvo uuid, p_nome text, p_rotulo text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.renomear_unidade(p_alvo uuid, p_nome text, p_rotulo text) TO authenticated;
+GRANT ALL ON FUNCTION public.renomear_unidade(p_alvo uuid, p_nome text, p_rotulo text) TO service_role;
 
 
 --
@@ -5820,5 +6090,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES 
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xYbQSJlr8F2EAGt74LHY1K5drTc9YYArbhg7zUvdCNvN2yjn6QeXUB4mv7AaYOR
+\unrestrict A7xb2tAVbN1OT6t7hHN7Jb52mAkvl5N2pDiiFhz5PeZnZ6cTjM4cyPF1JUqtcPy
 

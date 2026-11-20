@@ -46,13 +46,13 @@ await cenario('aluno', time({
   ok(await at.count() === 1 && /só vale com garantido 2k\+/.test(await at.first().innerText()), '$3 sem garantido no nome: ATENÇÃO com o motivo');
   const t = await page.locator('main').innerText();
   ok(/Sunday Storm/.test(t) && await page.locator('[data-selo-grade]').count() === 2, 'Sunday Storm de $11 (liberado pelo nome) e o $2,50 com 1 reentry não ganham selo, mesmo acima do teto de ABI $3 dos Ajustes');
-  await irPara(page, 'Diário');
+  await page.getByRole('tab', { name: 'Diário', exact: true }).click(); await page.waitForTimeout(300);
   for (const b of await page.getByRole('button', { name: /^Hero · / }).all()) await b.click({ timeout: 4000 });
   ok(/Fora da grade — 1 torneio · semanal Regular: buy-in \$44,00 acima do teto \$3,00 · grade simulada/.test(await corpo(page)), 'Diário: o dia fica fora pela grade, com o motivo');
-  await irPara(page, 'Time');
-  ok(await page.locator('[data-grade-simulada]').count() === 1 && /Grade da Reta 2/.test(await corpo(page)), 'aba Time: grade da reta com o aviso de simulada');
+  await irPara(page, 'Meu time');
+  ok(await page.locator('[data-grade-simulada]').count() === 1 && /Grade da Reta 2/.test(await corpo(page)), 'Meu time: grade da reta com o aviso de simulada');
   ok(/até \$2,50 \+ \$3 2k\+/.test(await page.locator('[data-grade]').innerText()), '…e o quadro como na planilha');
-  ok(await page.locator('[data-abrir-grade]').count() === 0, 'aluno não edita grade');
+  ok(await page.getByRole('button', { name: /^Grades$/ }).count() === 0 && await page.locator('[data-editar-grade]').count() === 0, 'aluno não edita grade');
 });
 
 // 2) gestor: editor com modelo, leitura da célula, simulada, salvar e regra de MK; aviso de MK ao mover
@@ -60,10 +60,14 @@ await cenario('gestor', time({
   acesso: [{ pessoa_id: 'p1', unidade_id: 'u1', capacidades: ['administrar'] }],
   pessoa: [{ id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' }, { id: 'p3', workspace_id: 'w1', user_id: 'x3', nome: 'Maria', status: 'ativo' }],
   vinculo: [{ pessoa_id: 'p3', unidade_id: 'u2', fim: null }],
+  unidade: [{ id: 'u1', workspace_id: 'w1', mae_id: null, nome: 'Samba', caminho: '/u1/', arquivada: false }, { id: 'u2', workspace_id: 'w1', mae_id: 'u1', nome: 'Reta 2', caminho: '/u1/u2/', arquivada: false },
+    { id: 'u3', workspace_id: 'w1', mae_id: 'u1', nome: 'Reta 3', caminho: '/u1/u3/', arquivada: false }],
   __rpc: { resumo_time: [{ pessoa_id: 'p3', nome: 'Maria', unidade_id: 'u2', caminho: '/u1/u2/', status: 'ativo', torneios: 1, investido: 10, lucro: -10, roi: -100, abi: 10, ultimo_lancamento: '2026-11-17', banca: 50, mu: 100, lucro_sacado: 0 }] },
 }), async (page, escritas) => {
-  await irPara(page, 'Time');
-  await page.locator('[data-abrir-grade="Reta 2"]').click({ timeout: 8000 });
+  await page.getByRole('button', { name: /^Visão geral$/ }).first().waitFor({ timeout: 15000 });
+  await irPara(page, 'Grades');
+  await page.locator('[data-grade-reta="Reta 2"]').click({ timeout: 8000 });
+  await page.locator('[data-editar-grade]').click();
   await page.locator('[data-grade-editor]').waitFor({ timeout: 5000 });
   await page.getByRole('button', { name: 'Começar do modelo' }).click();
   ok(await page.locator('[data-grade-linha]').count() === 25, 'modelo: 3 salas × 8 linhas + SNG');
@@ -77,14 +81,15 @@ await cenario('gestor', time({
   const sg = rpcs(escritas, 'salvar_grade'); const a = sg.length ? JSON.parse(sg[0].corpo) : {};
   ok(sg.length === 1 && a.p_unidade === 'u2' && a.p_simulada === true && a.p_celulas.length === 25 && a.p_celulas[0].regular === 'até $2,50 + $3 2k+' && a.p_celulas[0].site === 'GGpoker',
     'salva a grade da Reta 2 como simulada, com o texto digitado');
-  await page.locator('[data-abrir-grade="Reta 2"]').click({ timeout: 8000 });
-  await page.locator('[data-regra-mk]').click();   // o banco simulado não grava a regra: a caixa volta, o que importa é o pedido
+  await irPara(page, 'Regras do time');
+  await page.locator('[data-regra-mk-time]').click();   // o banco simulado não grava a regra: a caixa volta, o que importa é o pedido
   await page.waitForTimeout(600);
   const rg = rpcs(escritas, 'definir_regra'); const b = rg.length ? JSON.parse(rg[0].corpo) : {};
-  ok(rg.length === 1 && b.p_unidade === 'u2' && b.p_chave === 'bloquear_promocao_com_mk' && b.p_valor === true, 'liga "não promover com MK" na Reta 2');
-  await page.getByRole('button', { name: 'Fechar' }).first().click();
-  await page.locator('[data-jogador="Maria"]').getByRole('button', { name: 'Mover' }).click({ timeout: 8000 });
-  ok(/Maria está em MK/.test(await corpo(page)), 'mover quem está em MK mostra o aviso');
+  ok(rg.length === 1 && b.p_unidade === 'u1' && b.p_chave === 'bloquear_promocao_com_mk' && b.p_valor === true, 'liga "não promover com MK" pro time inteiro (Regras do time)');
+  await irPara(page, 'Jogadores');
+  await page.locator('[data-acoes="Maria"]').click({ timeout: 8000 });
+  await page.getByRole('menuitem', { name: 'Mover de reta (promover)' }).click();
+  ok(/Maria está em MK \(−US\$\s50,00\)/.test(await corpo(page)), 'mover quem está em MK mostra o aviso com o valor');
 });
 
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
