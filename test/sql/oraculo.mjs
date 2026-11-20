@@ -22,7 +22,9 @@ const soma = arr => arr.reduce((a, b) => a + b, 0);
 // dinheiro em CENTAVOS (inteiro): sem float no modelo
 const $ = c => { const s = c < 0 ? '-' : ''; const a = Math.abs(c); return s + Math.floor(a / 100) + '.' + String(a % 100).padStart(2, '0'); };
 const dia = d => `current_date - ${-d}`;                                  // d = dias a partir de hoje (negativo = passado)
-const hora = m => `now() - interval '${-m} minutes'`;                    // m = minutos a partir de agora (negativo)
+// m = minutos a partir da meia-noite de hoje (negativo = passado). Âncora na meia-noite, não em now(): o modelo conta os
+// dias como floor(m / 1440); ancorado em now(), um envio às 22h de "2 dias atrás" virava outro dia conforme a hora do teste
+const hora = m => `date_trunc('day', now()) - interval '${-m} minutes'`;
 const txt = s => `'${String(s).replace(/'/g, "''")}'`;
 // round(x, 2) do Postgres com x = a/b (positivo): meio centavo pra cima
 const divCent = (a, b) => { const q = Math.floor(a / b), r = a - q * b; return 2 * r >= b ? q + 1 : q; };
@@ -134,6 +136,9 @@ select teste.igual('oráculo: nenhum torneio ou movimento conta na banca sem est
           + (select count(*) from public.bankroll_ledger l where l.workspace_id = '${WS}' and l.unidade_id is null and l.entry_date > (select f.corte from public.foto_de(l.pessoa_id) f)))::text$q$, '0');
 select teste.igual('oráculo: …e o de antes da entrada existe na amostra (o filtro foi exercitado)',
   $q$select (count(*) > 0)::text from public.tournaments t where t.workspace_id = '${WS}' and t.unidade_id is null$q$, 'true');
+select teste.igual('oráculo: o saldo por sala (com o "sem sala") soma a banca, pra todos',
+  $q$select count(*)::text from esperado e join public.pessoa p on p.nome = e.nome and p.workspace_id = '${WS}'
+    where (select coalesce(sum((x->>'saldo')::numeric), 0) from jsonb_array_elements(public.salas_de(p.id)) x) <> (public.banca_de(p.id)->>'banca')::numeric$q$, '0');
 select teste.igual('oráculo: MK do servidor = banca abaixo do MU, pra todos',
   $q$select count(*)::text from esperado e join public.pessoa p on p.nome = e.nome and p.workspace_id = '${WS}'
     where public.em_mk(p.id) <> (e.banca::numeric < e.mu::numeric)$q$, '0');

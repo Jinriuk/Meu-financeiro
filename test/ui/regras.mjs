@@ -53,7 +53,9 @@ await cenario('admin: regras por reta', samba('admin', { regra_unidade: regras }
 
 // 2) aluno: as regras da reta dele no "Meu time" e a sugestão de saque com a reserva
 const dbAluno = samba('aluno', { regra_unidade: [{ id: 'rg3', workspace_id: 'w1', unidade_id: 'u2', chave: 'abi_max', valor: 2, vigente_desde: '2026-01-01' }, regras[0]] });
-dbAluno.__rpc = { ...dbAluno.__rpc, sugerir_saque: { banca: 400, mu: 200, em_mk: false, reserva_por_sala: 50, salas: 2, reserva_total: 100, devolucao: 200, cashout: 100, banca_depois: 100 },
+dbAluno.__rpc = { ...dbAluno.__rpc, salas_jogador: { salas: [{ chave: 'gg', sala: 'GG Poker', saldo: 250 }, { chave: 'ps', sala: 'PokerStars', saldo: 150 }], total: 400, banca: 400, sem_sala: 0 },
+  sugerir_saque: { banca: 400, mu: 200, em_mk: false, reserva_por_sala: 50, salas: 2, reserva_total: 100, devolucao: 200, cashout: 100, banca_depois: 100, por_sala: true,
+    de_onde: [{ sala: 'GG Poker', saldo: 250, sacar: 200 }, { sala: 'PokerStars', saldo: 150, sacar: 100 }] },
   simular_saque: { parte_jogador: 35, total_time: 265, devolucao: 200, parte_time: 65, banca_depois: 100, mu_depois: 0 } };
 await cenario('aluno: regras da reta e sugestão de saque', dbAluno, async (page, escritas) => {
   await aba(page, 'Meu time');
@@ -61,10 +63,11 @@ await cenario('aluno: regras da reta e sugestão de saque', dbAluno, async (page
   ok(/ABI máximo \(reta sem grade\)\s*US\$\s2,00/.test(await r.innerText()) && /Reserva por sala no saque\s*US\$\s50,00 por sala/.test(await r.innerText()), 'Meu time: ABI 2 da reta dele e a reserva herdada da Base');
   await page.getByRole('button', { name: 'Pedir saque' }).click();
   const sg = page.locator('[data-saque-sugestao]'); await sg.waitFor({ timeout: 5000 });
-  ok(/devolver US\$\s200,00 de MU e sacar US\$\s100,00, deixando US\$\s50,00 em cada uma das 2 salas \(banca depois US\$\s100,00\)/.test(await sg.innerText()), 'sugestão do servidor: devolve o MU e saca deixando 50 em cada sala');
+  ok(/devolver US\$\s200,00 de MU e sacar US\$\s100,00, deixando US\$\s50,00 em cada uma das 2 salas \(banca depois US\$\s100,00\)/.test(await sg.innerText())
+    && /Sai de: GG Poker US\$\s200,00, PokerStars US\$\s100,00/.test(await sg.innerText()), 'sugestão do servidor: devolve o MU e saca deixando 50 em cada sala, dizendo de onde sai');
   await sg.getByRole('button', { name: 'Usar sugestão' }).click(); await page.waitForTimeout(800);
   const s = rpc(escritas, 'simular_saque').pop();
-  ok(s && s.p_banca === 400 && s.p_devolucao === 200 && s.p_cashout === 100, '"Usar sugestão" preenche e simula o saque');
+  ok(s && s.p_banca === 400 && s.p_devolucao === 200 && s.p_cashout === 100, '"Usar sugestão" preenche cada sala (saldo do sistema e quanto sai) e simula o saque');
 });
 
 // 3) a regra da reta vale no app de quem joga: ABI 5 da reta (o time diz 3) e stop diário de 2 buy-ins (o time diz 10)

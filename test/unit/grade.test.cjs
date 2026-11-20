@@ -106,3 +106,10 @@ test('grade que vale: a da unidade do torneio ou a mais próxima acima, vigente 
   assert.strictEqual(g('r', '2026-11-15'), undefined, 'acima da Base não tem grade');
   assert.strictEqual(E.gradeDoTorneio({ unidade_id: null, entry_date: '2026-11-15' }, U, GR), null, 'torneio sem unidade (pool/solo): sem grade');
 });
+
+test('sala do dinheiro: os mesmos nomes viram a mesma chave que o servidor (sala_chave); ACR sai da conta WPN', () => {
+  const casos = { 'GG Poker': 'gg', gg: 'gg', Natural8: 'gg', PokerStars: 'ps', PS: 'ps', 'PS.es': 'pses', 'PokerStars.es': 'pses', ACR: 'wpn', WPN: 'wpn',
+    'Americas Cardroom': 'wpn', partypoker: 'party', '888poker': '888', Winamax: 'winamax', '': null };
+  for (const [nome, chave] of Object.entries(casos)) assert.equal(E.salaChave(nome), chave, nome);
+  assert.equal(E.gradeSala('ACR'), 'acr', 'a grade continua separando ACR de WPN');
+});
