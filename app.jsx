@@ -1199,7 +1199,8 @@ const IcoEye    = p => <Svg {...p}><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 
 const IcoEyeOff = p => <Svg {...p}><path d="M3 3l18 18"/><path d="M10.6 6.1A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.3 3.9M6.1 6.2A17 17 0 0 0 2 12s3.5 7 10 7a9.3 9.3 0 0 0 4.2-1"/><path d="M9.5 9.6a3 3 0 0 0 4.2 4.2"/></Svg>;
 
 /* ---------- componentes base ---------- */
-const Card = ({children,style,className,onClick}) => <div onClick={onClick} className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 1px 2px rgba(25,35,29,.05), 0 12px 32px -20px rgba(25,35,29,.28)',...style}}>{children}</div>;
+// repassa data-*, role e aria-* pro div (antes eram descartados: teste e leitor de tela não achavam o cartão)
+const Card = ({children,style,className,onClick,...resto}) => <div {...resto} onClick={onClick} className={className} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:22,boxShadow:'0 1px 2px rgba(25,35,29,.05), 0 12px 32px -20px rgba(25,35,29,.28)',...style}}>{children}</div>;
 
 function NavBtn({Icon,label,active,onClick,mobile}){
   return <button onClick={onClick} style={{display:'flex',flexDirection:mobile?'column':'row',alignItems:'center',gap:mobile?4:12,width:mobile?'auto':'100%',minWidth:0,flex:mobile?'1 1 0':'initial',justifyContent:mobile?'center':'flex-start',padding:mobile?'8px 4px':'12px 15px',borderRadius:14,border:'none',cursor:'pointer',background:active?P:'transparent',color:active?'#fff':C.inkSoft,fontWeight:active?700:600,fontSize:mobile?10.5:15,transition:'all .18s'}}>
@@ -3263,6 +3264,7 @@ function Dashboard({session,profile}){
     return ()=>{ vivo=false; clearTimeout(t); }; },[modoTime,jogadorSel,timeGente,toursRaw,ledgerRaw,walletsRaw]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
+  const [hhDono,setHhDono]=useState(null);   // import de mãos parado: os torneios já estão lançados no nome do outro jogador
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
   const [tsSite,setTsSite]=useState('Detectar');  // site dos resumos (WPT usa o mesmo formato da GG)
   const [impPlayer,setImpPlayer]=useState('');    // de quem são os arquivos importados
@@ -3760,6 +3762,20 @@ function Dashboard({session,profile}){
        ser importados em qualquer ordem sem contar nada 2x nem perder o que já existia. */
     const grupos={};
     for(const h of allHands){ const k=h.site+'|'+h.tid; (grupos[k]=grupos[k]||[]).push(h); }
+    // as mãos são de torneios que já estão lançados no nome do OUTRO jogador? Quase sempre o "de quem" ficou errado
+    // (achado em produção: mãos de um jogador gravadas no outro, com as stats dos dois trocadas). Pergunta antes de gravar.
+    if(!modoTime&&players.filter(Boolean).length>1){
+      const tids=new Set(Object.values(grupos).map(g=>String(g[0].tid)));
+      const dono={}; for(const t of toursRaw){ if(t.site_tournament_id&&tids.has(String(t.site_tournament_id))) dono[String(t.site_tournament_id)]=t.player; }
+      const outro=players.find(p=>p&&!nomeIgual(p,player));
+      const doOutro=Object.values(dono).filter(p=>nomeIgual(p,outro)).length, deste=Object.values(dono).filter(p=>nomeIgual(p,player)).length;
+      if(outro&&doOutro>deste){
+        const escolha=await new Promise(res=>setHhDono({player,outro,n:doOutro,total:tids.size,res}));
+        setHhDono(null);
+        if(escolha==='cancelar'){ setImp({busy:false,prog:'',res:null}); return; }
+        player=escolha;
+      }
+    }
     let saved=0, novas=0, repetidas=0, reproc=0; const paraSalvar=[];
     // hand_ids não vem na carga inicial (F0.18): busca SÓ os dos torneios deste lote, em fatias
     const idsDe={};
@@ -3927,6 +3943,16 @@ function Dashboard({session,profile}){
     if(ultimo){ const dias=Math.round((Date.parse(todayISO())-Date.parse(ultimo))/86400000);
       if(dias>=2) alerts.push({key:'parado',tone:C.gold,text:`Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
   }
+
+  // resultado faltando: dia com mãos importadas e NENHUM torneio lançado pro jogador (depois do 1º torneio dele). Mão de
+  // torneio que já está lançado (mesmo id, de qualquer jogador) não conta: é outro problema (mão no jogador errado).
+  { const idsLancados=new Set(tours.map(t=>t.site_tournament_id).filter(Boolean).map(String));
+    players.filter(Boolean).forEach(p=>{
+      const dele=tours.filter(t=>nomeIgual(t.player,p)); if(!dele.length) return;
+      const primeiro=dele.reduce((m,t)=>t.entry_date<m?t.entry_date:m,dele[0].entry_date), comTorneio=new Set(dele.map(t=>t.entry_date));
+      const dias=[...new Set(hh.filter(h=>nomeIgual(h.player,p)&&h.entry_date&&h.entry_date>=primeiro&&!comTorneio.has(h.entry_date)&&!idsLancados.has(String(h.site_tournament_id))).map(h=>h.entry_date))].sort();
+      if(dias.length) alerts.push({key:'semres:'+p+':'+dias[dias.length-1]+':'+dias.length,tone:C.gold,
+        text:`${solo?'Você tem':p+' tem'} mãos importadas em ${dias.length} dia${dias.length!==1?'s':''} sem nenhum torneio lançado (${dias.slice(-3).map(dLabel).join(', ')}${dias.length>3?'…':''}). O resultado ${dias.length!==1?'desses dias':'desse dia'} não está na banca: importe os resumos ou lance os torneios.`}); }); }
 
   // sininho: alertas do painel (enquanto a situação durar e ninguém apagar) + avisos do aparelho + avisos do time
   const alertasPainel=alerts.map(a=>({key:a.key||a.text,painel:true,tipo:'painel',titulo:a.tone===C.red?'Atenção na banca':'Aviso',texto:a.text,tone:a.tone,items:a.items}))
@@ -5220,6 +5246,16 @@ function Dashboard({session,profile}){
         onEdit={d=>update(MODAL_TABLE[editing.type],normalizeRow(editing.type,d),setter,list)}/>);})()}
 
     {/* modal quick edit (config) */}
+    {hhDono&&<div style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,padding:16}}>
+      <Card data-hh-dono role="dialog" aria-label="De quem são essas mãos?" style={{padding:22,width:'100%',maxWidth:430}}>
+        <div style={{fontWeight:800,fontSize:16.5}}>De quem são essas mãos?</div>
+        <div style={{fontSize:13.5,color:C.inkSoft,marginTop:6,lineHeight:1.55}}>{hhDono.n} dos {hhDono.total} torneios dessas mãos já estão lançados no nome de <b style={{color:C.ink}}>{hhDono.outro}</b>, mas o import está no nome de <b style={{color:C.ink}}>{hhDono.player}</b>. Mãos no jogador errado trocam as estatísticas dos dois.</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:16}}>
+          <button onClick={()=>hhDono.res(hhDono.outro)} style={{padding:'13px 0',borderRadius:13,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14.5,cursor:'pointer'}}>Importar no nome de {hhDono.outro}</button>
+          <button onClick={()=>hhDono.res(hhDono.player)} style={{padding:'12px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:C.ink,fontWeight:700,fontSize:14,cursor:'pointer'}}>São de {hhDono.player} mesmo</button>
+          <button onClick={()=>hhDono.res('cancelar')} style={{padding:'10px 0',borderRadius:13,border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:13.5,cursor:'pointer'}}>Cancelar o import</button>
+        </div>
+      </Card></div>}
     {quickEdit&&<QuickEditModal label={quickEdit.label} hint={quickEdit.hint} kind={quickEdit.kind} currentValue={quickEdit.current} onClose={()=>setQuickEdit(null)} onSave={quickEdit.onSave}/>}
 
     {/* modal trocar senha */}
