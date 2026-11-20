@@ -2578,12 +2578,14 @@ const IcoEyeOff = p => /*#__PURE__*/React.createElement(Svg, p, /*#__PURE__*/Rea
 }));
 
 /* ---------- componentes base ---------- */
+// repassa data-*, role e aria-* pro div (antes eram descartados: teste e leitor de tela não achavam o cartão)
 const Card = ({
   children,
   style,
   className,
-  onClick
-}) => /*#__PURE__*/React.createElement("div", {
+  onClick,
+  ...resto
+}) => /*#__PURE__*/React.createElement("div", _extends({}, resto, {
   onClick: onClick,
   className: className,
   style: {
@@ -2593,7 +2595,7 @@ const Card = ({
     boxShadow: '0 1px 2px rgba(25,35,29,.05), 0 12px 32px -20px rgba(25,35,29,.28)',
     ...style
   }
-}, children);
+}), children);
 function NavBtn({
   Icon,
   label,
@@ -11556,6 +11558,7 @@ function Dashboard({
     prog: '',
     res: null
   }); // estado do import de HH
+  const [hhDono, setHhDono] = useState(null); // import de mãos parado: os torneios já estão lançados no nome do outro jogador
   const [tsImp, setTsImp] = useState({
     busy: false,
     prog: '',
@@ -12630,6 +12633,37 @@ function Dashboard({
       const k = h.site + '|' + h.tid;
       (grupos[k] = grupos[k] || []).push(h);
     }
+    // as mãos são de torneios que já estão lançados no nome do OUTRO jogador? Quase sempre o "de quem" ficou errado
+    // (achado em produção: mãos de um jogador gravadas no outro, com as stats dos dois trocadas). Pergunta antes de gravar.
+    if (!modoTime && players.filter(Boolean).length > 1) {
+      const tids = new Set(Object.values(grupos).map(g => String(g[0].tid)));
+      const dono = {};
+      for (const t of toursRaw) {
+        if (t.site_tournament_id && tids.has(String(t.site_tournament_id))) dono[String(t.site_tournament_id)] = t.player;
+      }
+      const outro = players.find(p => p && !nomeIgual(p, player));
+      const doOutro = Object.values(dono).filter(p => nomeIgual(p, outro)).length,
+        deste = Object.values(dono).filter(p => nomeIgual(p, player)).length;
+      if (outro && doOutro > deste) {
+        const escolha = await new Promise(res => setHhDono({
+          player,
+          outro,
+          n: doOutro,
+          total: tids.size,
+          res
+        }));
+        setHhDono(null);
+        if (escolha === 'cancelar') {
+          setImp({
+            busy: false,
+            prog: '',
+            res: null
+          });
+          return;
+        }
+        player = escolha;
+      }
+    }
     let saved = 0,
       novas = 0,
       repetidas = 0,
@@ -13033,6 +13067,24 @@ function Dashboard({
         text: `Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`
       });
     }
+  }
+
+  // resultado faltando: dia com mãos importadas e NENHUM torneio lançado pro jogador (depois do 1º torneio dele). Mão de
+  // torneio que já está lançado (mesmo id, de qualquer jogador) não conta: é outro problema (mão no jogador errado).
+  {
+    const idsLancados = new Set(tours.map(t => t.site_tournament_id).filter(Boolean).map(String));
+    players.filter(Boolean).forEach(p => {
+      const dele = tours.filter(t => nomeIgual(t.player, p));
+      if (!dele.length) return;
+      const primeiro = dele.reduce((m, t) => t.entry_date < m ? t.entry_date : m, dele[0].entry_date),
+        comTorneio = new Set(dele.map(t => t.entry_date));
+      const dias = [...new Set(hh.filter(h => nomeIgual(h.player, p) && h.entry_date && h.entry_date >= primeiro && !comTorneio.has(h.entry_date) && !idsLancados.has(String(h.site_tournament_id))).map(h => h.entry_date))].sort();
+      if (dias.length) alerts.push({
+        key: 'semres:' + p + ':' + dias[dias.length - 1] + ':' + dias.length,
+        tone: C.gold,
+        text: `${solo ? 'Você tem' : p + ' tem'} mãos importadas em ${dias.length} dia${dias.length !== 1 ? 's' : ''} sem nenhum torneio lançado (${dias.slice(-3).map(dLabel).join(', ')}${dias.length > 3 ? '…' : ''}). O resultado ${dias.length !== 1 ? 'desses dias' : 'desse dia'} não está na banca: importe os resumos ou lance os torneios.`
+      });
+    });
   }
 
   // sininho: alertas do painel (enquanto a situação durar e ninguém apagar) + avisos do aparelho + avisos do time
@@ -18333,7 +18385,91 @@ function Dashboard({
       onClose: () => setEditing(null),
       onEdit: d => update(MODAL_TABLE[editing.type], normalizeRow(editing.type, d), setter, list)
     });
-  })(), quickEdit && /*#__PURE__*/React.createElement(QuickEditModal, {
+  })(), hhDono && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(20,18,30,.45)',
+      backdropFilter: 'blur(3px)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 60,
+      padding: 16
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    "data-hh-dono": true,
+    role: "dialog",
+    "aria-label": "De quem s\xE3o essas m\xE3os?",
+    style: {
+      padding: 22,
+      width: '100%',
+      maxWidth: 430
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 16.5
+    }
+  }, "De quem s\xE3o essas m\xE3os?"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.inkSoft,
+      marginTop: 6,
+      lineHeight: 1.55
+    }
+  }, hhDono.n, " dos ", hhDono.total, " torneios dessas m\xE3os j\xE1 est\xE3o lan\xE7ados no nome de ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.ink
+    }
+  }, hhDono.outro), ", mas o import est\xE1 no nome de ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.ink
+    }
+  }, hhDono.player), ". M\xE3os no jogador errado trocam as estat\xEDsticas dos dois."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => hhDono.res(hhDono.outro),
+    style: {
+      padding: '13px 0',
+      borderRadius: 13,
+      border: 'none',
+      background: P,
+      color: '#fff',
+      fontWeight: 700,
+      fontSize: 14.5,
+      cursor: 'pointer'
+    }
+  }, "Importar no nome de ", hhDono.outro), /*#__PURE__*/React.createElement("button", {
+    onClick: () => hhDono.res(hhDono.player),
+    style: {
+      padding: '12px 0',
+      borderRadius: 13,
+      border: `1.5px solid ${C.border}`,
+      background: 'transparent',
+      color: C.ink,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, "S\xE3o de ", hhDono.player, " mesmo"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => hhDono.res('cancelar'),
+    style: {
+      padding: '10px 0',
+      borderRadius: 13,
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 13.5,
+      cursor: 'pointer'
+    }
+  }, "Cancelar o import")))), quickEdit && /*#__PURE__*/React.createElement(QuickEditModal, {
     label: quickEdit.label,
     hint: quickEdit.hint,
     kind: quickEdit.kind,
