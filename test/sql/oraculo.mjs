@@ -51,8 +51,7 @@ const pid = i => `ae000000-0000-0000-0000-${String(100000 + i).padStart(12, '0')
 for (let i = 0; i < N; i++) {
   const nome = `Aluno ${String(i).padStart(3, '0')}`, id = pid(i);
   const entrada = -ri(10, 120);                                           // dias: entrou no time
-  sql(`insert into public.pessoa(id, workspace_id, nome, status) values ('${id}', '${WS}', ${txt(nome)}, 'ativo');
-insert into public.vinculo(pessoa_id, unidade_id, inicio) values ('${id}', '${RETA}', ${dia(entrada)});`);
+  sql(`insert into public.pessoa(id, workspace_id, nome, status) values ('${id}', '${WS}', ${txt(nome)}, 'ativo');`);
   // planilha: 55% conferida, 15% só enviada (não vale), 30% sem
   const tipo = rnd(); let ab = null;
   if (tipo < 0.70) {
@@ -70,6 +69,9 @@ insert into public.vinculo(pessoa_id, unidade_id, inicio) values ('${id}', '${RE
   // o "agora" do envio em dias: o banco usa enviado_em::date; tEnv cai no dia diasEnvio (até 10h depois da meia-noite de hoje - N)
   const corte = ab && ab.confirmada ? (ab.dataCorte ?? ab.atualizado ?? ab.diaEnvio) : entrada - 1;
   const desde = ab && ab.confirmada ? ab.tConf : -Infinity;
+  // planilha conferida com saldos de antes da entrada: a entrada recua pro dia seguinte ao dos saldos (como conferir_abertura faz)
+  const inicio = ab && ab.confirmada && corte < entrada - 1 ? corte + 1 : entrada;
+  sql(`insert into public.vinculo(pessoa_id, unidade_id, inicio) values ('${id}', '${RETA}', ${dia(inicio)});`);
   // salas
   const salas = Array.from({ length: ri(0, 3) }, (_, k) => ({ sala: ['GG Poker', 'PokerStars', 'WPT', 'Outros'][k], saldo: ri(0, 100000) }));
   for (const w of salas) sql(`insert into public.player_wallets(workspace_id, player, wallet, saldo_inicial) values ('${WS}', ${txt(nome)}, ${txt(w.sala)}, ${$(w.saldo)});`);
@@ -100,9 +102,11 @@ insert into public.vinculo(pessoa_id, unidade_id, inicio) values ('${id}', '${RE
     + soma(aportes.filter(a => a.t > desde).map(a => a.v)) - soma(pagosDepois.map(q => q.d + q.c));
   const mu = (ab && ab.confirmada ? ab.mu : 0) + soma(aportes.filter(a => a.t > desde).map(a => a.v)) - soma(pagosDepois.map(q => q.d));
   const lifetime = (ab && ab.confirmada ? ab.cashout : 0) + soma(pagosDepois.map(q => q.c));
-  const ent = soma(tours.map(t => 1 + t.r)), nominal = soma(tours.map(t => t.b * (1 + t.r)));
-  const investido = soma(tours.map(t => t.tk ? 0 : t.b * (1 + t.r))), lucro = soma(tours.map(res));
-  sql(`insert into esperado values (${txt(nome)}, '${$(banca)}', '${$(mu)}', '${$(lifetime)}', '${tours.length}', '${ent}', '${$(investido)}', '${$(lucro)}', ${ent ? `'${$(divCent(nominal, ent))}'` : 'null'});`);
+  // desempenho na lista do time: só o que é de dentro do time (de antes da entrada é só do jogador)
+  const doTime = tours.filter(t => t.d >= inicio);
+  const ent = soma(doTime.map(t => 1 + t.r)), nominal = soma(doTime.map(t => t.b * (1 + t.r)));
+  const investido = soma(doTime.map(t => t.tk ? 0 : t.b * (1 + t.r))), lucro = soma(doTime.map(res));
+  sql(`insert into esperado values (${txt(nome)}, '${$(banca)}', '${$(mu)}', '${$(lifetime)}', '${doTime.length}', '${ent}', '${$(investido)}', '${$(lucro)}', ${ent ? `'${$(divCent(nominal, ent))}'` : 'null'});`);
 }
 
 // ---------- divisão do cashout: o saque inteiro na faixa do lifetime do dia ----------
@@ -125,6 +129,11 @@ select teste.igual('oráculo: banca, MU e lucro sacado de ${N} alunos batem com 
      from esperado e join public.pessoa p on p.nome = e.nome and p.workspace_id = '${WS}'
      cross join lateral (select public.banca_de(p.id) b) x cross join lateral public.mu_de(p.id) m
     where (b->>'banca')::numeric <> e.banca::numeric or m.mu <> e.mu::numeric or m.lifetime <> e.lifetime::numeric$q$, 'todos iguais');
+select teste.igual('oráculo: nenhum torneio ou movimento conta na banca sem estar à vista do time (tem unidade)',
+  $q$select ((select count(*) from public.tournaments t where t.workspace_id = '${WS}' and t.unidade_id is null and t.entry_date > (select f.corte from public.foto_de(t.pessoa_id) f))
+          + (select count(*) from public.bankroll_ledger l where l.workspace_id = '${WS}' and l.unidade_id is null and l.entry_date > (select f.corte from public.foto_de(l.pessoa_id) f)))::text$q$, '0');
+select teste.igual('oráculo: …e o de antes da entrada existe na amostra (o filtro foi exercitado)',
+  $q$select (count(*) > 0)::text from public.tournaments t where t.workspace_id = '${WS}' and t.unidade_id is null$q$, 'true');
 select teste.igual('oráculo: MK do servidor = banca abaixo do MU, pra todos',
   $q$select count(*)::text from esperado e join public.pessoa p on p.nome = e.nome and p.workspace_id = '${WS}'
     where public.em_mk(p.id) <> (e.banca::numeric < e.mu::numeric)$q$, '0');

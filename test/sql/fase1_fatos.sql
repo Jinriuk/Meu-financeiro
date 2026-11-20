@@ -56,7 +56,7 @@ insert into public.tournaments(workspace_id,entry_date,player,buyin,prize) value
  ('d0000000-0000-0000-0000-0000000000d1',current_date-10,'joão ',5,30),          -- caixa e espaço diferentes
  ('d0000000-0000-0000-0000-0000000000d1',current_date-9,'Maria',20,50),
  ('d0000000-0000-0000-0000-0000000000d1',current_date-8,'Pedro',50,0),
- ('d0000000-0000-0000-0000-0000000000d1',current_date-100,'João',1,0);           -- antes de entrar no time → raiz
+ ('d0000000-0000-0000-0000-0000000000d1',current_date-100,'João',1,0);           -- antes de entrar no time → sem unidade (só ele vê)
 insert into public.withdrawals(workspace_id,week_ending_date,player,valor_sacado) values
  ('d0000000-0000-0000-0000-0000000000d1',current_date-7,'João',100),
  ('d0000000-0000-0000-0000-0000000000d1',current_date-7,'Pedro',300);
@@ -68,8 +68,8 @@ select teste.igual('gatilho liga o nome à pessoa (caixa/espaço não importam)'
   $q$select count(*)::text from public.tournaments where pessoa_id='f0000000-0000-0000-0000-0000000000f4'$q$, '3');
 select teste.igual('fato na reta do jogador na data',
   $q$select string_agg(distinct u.nome, ',') from public.tournaments t join public.unidade u on u.id=t.unidade_id where t.player='Maria'$q$, 'Reta B');
-select teste.igual('fato de antes de entrar no time fica na raiz',
-  $q$select u.nome from public.tournaments t join public.unidade u on u.id=t.unidade_id where t.entry_date=current_date-100$q$, 'Time F');
+select teste.igual('fato de antes de entrar no time fica sem unidade (só o jogador vê)',
+  $q$select coalesce(t.unidade_id::text, 'sem unidade') from public.tournaments t where t.entry_date=current_date-100$q$, 'sem unidade');
 select teste.igual('movimento sem jogador fica na raiz',
   $q$select u.nome from public.bankroll_ledger b join public.unidade u on u.id=b.unidade_id where b.wallet='Reserva'$q$, 'Time F');
 
@@ -118,7 +118,7 @@ select teste.igual('…ninguém sem escopo de gravação apagou nada (Maria segu
   $q$select string_agg(lower(btrim(player))||':'||n, ',' order by 1) from (select lower(btrim(player)) player, count(*) n from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1' and player in ('Maria','João','joão ') group by 1) x$q$, 'joão:4,maria:1');
 set role authenticated;
 select teste.como('c0000000-0000-0000-0000-0000000000c1');
-select teste.igual('Admin vê todos os torneios e saques', $q$select (select count(*) from public.tournaments)||'/'||(select count(*) from public.withdrawals)$q$, '6/3');
+select teste.igual('Admin vê os torneios do time (não o de antes da entrada do João) e todos os saques', $q$select (select count(*) from public.tournaments)||'/'||(select count(*) from public.withdrawals)$q$, '5/3');
 select teste.ok('Admin muda a configuração', $q$update public.pool_config set abi_max=4; insert into public.config_changes(field,resumo) values ('abi_max','2→4')$q$);
 select teste.igual('…e a mudança gravou', $q$select abi_max::text from public.pool_config$q$, '4');
 
@@ -127,8 +127,8 @@ select teste.ok('Admin promove João da Reta A pro Principal', $q$select public.
 select teste.ok('João lança torneio de hoje', $q$select teste.como('c0000000-0000-0000-0000-0000000000c4'); insert into public.tournaments(entry_date,player,buyin) values (current_date,'João',7)$q$);
 reset role;
 select teste.igual('torneios do João por unidade depois da promoção',
-  $q$select string_agg(u.nome||':'||n, ',' order by u.nome) from (select unidade_id, count(*) n from public.tournaments where pessoa_id='f0000000-0000-0000-0000-0000000000f4' group by 1) x join public.unidade u on u.id=x.unidade_id$q$,
-  'Principal:1,Reta A:3,Time F:1');
+  $q$select string_agg(coalesce(u.nome, 'sem unidade')||':'||n, ',' order by coalesce(u.nome, 'sem unidade')) from (select unidade_id, count(*) n from public.tournaments where pessoa_id='f0000000-0000-0000-0000-0000000000f4' group by 1) x left join public.unidade u on u.id=x.unidade_id$q$,
+  'Principal:1,Reta A:3,sem unidade:1');
 set role authenticated;
 select teste.como('c0000000-0000-0000-0000-0000000000c2');
 select teste.igual('Professor continua vendo o histórico do João na Base, não o de hoje', $q$select count(*)::text from public.tournaments where lower(btrim(player))='joão'$q$, '3');
@@ -147,9 +147,11 @@ select teste.igual('Quem é de fora não vê nada do Time F', $q$select (select 
 select teste.como('c0000000-0000-0000-0000-0000000000c1');
 select teste.ok('Admin registra a saída da Maria', $q$select public.registrar_saida('f0000000-0000-0000-0000-0000000000f5')$q$);
 select teste.como('c0000000-0000-0000-0000-0000000000c5');
-select teste.igual('Maria, depois de sair, não lê mais nada do time', $q$select (select count(*) from public.tournaments)+(select count(*) from public.pool_config)+(select count(*) from public.unidade)||''$q$, '0');
+select teste.igual('Maria, depois de sair, não lê mais nada do time', $q$select (select count(*) from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1')+(select count(*) from public.pool_config where workspace_id='d0000000-0000-0000-0000-0000000000d1')+(select count(*) from public.unidade)||''$q$, '0');
+select teste.igual('…e vê os torneios dela na conta individual nova (saída opção B: o histórico vai com ela)', $q$select count(*)||'' from public.tournaments where player='Maria'$q$, '1');
 reset role;
-select teste.igual('…e os torneios dela continuam no time, na Reta B', $q$select string_agg(u.nome, ',') from public.tournaments t join public.unidade u on u.id=t.unidade_id where t.player='Maria'$q$, 'Reta B');
+select teste.igual('…o time não ficou com os torneios dela; a conta nova é dela', $q$select (select count(*) from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1' and lower(player)='maria')||'/'||
+  (select w.kind||':'||m.role from public.tournaments t join public.workspaces w on w.id=t.workspace_id join public.workspace_members m on m.workspace_id=w.id where t.player='Maria' and m.user_id='c0000000-0000-0000-0000-0000000000c5')$q$, '0/solo:owner');
 
 -- ---------- pool de sócios: estruturar sem mudar nada do que eles veem ----------
 insert into public.tournaments(workspace_id,entry_date,player,buyin,prize) values

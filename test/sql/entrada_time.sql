@@ -76,8 +76,8 @@ select teste.igual('o histórico foi pro time no nome dele (o mesmo torneio lan�
             (select count(*) from public.workspaces where id = 'bc000000-0000-0000-0000-0000000000c1')||' conta/'||
             (select count(*) from public.tournaments where workspace_id = 'bc000000-0000-0000-0000-0000000000c1')||' sobrou'$q$,
   '2 torneios/2 stats/1 mov/0 conta/0 sobrou');
-select teste.igual('…ligado à pessoa dele; é histórico de antes do time (raiz) e fica fora da banca do time',
-  $q$select (select count(*) from public.tournaments t join public.pessoa p on p.id = t.pessoa_id where t.workspace_id = teste.eid('ws') and p.nome = 'Ze Solo' and t.unidade_id = teste.eid('R'))||'/'||
+select teste.igual('…ligado à pessoa dele; é histórico de antes do time (sem unidade: só ele vê) e fica fora da banca do time',
+  $q$select (select count(*) from public.tournaments t join public.pessoa p on p.id = t.pessoa_id where t.workspace_id = teste.eid('ws') and p.nome = 'Ze Solo' and t.unidade_id is null)||'/'||
             (public.banca_de((select id from public.pessoa where workspace_id = teste.eid('ws') and nome = 'Ze Solo'))->>'banca')$q$, '2/0.00');
 select teste.igual('…as salas e a config da conta individual ficaram guardadas (não entram na banca do time)',
   $q$select jsonb_array_length(dados->'salas')||' salas/'||jsonb_array_length(dados->'config')||' config/'||jsonb_array_length(dados->'ajustes')||' ajuste'
@@ -85,6 +85,9 @@ select teste.igual('…as salas e a config da conta individual ficaram guardadas
 set role authenticated;
 select teste.como('ba000000-0000-0000-0000-0000000000b1');
 select teste.igual('o professor da Reta E1 não vê o histórico de antes do time (regra da fase 1)',
+  $q$select count(*)::text from public.tournaments where player = 'Ze Solo'$q$, '0');
+select teste.como('ba000000-0000-0000-0000-0000000000a1');
+select teste.igual('…nem o admin (decisão de 20/11: o histórico de antes do time fica só com o jogador)',
   $q$select count(*)::text from public.tournaments where player = 'Ze Solo'$q$, '0');
 select teste.como('ba000000-0000-0000-0000-0000000000c1');
 select teste.igual('o próprio Ze Solo vê o histórico dele no time', $q$select count(*)::text from public.tournaments where player = 'Ze Solo'$q$, '2');

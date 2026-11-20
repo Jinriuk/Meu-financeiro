@@ -5,7 +5,7 @@
   "description": "GrinderBank — gestão de banca e estatísticas de poker",
   "scripts": {
     "build": "node build.js",
-    "test": "node --test test/unit/*.test.cjs && node test/smoke.mjs && node test/ui/stats.mjs && node test/ui/resumos.mjs && node test/ui/bounty.mjs && node test/ui/status.mjs && node test/ui/senha.mjs && node test/ui/erros.mjs && node test/ui/convite.mjs && node test/ui/link_email.mjs && node test/ui/time.mjs && node test/ui/modo_time.mjs && node test/ui/sininho.mjs && node test/ui/grade.mjs && node test/ui/gestao.mjs && node test/ui/carga.mjs && node test/ui/protecoes.mjs && node test/ui/entrada.mjs && bash test/sql/run.sh",
+    "test": "node --test test/unit/*.test.cjs && node test/smoke.mjs && node test/ui/stats.mjs && node test/ui/resumos.mjs && node test/ui/bounty.mjs && node test/ui/status.mjs && node test/ui/senha.mjs && node test/ui/erros.mjs && node test/ui/convite.mjs && node test/ui/link_email.mjs && node test/ui/time.mjs && node test/ui/modo_time.mjs && node test/ui/sininho.mjs && node test/ui/grade.mjs && node test/ui/gestao.mjs && node test/ui/carga.mjs && node test/ui/protecoes.mjs && node test/ui/entrada.mjs && node test/ui/saida.mjs && node test/ui/regras.mjs && node test/ui/plataforma.mjs && bash test/sql/run.sh",
     "test:unit": "node --test test/unit/*.test.cjs",
     "test:sql": "bash test/sql/run.sh"
   },

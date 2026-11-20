@@ -45,6 +45,10 @@ create table public.plan_activations (id uuid primary key default gen_random_uui
 create or replace function public.my_workspaces() returns setof uuid language sql stable security definer set search_path to '' as $$ select workspace_id from public.workspace_members where user_id = auth.uid() $$;
 create or replace function public.set_workspace_id() returns trigger language plpgsql security definer set search_path to '' as $$ begin
   if new.workspace_id is null then select workspace_id into new.workspace_id from public.workspace_members where user_id=auth.uid() order by created_at limit 1; end if; return new; end $$;
+-- como em produção (harden_function_grants): ninguém do cliente chama o gatilho; my_workspaces só pra quem está logado
+revoke all on function public.my_workspaces() from public, anon;
+grant execute on function public.my_workspaces() to authenticated;
+revoke all on function public.set_workspace_id() from public, anon, authenticated;
 create trigger set_ws before insert on public.tournaments for each row execute function public.set_workspace_id();
 create trigger set_ws before insert on public.hh_tournament_stats for each row execute function public.set_workspace_id();
 create trigger set_ws before insert on public.bankroll_ledger for each row execute function public.set_workspace_id();

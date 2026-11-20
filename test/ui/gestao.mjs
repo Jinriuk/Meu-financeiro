@@ -100,6 +100,23 @@ await cenario('financeiro', dbFin, async (page, escritas) => {
   ok(await page.getByRole('menuitem', { name: 'Ver painel do aluno' }).count() === 0, '…nem pelo menu ⋯');
 });
 
+// 2b) planilha com saldos de antes da entrada: a data mínima é a da planilha e a tela explica o que passa a ser do time
+const dbAnt = samba('fin');
+dbAnt.abertura = dbAnt.abertura.map(a => a.id === 'a1' ? { ...a, planilha: { ...a.planilha, atualizado_em: D(5) } } : a);
+dbAnt.vinculo = dbAnt.vinculo.map(v => v.pessoa_id === 'p3' ? { ...v, inicio: D(1) } : v);
+const br = s => `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
+await cenario('planilha de antes da entrada', dbAnt, async (page) => {
+  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
+  await aba(page, 'Financeiro');
+  const corte = page.locator('[data-corte="Enzo P."]');
+  ok(await corte.inputValue() === D(5) && await corte.getAttribute('min') === D(5), 'saldos de 5 dias atrás: a data começa na da planilha e não vai antes dela');
+  const av = page.locator('[data-antecipa="Enzo P."]');
+  ok(await av.count() === 1 && (await av.innerText()).includes(`entrou no time em ${br(D(1))}`) && (await av.innerText()).includes(`a partir de ${br(D(4))} passa a ser do time`),
+    'avisa que ele entrou ontem e que o jogado desde o dia seguinte aos saldos passa a ser do time');
+  await corte.fill(D(1));
+  ok(await av.count() === 0, 'com a data depois da entrada, nada muda de dono: o aviso some');
+});
+
 // 3) professor que joga: chave de modo e "Minhas retas"
 await cenario('professor', samba('prof'), async (page) => {
   await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
