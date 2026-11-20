@@ -16,14 +16,14 @@ select teste.como('dd000000-0000-0000-0000-000000000004'); select public.apagar_
 
 -- ---------- visão do time: cada um vê o que a permissão deixa ----------
 select teste.como('dd000000-0000-0000-0000-000000000003');
-select teste.igual('professor: desempenho do Outro (2 torneios, investido 20, lucro 35, ROI 175%, ABI 7,50) e nada de dinheiro',
-  $q$select concat_ws('/', torneios, investido, lucro, roi, abi, coalesce(banca::text,'-'), coalesce(mu::text,'-')) from public.resumo_time() where nome='Outro D'$q$, '2/20.00/35.00/175.0/7.50/-/-');
+select teste.igual('professor: desempenho do Outro (2 torneios, investido 20, lucro 35, ROI 175%, ABI por entrada (10×2 + 5)/3 = 8,33) e nada de dinheiro',
+  $q$select concat_ws('/', torneios, investido, lucro, roi, abi, coalesce(banca::text,'-'), coalesce(mu::text,'-')) from public.resumo_time() where nome='Outro D'$q$, '2/20.00/35.00/175.0/8.33/-/-');
 select teste.igual('professor vê os 2 alunos da Base', $q$select count(*)::text from public.resumo_time()$q$, '2');
 select teste.como('dd000000-0000-0000-0000-000000000002');
-select teste.igual('financeiro: dinheiro do Outro (banca = 0 + 35 − 250 de saques pagos; MU 110; lucro sacado 300) e nada de desempenho',
-  $q$select concat_ws('/', coalesce(torneios::text,'-'), banca, mu, lucro_sacado, planilha) from public.resumo_time() where nome='Outro D'$q$, '-/-215.00/110.00/300.00/confirmada');
+select teste.igual('financeiro: dinheiro do Outro pela foto (torneios de antes da planilha já estão nela; capital de 40 e saque de 250 depois dela: banca 0 + 40 − 250; MU 110 + 40 − 150 = 0; lucro sacado 300 + 100) e nada de desempenho',
+  $q$select concat_ws('/', coalesce(torneios::text,'-'), banca, mu, lucro_sacado, planilha) from public.resumo_time() where nome='Outro D'$q$, '-/-210.00/0.00/400.00/confirmada');
 select teste.como('dd000000-0000-0000-0000-000000000005');
-select teste.igual('aluno só vê a própria linha, completa', $q$select string_agg(nome||':'||torneios||':'||banca, ',') from public.resumo_time()$q$, 'Outro D:2:-215.00');
+select teste.igual('aluno só vê a própria linha, completa', $q$select string_agg(nome||':'||torneios||':'||banca, ',') from public.resumo_time()$q$, 'Outro D:2:-210.00');
 select teste.igual('filtro de período (só os últimos 2 dias: 1 torneio)', $q$select torneios::text from public.resumo_time(current_date-2)$q$, '1');
 
 select teste.igual('valor no formato do app, com milhar', $q$select public.fmt_usd(1234567.891)||' | '||public.fmt_usd(-2)$q$, 'US$ 1.234.567,89 | US$ -2,00');
@@ -50,7 +50,7 @@ select teste.igual('…e não recebeu aviso do próprio pedido', $q$select count
 
 -- ---------- avisos de saque e de entrada ----------
 select teste.como('dd000000-0000-0000-0000-000000000005');
-select teste.ok('Outro D pede saque', $q$select public.solicitar_saque(1000, 110, 0)$q$);
+select teste.ok('Outro D pede saque (cashout de 110: depois da correção da planilha o MU dele é 0)', $q$select public.solicitar_saque(1000, 0, 110)$q$);
 select teste.como('dd000000-0000-0000-0000-000000000002');
 select teste.igual('financeiro avisado do saque', $q$select titulo from public.aviso where tipo='saque'$q$, 'Outro D pediu saque');
 select teste.como('dd000000-0000-0000-0000-000000000001');

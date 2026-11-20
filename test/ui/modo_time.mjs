@@ -78,6 +78,23 @@ await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1
   ok(await page.locator('[data-ajustes-time]').count() === 1 && /só quem configura o time altera/.test(await corpo(page)), 'aluno vê as regras do time sem poder editar');
 });
 
+// 2b) a banca do aluno vem do SERVIDOR (a mesma da lista e do MK): salas + o que veio depois da foto + capital do time − saques
+await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1', user_id: EU, nome: 'Hero', status: 'ativo' }], vinculo: [{ pessoa_id: 'p1', unidade_id: 'u1', fim: null }],
+  tournaments: [tour('t1', 'Hero', 'Torneio do Hero', 10, 30, '2026-11-16'), tour('t2', 'Hero', 'Outro do Hero', 5, 0, '2026-11-17')],
+  __rpc: { situacao_jogador: { mu: 300, lifetime: 0, contrato: null, abertura: 'confirmada', banca: 250.5,
+    banca_partes: { salas: 155, resultados: 15, movimentos: 0, aportes: 150.5, saques: 70, banca: 250.5, corte: '2026-11-10' } } } }), async (page) => {
+  await irPara(page, 'Início');
+  await page.locator('[data-partes-banca]').waitFor({ timeout: 8000 });
+  const t = await page.locator('main').innerText();
+  ok(/Minha banca\s*US\$\s250,50/.test(t), 'banca = a do servidor (US$ 250,50), não a soma local');
+  const pt = await page.locator('[data-partes-banca]').innerText();
+  ok(/Salas US\$\s155,00/.test(pt) && /Capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
+  ok(/MK −US\$\s49,50/.test(await page.locator('[data-painel-mk]').innerText()), 'MK pela mesma conta: 250,50 − MU 300 = −49,50');
+  await irPara(page, 'Banca');
+  ok(/Capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
+  ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
+});
+
 // 3) pool de 2 ('team'): nada muda
 await cenario('pool de 2', dbBase({
   workspaces: [{ id: 'w1', name: 'Pool', kind: 'team', plan: 'team', trial_ends_at: null, created_at: '2026-01-01T00:00:00Z' }],
