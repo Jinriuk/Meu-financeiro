@@ -84,6 +84,7 @@ await cenario('financeiro', dbFin, async (page, escritas) => {
   const t = await page.locator('main').innerText();
   ok(/US\$\s1\.650,00/.test(t) && /\+US\$\s350,00/.test(t), 'banca somada e profit sem contar a convidada');
   ok(await page.locator('[data-dinheiro-de="Iza N."]').count() === 0, 'convidada sem dinheiro no time não aparece na tabela');
+  ok(/\+US\$\s10\.597,00\s*sacado US\$\s10\.240,00/.test(await page.locator('[data-lifetime-de="Enzo P."]').innerText()), 'lifetime como na planilha: já sacado 10.240 + profit 357 = 10.597');
   const sq = await page.locator('[data-saque="Bruno T."]').innerText();
   ok(/Banca informada US\$\s412,00 · no sistema US\$\s380,00/.test(sq) && /US\$\s32,00 acima da do sistema/.test(sq), 'saque mostra a banca digitada e a do sistema, e avisa a diferença');
   const corte = page.locator('[data-corte="Enzo P."]');
