@@ -49,6 +49,28 @@ const esquecerConvite = () => {
     localStorage.removeItem(CONVITE_KEY);
   } catch (e) {}
 };
+// código do time digitado no cadastro: guardado até a conta existir (sobrevive à confirmação do e-mail)
+const CODIGO_KEY = 'gb_codigo_time';
+const codigoGuardado = () => {
+  try {
+    return localStorage.getItem(CODIGO_KEY) || '';
+  } catch (e) {
+    return '';
+  }
+};
+const guardarCodigo = c => {
+  try {
+    if (c) localStorage.setItem(CODIGO_KEY, c);
+  } catch (e) {}
+};
+const esquecerCodigo = () => {
+  try {
+    localStorage.removeItem(CODIGO_KEY);
+  } catch (e) {}
+};
+// "samba 36510", "SAMBA36510" e "Samba-36510" viram SAMBA-36510
+const normCodigo = c => String(c || '').toUpperCase().replace(/\s+/g, '').replace(/^([A-Z0-9]+?)-?(\d{5})$/, '$1-$2');
+const codigoValido = c => /^[A-Z0-9]{2,10}-\d{5}$/.test(c);
 (() => {
   try {
     const u = new URL(window.location.href);
@@ -4616,6 +4638,7 @@ function Login({
   const [nP1, setNP1] = useState('');
   const [nP2, setNP2] = useState('');
   const [nPlan, setNPlan] = useState('pro'); // plano escolhido pro teste grátis de 15 dias
+  const [nCod, setNCod] = useState(''); // código do time (opcional): a conta já pede pra entrar no time
   const criar = async () => {
     setErr('');
     setOk('');
@@ -4634,7 +4657,10 @@ function Login({
       if (fr) return setErr(fr);
     }
     if (nP1 !== nP2) return setErr('As duas senhas não conferem.');
+    const cod = normCodigo(nCod);
+    if (nCod.trim() && !codigoValido(cod)) return setErr('Código do time inválido: é tipo SAMBA-36510 (confira com o time).');
     setBusy(true);
+    if (cod) guardarCodigo(cod); // o pedido de entrada vai assim que a conta existir (o painel manda ao carregar)
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
     try {
       const {
@@ -5041,6 +5067,15 @@ function Login({
     placeholder: "DDD + n\xFAmero",
     value: nZap,
     onChange: e => setNZap(e.target.value)
+  })), !comConvite && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle
+  }, "C\xF3digo do time (opcional)"), /*#__PURE__*/React.createElement("input", {
+    "data-cadastro-codigo": true,
+    style: inputStyle,
+    autoCapitalize: "characters",
+    placeholder: "Ex: SAMBA-36510, se o seu time te passou",
+    value: nCod,
+    onChange: e => setNCod(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle
   }, "Senha"), /*#__PURE__*/React.createElement(PassInput, {
@@ -7999,7 +8034,7 @@ function EstruturaModal({
   }, "Arquivar s\xF3 funciona com a unidade vazia (sem jogador e sem unidade dentro). O hist\xF3rico fica.")));
 }
 
-/* contrato do time por faixas de lucro sacado */
+/* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
 function ContratoModal({
   atual,
   onSalvar,
@@ -8088,7 +8123,7 @@ function ContratoModal({
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle,
     htmlFor: "ct-lim"
-  }, "Limite de lucro sacado (US$)"), /*#__PURE__*/React.createElement("input", {
+  }, "Limite do lifetime (US$)"), /*#__PURE__*/React.createElement("input", {
     id: "ct-lim",
     "data-ct-lim": true,
     style: inputStyle,
@@ -8121,7 +8156,7 @@ function ContratoModal({
       padding: '10px 12px',
       fontSize: 13.5
     }
-  }, A, "% pro jogador at\xE9 ", fmt(L), " de lucro sacado, ", B, "% depois. A faixa conta s\xF3 o lucro sacado, n\xE3o a devolu\xE7\xE3o de capital."), /*#__PURE__*/React.createElement("button", {
+  }, A, "% pro jogador com lifetime abaixo de ", fmt(L), ", ", B, "% a partir da\xED. Vale a faixa do lifetime no dia do saque (j\xE1 sacado + profit), pro saque inteiro; devolu\xE7\xE3o de capital n\xE3o conta."), /*#__PURE__*/React.createElement("button", {
     disabled: !ok,
     onClick: () => onSalvar([{
       ate: L,
@@ -8158,6 +8193,7 @@ function TimeApp({
   const uid = session.user.id;
   const [d, setD] = useState(null);
   const [cortes, setCortes] = useState({}); // conferência da planilha: até que dia os saldos dela valem (por planilha)
+  const [pedEsc, setPedEsc] = useState({}); // pedido de entrada: reta e nome escolhidos antes de aprovar
   const corteDe = a => {
     const pl = a.planilha || {};
     return cortes[a.id] || (/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em || '')) ? pl.atualizado_em : String(a.enviado_em || '').slice(0, 10)) || null;
@@ -8231,7 +8267,7 @@ function TimeApp({
   };
   const carregar = async () => {
     const q = (t, cols = '*') => lerTudo(() => sb.from(t).select(cols).order('id')); // paginado: o servidor corta em 1.000 linhas
-    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade')]);
+    const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada')]);
     const pessoas = p.data || [],
       vinculos = v.data || [];
     const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
@@ -8255,7 +8291,9 @@ function TimeApp({
       eu,
       sit,
       grades: gr.error ? [] : gr.data || [],
-      regras: rg.error ? [] : rg.data || []
+      regras: rg.error ? [] : rg.data || [],
+      codigo: tc.error ? null : (tc.data || [])[0] || null,
+      pedidos: pd.error ? [] : (pd.data || []).filter(x => x.status === 'pendente').sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em)))
     });
   };
   useEffect(() => {
@@ -9092,6 +9130,11 @@ function TimeApp({
       t: 'Convites ainda não aceitos',
       ir: 'g_jogadores',
       sit: 'convidados',
+      tom: 'plum'
+    }] : []), ...((d.pedidos || []).length && podeAlgum('gerir_pessoas') ? [{
+      n: d.pedidos.length,
+      t: 'Pedidos pra entrar no time',
+      ir: 'g_equipe',
       tom: 'plum'
     }] : [])];
     return /*#__PURE__*/React.createElement("div", {
@@ -10475,7 +10518,185 @@ function TimeApp({
         fontSize: 12.5,
         lineHeight: 1.5
       }
-    }, /*#__PURE__*/React.createElement("b", null, PAPEL_ROT[k]), /*#__PURE__*/React.createElement("br", null), PAPEL_DICA[k], "."))))), podeConvidar && /*#__PURE__*/React.createElement(Card, {
+    }, /*#__PURE__*/React.createElement("b", null, PAPEL_ROT[k]), /*#__PURE__*/React.createElement("br", null), PAPEL_DICA[k], "."))))), (d.pedidos || []).length > 0 && podeAlgum('gerir_pessoas') && /*#__PURE__*/React.createElement(Card, {
+      "data-pedidos": true,
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Pedidos pra entrar ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft,
+        fontWeight: 500
+      }
+    }, d.pedidos.length)), d.pedidos.map(pd => {
+      const esc = pedEsc[pd.id] || {};
+      const raizU = d.unidades.find(u => !u.mae_id);
+      const retas = d.unidades.filter(u => u.mae_id && !d.unidades.some(f => f.mae_id === u.id) && pode('gerir_pessoas', u.id));
+      const reta = esc.unidade ?? (retas[0] ? retas[0].id : raizU ? raizU.id : '');
+      return /*#__PURE__*/React.createElement("div", {
+        key: pd.id,
+        "data-pedido": pd.nome,
+        style: {
+          padding: '12px 0',
+          borderTop: `1px solid ${C.border}`,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          alignItems: 'center'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: '1 1 180px',
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("b", null, pd.nome), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12.5,
+          color: C.inkSoft
+        }
+      }, "pediu pelo c\xF3digo em ", dataBR(pd.criado_em))), /*#__PURE__*/React.createElement("input", {
+        "data-pedido-nome": true,
+        "aria-label": `Nome de ${pd.nome} no time`,
+        style: {
+          ...inputStyle,
+          width: 160,
+          padding: '8px 10px'
+        },
+        value: esc.nome ?? pd.nome,
+        onChange: e => setPedEsc(x => ({
+          ...x,
+          [pd.id]: {
+            ...esc,
+            nome: e.target.value
+          }
+        }))
+      }), /*#__PURE__*/React.createElement("select", {
+        "data-pedido-reta": true,
+        "aria-label": "Reta",
+        style: {
+          ...inputStyle,
+          width: 'auto',
+          padding: '8px 10px'
+        },
+        value: reta,
+        onChange: e => setPedEsc(x => ({
+          ...x,
+          [pd.id]: {
+            ...esc,
+            unidade: e.target.value
+          }
+        }))
+      }, retas.map(u => /*#__PURE__*/React.createElement("option", {
+        key: u.id,
+        value: u.id
+      }, nomeUnidade(u))), raizU && pode('gerir_pessoas', raizU.id) && /*#__PURE__*/React.createElement("option", {
+        value: raizU.id
+      }, "Escolher a reta depois")), /*#__PURE__*/React.createElement("button", {
+        style: btnP,
+        onClick: () => rodar('decidir_entrada', {
+          p_pedido: pd.id,
+          p_aprovar: true,
+          p_unidade: reta || null,
+          p_nome: (esc.nome ?? pd.nome).trim() || null,
+          p_motivo: null
+        }, `${(esc.nome ?? pd.nome).trim()} entrou no time.`)
+      }, "Aprovar"), /*#__PURE__*/React.createElement("button", {
+        style: {
+          ...btnS,
+          color: C.red
+        },
+        onClick: () => setPerg({
+          label: `Recusar o pedido de ${pd.nome}`,
+          hint: 'Diga o motivo (a pessoa vê).',
+          kind: 'text',
+          valor: '',
+          onSave: async m => {
+            setPerg(null);
+            await rodar('decidir_entrada', {
+              p_pedido: pd.id,
+              p_aprovar: false,
+              p_unidade: null,
+              p_nome: null,
+              p_motivo: m || null
+            }, 'Pedido recusado.');
+          }
+        })
+      }, "Recusar"));
+    })), (() => {
+      const raizU = d.unidades.find(u => !u.mae_id);
+      if (!raizU || !pode('gerir_pessoas', raizU.id)) return null;
+      const cod = d.codigo && d.codigo.ativo ? d.codigo.codigo : null;
+      const msg = cod ? `Entre no time ${raizU.nome} no GrinderBank: crie sua conta em https://grinderbank.com e use o código ${cod}.` : '';
+      return /*#__PURE__*/React.createElement(Card, {
+        "data-codigo-card": true,
+        style: {
+          padding: 20
+        }
+      }, /*#__PURE__*/React.createElement("h3", {
+        style: tituloS
+      }, "C\xF3digo do time"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 13,
+          color: C.inkSoft,
+          marginBottom: 10,
+          lineHeight: 1.5
+        }
+      }, "Quem tem o c\xF3digo pede pra entrar (no cadastro ou em Ajustes, se j\xE1 tem conta). O pedido aparece aqui e s\xF3 vale depois que algu\xE9m da gest\xE3o aprova e escolhe a reta."), cod ? /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap'
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        "data-codigo": true,
+        style: {
+          fontFamily: "'Space Grotesk',sans-serif",
+          fontWeight: 700,
+          fontSize: 22,
+          letterSpacing: 1,
+          color: P
+        }
+      }, cod), /*#__PURE__*/React.createElement("button", {
+        style: btnS,
+        onClick: () => {
+          try {
+            navigator.clipboard.writeText(cod);
+            setAviso({
+              erro: false,
+              texto: 'Código copiado.'
+            });
+          } catch (e) {}
+        }
+      }, "Copiar"), /*#__PURE__*/React.createElement("a", {
+        style: {
+          ...btnS,
+          textDecoration: 'none'
+        },
+        target: "_blank",
+        rel: "noreferrer",
+        href: 'https://wa.me/?text=' + encodeURIComponent(msg)
+      }, "Mandar no WhatsApp"), /*#__PURE__*/React.createElement("button", {
+        style: btnS,
+        onClick: () => setPerg({
+          label: 'Trocar o código do time?',
+          hint: 'O código atual para de valer na hora. Digite TROCAR pra confirmar.',
+          kind: 'text',
+          valor: '',
+          onSave: async t => {
+            setPerg(null);
+            if (String(t).trim().toUpperCase() === 'TROCAR') await rodar('gerar_codigo_time', {}, 'Código novo gerado. O anterior não vale mais.');
+          }
+        })
+      }, "Trocar c\xF3digo")) : /*#__PURE__*/React.createElement("button", {
+        "data-gerar-codigo": true,
+        style: btnP,
+        onClick: () => rodar('gerar_codigo_time', {}, 'Código do time gerado.')
+      }, "Gerar c\xF3digo do time"));
+    })(), podeConvidar && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -11367,7 +11588,9 @@ function SaqueModal({
       fontSize: 13.5,
       lineHeight: 1.6
     }
-  }, "Voc\xEA fica com ", /*#__PURE__*/React.createElement("b", null, fmt(prev.parte_jogador)), " \xB7 time recebe ", /*#__PURE__*/React.createElement("b", null, fmt(prev.total_time)), " (", fmt(prev.devolucao), " de MU + ", fmt(prev.parte_time), " do cashout)", /*#__PURE__*/React.createElement("br", null), "Banca depois: ", fmt(prev.banca_depois), " \xB7 MU depois: ", fmt(prev.mu_depois)), /*#__PURE__*/React.createElement("button", {
+  }, "Voc\xEA fica com ", /*#__PURE__*/React.createElement("b", null, fmt(prev.parte_jogador)), " \xB7 time recebe ", /*#__PURE__*/React.createElement("b", null, fmt(prev.total_time)), " (", fmt(prev.devolucao), " de MU + ", fmt(prev.parte_time), " do cashout)", /*#__PURE__*/React.createElement("br", null), "Banca depois: ", fmt(prev.banca_depois), " \xB7 MU depois: ", fmt(prev.mu_depois), prev.divisao && prev.divisao.faixas && prev.divisao.faixas[0] && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
+    "data-saque-faixa": true
+  }, "Faixa de ", Math.round(Number(prev.divisao.faixas[0].jogador_pct) * 1000) / 10, "% pro saque inteiro (lifetime de ", fmt(prev.divisao.faixas[0].lifetime), " hoje)"))), /*#__PURE__*/React.createElement("button", {
     disabled: !prev,
     onClick: () => onPedir({
       p_banca: parseValor(f.banca),
@@ -11416,6 +11639,9 @@ function Dashboard({
   const [wdsRaw, setWds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erroCarga, setErroCarga] = useState(false); // alguma tabela não veio: mantém o que já estava na tela e avisa
+  const [meusPedidos, setMeusPedidos] = useState([]); // conta individual: pedidos pra entrar num time pelo código
+  const [avisoPedido, setAvisoPedido] = useState(null); // {erro,texto} do último pedido pelo código
+  const [codTime, setCodTime] = useState('');
   const [viewSel, setView] = useState('painel');
   const view = viewSel;
   const [modal, setModal] = useState(null); // string type | {type, initial}
@@ -11780,10 +12006,30 @@ function Dashboard({
           p_token: tk
         });
         if (ce) {
+          registrarErro('app', 'convite não aceito: ' + (ce.message || ''), {
+            codigo: ce.code || null
+          });
           setConviteErro(ce.message || 'Não consegui aceitar o convite.');
           return;
         }
         esquecerConvite();
+      }
+      // código do time digitado no cadastro: manda o pedido de entrada (a gestão aprova e escolhe a reta)
+      const cod = codigoGuardado();
+      if (cod) {
+        const {
+          error: pe
+        } = await sb.rpc('pedir_entrada_time', {
+          p_codigo: cod
+        });
+        esquecerCodigo();
+        if (pe) {
+          registrarErro('app', 'pedido pelo código não foi: ' + (pe.message || ''), {});
+          setAvisoPedido({
+            erro: true,
+            texto: pe.message || 'Não consegui mandar o pedido pro time.'
+          });
+        }
       }
       // pagou na Kiwify (ou ganhou plano manual)? aplica a ativação pendente do e-mail antes de carregar
       try {
@@ -11824,6 +12070,17 @@ function Dashboard({
       });
       const myWs = wsr.data && wsr.data[0] || null;
       setWs(myWs);
+      // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
+      if (myWs && myWs.kind === 'solo') {
+        try {
+          const {
+            data: mp
+          } = await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em', {
+            ascending: false
+          }).limit(5);
+          setMeusPedidos(mp || []);
+        } catch (e) {}
+      }
       // estrutura de time (fase 1): a aba Time só aparece onde o workspace tem unidades
       try {
         const {
@@ -13805,7 +14062,32 @@ function Dashboard({
     modo: gestaoAtiva ? 'gestao' : 'jogo',
     onTrocar: trocarModo,
     compacto: true
-  })), erroCarga && /*#__PURE__*/React.createElement("div", {
+  })), soloConta && meusPedidos.filter(x => x.status === 'pendente').slice(0, 1).map(x => /*#__PURE__*/React.createElement("div", {
+    key: x.id,
+    "data-pedido-pendente": true,
+    style: {
+      padding: '11px 14px',
+      marginBottom: 14,
+      borderRadius: 13,
+      background: C.plumSoft,
+      border: `1.5px solid ${P}`,
+      fontSize: 13.5,
+      color: C.ink,
+      lineHeight: 1.5
+    }
+  }, "Pedido pra entrar no time ", /*#__PURE__*/React.createElement("b", null, x.time_nome || ''), " enviado em ", dataBR(x.criado_em), ". Quando a gest\xE3o aprovar, esta conta entra no time e o seu hist\xF3rico vai junto.")), avisoPedido && avisoPedido.erro && /*#__PURE__*/React.createElement("div", {
+    "data-pedido-erro": true,
+    role: "alert",
+    style: {
+      padding: '11px 14px',
+      marginBottom: 14,
+      borderRadius: 13,
+      background: C.redSoft,
+      border: `1.5px solid ${C.red}`,
+      fontSize: 13.5,
+      color: C.ink
+    }
+  }, /*#__PURE__*/React.createElement("b", null, "O pedido pro time n\xE3o foi:"), " ", avisoPedido.texto), erroCarga && /*#__PURE__*/React.createElement("div", {
     "data-erro-carga": true,
     role: "alert",
     style: {
@@ -17542,6 +17824,135 @@ function Dashboard({
       marginTop: 1
     }
   }, c.changed_by_name || '—', " \xB7 ", dLabel(String(c.created_at).slice(0, 10))))))), view !== 'g_regras' && /*#__PURE__*/React.createElement(React.Fragment, null, soloConta && /*#__PURE__*/React.createElement(Card, {
+    "data-entrar-time": true,
+    style: {
+      padding: 20,
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 19,
+      fontWeight: 600,
+      margin: '0 0 4px'
+    }
+  }, "Entrar num time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft,
+      marginBottom: 12,
+      lineHeight: 1.5
+    }
+  }, "Seu time te passou um c\xF3digo (ex.: SAMBA-36510)? Pe\xE7a pra entrar. Quando a gest\xE3o aprovar, esta conta vira do time e o seu hist\xF3rico vai junto."), (() => {
+    const pend = meusPedidos.find(x => x.status === 'pendente');
+    const rec = !pend && meusPedidos[0] && meusPedidos[0].status === 'recusado' ? meusPedidos[0] : null;
+    const recarregar = async () => {
+      const {
+        data: mp
+      } = await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em', {
+        ascending: false
+      }).limit(5);
+      setMeusPedidos(mp || []);
+    };
+    if (pend) return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14
+      }
+    }, "Pedido pro time ", /*#__PURE__*/React.createElement("b", null, pend.time_nome), " enviado em ", dataBR(pend.criado_em), ": aguardando a gest\xE3o."), /*#__PURE__*/React.createElement("button", {
+      onClick: async () => {
+        const {
+          error
+        } = await sb.rpc('cancelar_pedido_entrada', {
+          p_pedido: pend.id
+        });
+        if (error) setAvisoPedido({
+          erro: true,
+          texto: error.message
+        });
+        await recarregar();
+      },
+      style: {
+        padding: '8px 13px',
+        borderRadius: 11,
+        border: `1.5px solid ${C.border}`,
+        background: 'transparent',
+        color: C.inkSoft,
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: 'pointer'
+      }
+    }, "Cancelar pedido"));
+    return /*#__PURE__*/React.createElement(React.Fragment, null, rec && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.red,
+        fontWeight: 600,
+        marginBottom: 8
+      }
+    }, "O time ", rec.time_nome, " recusou o pedido", rec.motivo ? `: ${rec.motivo}` : '.'), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      "data-codigo-time": true,
+      "aria-label": "C\xF3digo do time",
+      style: {
+        ...inputStyle,
+        flex: '1 1 180px',
+        width: 'auto'
+      },
+      autoCapitalize: "characters",
+      placeholder: "SAMBA-36510",
+      value: codTime,
+      onChange: e => setCodTime(e.target.value)
+    }), /*#__PURE__*/React.createElement("button", {
+      "data-pedir-entrada": true,
+      onClick: async () => {
+        const c = normCodigo(codTime);
+        if (!codigoValido(c)) {
+          setAvisoPedido({
+            erro: true,
+            texto: 'Código inválido: é tipo SAMBA-36510 (confira com o time).'
+          });
+          return;
+        }
+        const {
+          error
+        } = await sb.rpc('pedir_entrada_time', {
+          p_codigo: c
+        });
+        if (error) {
+          setAvisoPedido({
+            erro: true,
+            texto: error.message
+          });
+          return;
+        }
+        setAvisoPedido(null);
+        setCodTime('');
+        await recarregar();
+      },
+      style: {
+        padding: '11px 16px',
+        borderRadius: 12,
+        border: 'none',
+        background: P,
+        color: '#fff',
+        fontWeight: 700,
+        fontSize: 14,
+        cursor: 'pointer'
+      }
+    }, "Pedir pra entrar")));
+  })()), soloConta && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20,
       marginTop: 16

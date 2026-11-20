@@ -3,7 +3,8 @@
 // resultado que o banco calcula têm que bater com o modelo AO CENTAVO; e as invariantes têm que valer:
 //   · reload (aporte) não muda o profit (banca − MU) de ninguém;
 //   · MK do servidor = banca abaixo do MU;
-//   · divisão do cashout por faixas: a parte do jogador é a soma de cada pedaço na faixa dele; jogador + time = cashout.
+//   · divisão do cashout (plano 3.3): o saque INTEIRO vai na faixa do lifetime do dia (abaixo do limite, a % da faixa;
+//     a partir dele, a da seguinte); jogador + time = cashout.
 // Regras (as mesmas do cabeçalho da migration 20261120200000):
 //   foto com planilha conferida: corte = data escolhida na conferência, senão "atualizado em" da planilha, senão o dia
 //   do envio; desde = hora da conferência. Sem planilha conferida: corte = véspera da entrada no time; desde = sempre.
@@ -104,16 +105,15 @@ insert into public.vinculo(pessoa_id, unidade_id, inicio) values ('${id}', '${RE
   sql(`insert into esperado values (${txt(nome)}, '${$(banca)}', '${$(mu)}', '${$(lifetime)}', '${tours.length}', '${ent}', '${$(investido)}', '${$(lucro)}', ${ent ? `'${$(divCent(nominal, ent))}'` : 'null'});`);
 }
 
-// ---------- divisão do cashout por faixas (marginal: cada pedaço do lucro na faixa em que ele cai) ----------
+// ---------- divisão do cashout: o saque inteiro na faixa do lifetime do dia ----------
 sql(`create temp table divisao_esperada(n int primary key, faixas jsonb, lifetime numeric, cashout numeric, jogador text, time text);`);
 const PCTS = [300, 333, 350, 400, 450, 500];                               // por mil (0,333 = 333)
 for (let k = 0; k < 150; k++) {
   const n = ri(1, 3), limites = [...new Set(Array.from({ length: n - 1 }, () => ri(1, 20000) * 100))].sort((a, b) => a - b);
   const faixas = [...limites.map(l => ({ ate: l, pct: um(PCTS) })), { ate: null, pct: um(PCTS) }];
   const lt = ri(0, 2500000), co = ri(1, 600000);
-  let ini = 0, jog = 0;                                                    // jog em centavos × 1000
-  for (const f of faixas) { const fim = f.ate ?? Infinity; const a = Math.max(ini, lt), b = Math.min(fim, lt + co); if (b > a) jog += (b - a) * f.pct; ini = fim; }
-  const jogC = divCent(jog, 1000);
+  const faixa = faixas.find(f => (f.ate ?? Infinity) > lt);               // a 1ª cujo limite o lifetime ainda não alcançou
+  const jogC = divCent(co * faixa.pct, 1000);                              // pct por mil: centavos × pct / 1000
   const fx = '[' + faixas.map(f => `{"ate": ${f.ate == null ? 'null' : $(f.ate)}, "jogador": ${(f.pct / 1000).toString()}}`).join(', ') + ']';
   sql(`insert into divisao_esperada values (${k}, '${fx}', ${$(lt)}, ${$(co)}, '${$(jogC)}', '${$(co - jogC)}');`);
 }
@@ -143,7 +143,7 @@ create temp table lucro_antes as select p.id, (public.banca_de(p.id)->>'banca'):
 insert into public.aporte(workspace_id, pessoa_id, unidade_id, valor) select '${WS}', id, '${RETA}', 333.33 from lucro_antes;
 select teste.igual('oráculo: um reload de 333,33 pra cada um não muda o profit (banca − MU) de ninguém',
   $q$select count(*)::text from lucro_antes a where a.lucro <> (public.banca_de(a.id)->>'banca')::numeric - (select m.mu from public.mu_de(a.id) m)$q$, '0');
-select teste.igual('oráculo: divisão do cashout em 150 contratos aleatórios (faixas marginais) bate com o modelo; jogador + time = cashout',
+select teste.igual('oráculo: divisão do cashout em 150 contratos aleatórios (saque inteiro na faixa do lifetime do dia) bate com o modelo; jogador + time = cashout',
   $q$select coalesce(string_agg(n||': veio '||(d->>'jogador')||'/'||(d->>'time')||' esperado '||jogador||'/'||time, '; '), 'todos iguais')
      from divisao_esperada, lateral (select public.dividir_cashout(faixas, lifetime, cashout) d) x
     where (d->>'jogador')::numeric <> jogador::numeric or (d->>'time')::numeric <> time::numeric or (d->>'jogador')::numeric + (d->>'time')::numeric <> cashout$q$, 'todos iguais');
