@@ -11065,7 +11065,44 @@ function TimeApp({
         color: C.inkSoft,
         fontWeight: 500
       }
-    }, " \xB7 ", nomeUnidade(U[minhaUnidade])) : null), /*#__PURE__*/React.createElement("div", {
+    }, " \xB7 ", nomeUnidade(U[minhaUnidade])) : null), d.eu && /*#__PURE__*/React.createElement("div", {
+      "data-meu-nome": true,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        fontSize: 13.5,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        minWidth: 180
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "Seu nome no time: "), /*#__PURE__*/React.createElement("b", null, d.eu.nome)), /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setPerg({
+        label: 'Seu nome no time',
+        hint: 'É como o time vê você e como aparecem os seus lançamentos (os torneios acompanham a troca).',
+        kind: 'text',
+        valor: d.eu.nome,
+        onSave: async n => {
+          setPerg(null);
+          const nn = String(n || '').trim();
+          if (!nn || nn === d.eu.nome) return;
+          const r = await rodar('renomear_pessoa', {
+            p_alvo: d.eu.id,
+            p_nome: nn
+          }, `Agora você é ${nn} no time.`);
+          if (r && onMarca) onMarca();
+        }
+      })
+    }, "Mudar")), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13.5,
         color: C.inkSoft,
@@ -21705,7 +21742,8 @@ function Dashboard({
     tours: toursRaw,
     config: config,
     banca: bancaAtual,
-    onIr: setView
+    onIr: setView,
+    onMarca: loadAll
   }), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
     secao: view,
     session: session,

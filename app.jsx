@@ -3192,6 +3192,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       {!soDinheiro&&!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
       {!soDinheiro&&d.sit&&<Card data-minha-reta style={{padding:20}}>
         <h3 style={tituloS}>Sua reta{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+        {d.eu&&<div data-meu-nome style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',fontSize:13.5,marginBottom:6}}>
+          <span style={{flex:1,minWidth:180}}><span style={{color:C.inkSoft}}>Seu nome no time: </span><b>{d.eu.nome}</b></span>
+          <button style={btnS} onClick={()=>setPerg({label:'Seu nome no time',hint:'É como o time vê você e como aparecem os seus lançamentos (os torneios acompanham a troca).',kind:'text',valor:d.eu.nome,
+            onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(!nn||nn===d.eu.nome) return; const r=await rodar('renomear_pessoa',{p_alvo:d.eu.id,p_nome:nn},`Agora você é ${nn} no time.`); if(r&&onMarca) onMarca(); }})}>Mudar</button></div>}
         <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:10}}><span style={{fontSize:13,color:C.inkSoft,flex:1,minWidth:200}}>MU, planilha de abertura, saque, reload e salas ficam na Banca.</span>
           {onIr&&<button style={btnS} onClick={()=>onIr('banca')}>Ir pra Banca</button>}</div>
@@ -5966,7 +5970,7 @@ function Dashboard({session,profile}){
       </div>}
 
       {/* ---------------- CONFIG ---------------- */}
-      {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+      {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView} onMarca={loadAll}/>}
       {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}
         onPadrao={timeGente.podeConfigurar?k=>{ const row=PADRAO_TIME[k]; if(row) setQuickEdit({label:`${row.label} · padrão do time`,kind:row.kind,current:config[row.key],onSave:nv=>askSaveConfig(row,nv)}); }:null}
         marca={ws?{nome:ws.marca_nome||'',logo:ws.marca_logo||null}:null} nomeTime={ws?.name} onMarca={loadAll}/>}

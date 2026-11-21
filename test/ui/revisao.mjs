@@ -99,6 +99,17 @@ await cenario('jogador: Início e Banca', dbAluno, async page => {
   ok(await page.locator('[data-minha-reta]').count() === 1 && await page.getByRole('button', { name: 'Pedir saque' }).count() === 0, 'Meu time fica com a reta (regras e grade), sem as ações de dinheiro');
 });
 
+// 4b) o nome de quem tem conta é dele: o jogador muda o próprio nome em Meu time (A-006)
+const dbNome = samba('aluno'); dbNome.__rpc = { ...dbNome.__rpc, renomear_pessoa: null };
+await cenario('jogador muda o próprio nome', dbNome, async (page, escritas) => {
+  await aba(page, 'Meu time');
+  await page.locator('[data-meu-nome]').getByRole('button', { name: 'Mudar' }).click();
+  await page.keyboard.press('Control+A'); await page.keyboard.type('Bruno Tavares');
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click(); await page.waitForTimeout(600);
+  const r = escritas.filter(e => e.tabela === 'rpc.renomear_pessoa').map(e => JSON.parse(e.corpo || '{}')).pop();
+  ok(r && r.p_alvo === 'p0' && r.p_nome === 'Bruno Tavares', 'renomeia a própria pessoa');
+});
+
 // 5) jogador sem planilha: um caminho só, sem chamar de MK
 const dbSem = samba('aluno');
 dbSem.__rpc = { ...dbSem.__rpc, situacao_jogador: { ...dbSem.__rpc.situacao_jogador, abertura: 'sem', banca: -10.62 } };
