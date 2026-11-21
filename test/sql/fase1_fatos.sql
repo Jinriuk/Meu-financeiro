@@ -108,7 +108,7 @@ select teste.erro('Professor NÃO lança torneio pro João', $q$insert into publ
 select teste.como('c0000000-0000-0000-0000-0000000000c3');
 select teste.igual('Financeiro vê todos os saques e movimentos (inclui a Reserva)', $q$select (select count(*) from public.withdrawals)||'/'||(select count(*) from public.bankroll_ledger)$q$, '2/2');
 select teste.igual('Financeiro NÃO vê torneios nem stats', $q$select (select count(*) from public.tournaments)+(select count(*) from public.hh_tournament_stats)||''$q$, '0');
-select teste.ok('Financeiro (aprovar saques) lança saque do Pedro', $q$insert into public.withdrawals(week_ending_date,player,valor_sacado) values (current_date,'Pedro',50)$q$);
+select teste.erro('Financeiro NÃO lança saque na conta do Pedro (só o Pedro mexe na conta dele)', $q$insert into public.withdrawals(week_ending_date,player,valor_sacado) values (current_date,'Pedro',50)$q$);
 select teste.erro('Financeiro NÃO lança torneio', $q$insert into public.tournaments(entry_date,player,buyin) values (current_date,'Pedro',3)$q$);
 
 -- ---------- Admin: tudo ----------
@@ -118,7 +118,7 @@ select teste.igual('…ninguém sem escopo de gravação apagou nada (Maria segu
   $q$select string_agg(lower(btrim(player))||':'||n, ',' order by 1) from (select lower(btrim(player)) player, count(*) n from public.tournaments where workspace_id='d0000000-0000-0000-0000-0000000000d1' and player in ('Maria','João','joão ') group by 1) x$q$, 'joão:4,maria:1');
 set role authenticated;
 select teste.como('c0000000-0000-0000-0000-0000000000c1');
-select teste.igual('Admin vê os torneios do time (não o de antes da entrada do João) e todos os saques', $q$select (select count(*) from public.tournaments)||'/'||(select count(*) from public.withdrawals)$q$, '5/3');
+select teste.igual('Admin vê os torneios do time (não o de antes da entrada do João) e todos os saques (o que o financeiro tentou lançar na conta do Pedro não entrou)', $q$select (select count(*) from public.tournaments)||'/'||(select count(*) from public.withdrawals)$q$, '5/2');
 select teste.ok('Admin muda a configuração', $q$update public.pool_config set abi_max=4; insert into public.config_changes(field,resumo) values ('abi_max','2→4')$q$);
 select teste.igual('…e a mudança gravou', $q$select abi_max::text from public.pool_config$q$, '4');
 
@@ -183,9 +183,9 @@ select teste.igual('Ana: totais por jogador idênticos antes e depois',
   $q$select (select string_agg(lower(player)||':'||n||':'||s, ',' order by player) from (select lower(player) player, count(*) n, sum(prize-buyin) s from public.tournaments group by 1) x) = (select v from antes where k='ana')$q$, 'true');
 select teste.igual('Ana: dinheiro idêntico antes e depois',
   $q$select ((select sum(valor_sacado) from public.withdrawals)||'/'||(select sum(entrada-saida) from public.bankroll_ledger)) = (select v from antes where k='ana$')$q$, 'true');
-select teste.ok('Ana continua lançando torneio do Beto (os dois administram)', $q$insert into public.tournaments(entry_date,player,buyin) values (current_date,'Beto',1)$q$);
+select teste.erro('Ana NÃO lança torneio na conta do Beto (mesmo os dois administrando: só o Beto mexe na conta dele)', $q$insert into public.tournaments(entry_date,player,buyin) values (current_date,'Beto',1)$q$);
 select teste.como('c0000000-0000-0000-0000-0000000000c9');
-select teste.igual('Beto: totais idênticos (+ o torneio que a Ana lançou pra ele)',
+select teste.igual('Beto: totais idênticos (ninguém lançou na conta dele)',
   $q$select string_agg(lower(player)||':'||n||':'||s, ',' order by player) from (select lower(player) player, count(*) n, sum(prize-buyin) s from public.tournaments group by 1) x$q$,
-  (select replace(v, 'beto:1:-20', 'beto:2:-21') from antes where k='beto'));
+  (select v from antes where k='beto'));
 reset role;

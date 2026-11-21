@@ -6395,8 +6395,8 @@ function DayCard({
     t: t,
     config: config,
     players: players,
-    onEdit: () => onEdit(t),
-    onDelete: () => onDelete(t)
+    onEdit: onEdit ? () => onEdit(t) : null,
+    onDelete: onDelete ? () => onDelete(t) : null
   })), onAdd && /*#__PURE__*/React.createElement("button", {
     onClick: () => onAdd(date),
     style: {
@@ -6558,7 +6558,7 @@ function DiaryCard({
     label: "ROI do dia",
     value: pctFmt(roi),
     tone: r >= 0 ? C.greenMid : C.red
-  })), /*#__PURE__*/React.createElement("div", {
+  })), onEdit && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: C.inkSoft,
@@ -6569,8 +6569,8 @@ function DiaryCard({
     t: t,
     config: config,
     players: players,
-    onEdit: () => onEdit(t),
-    onDelete: () => onDelete(t)
+    onEdit: onEdit ? () => onEdit(t) : null,
+    onDelete: onDelete ? () => onDelete(t) : null
   })), onAdd && /*#__PURE__*/React.createElement("button", {
     onClick: () => onAdd(entry.entry_date, entry.player),
     style: {
@@ -14974,8 +14974,15 @@ function Dashboard({
       items: [row]
     };
   });
+  // conta de um aluno aberta pela gestão: só leitura (regra do dono, 21/11). O banco também recusa.
+  const soDono = () => {
+    if (!somenteLeitura) return true;
+    alert(`Só ${alunoAberto} mexe na conta dele. Aqui você só vê.`);
+    return false;
+  };
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table, data, setter, list) => {
+    if (!soDono()) return;
     const {
       data: row,
       error
@@ -14993,6 +15000,7 @@ function Dashboard({
     setModal(null);
   };
   const del = async (table, id, setter, list) => {
+    if (!soDono()) return;
     const {
       error
     } = await sb.from(table).delete().eq('id', id);
@@ -15004,6 +15012,7 @@ function Dashboard({
     setter(list.filter(x => x.id !== id));
   };
   const update = async (table, newData, setter, list) => {
+    if (!soDono()) return;
     const {
       id,
       created_by,
@@ -15023,6 +15032,7 @@ function Dashboard({
     setEditing(null);
   };
   const saveConfig = async patch => {
+    if (!soDono()) return false;
     const prev = config,
       next = {
         ...config,
@@ -15063,6 +15073,7 @@ function Dashboard({
     });
   };
   const confirmSaveConfig = async () => {
+    if (!soDono()) return;
     const {
       row,
       nv,
@@ -15110,6 +15121,7 @@ function Dashboard({
   };
   // saldo inicial de um jogador numa plataforma (upsert por player+wallet)
   const saveWallet = async (player, wallet, saldo_inicial) => {
+    if (!soDono()) return;
     setQuickEdit(null);
     const {
       data,
@@ -15135,6 +15147,7 @@ function Dashboard({
      saída de um lado + entrada do outro). Não muda a banca central (é zero-a-zero);
      só rebalanceia o saldo por jogador/plataforma. "Pool / Reserva" = dinheiro sem dono (player null). */
   const addTransfer = async out => {
+    if (!soDono()) return;
     const val = num(out.valor);
     const deP = out.de_player === 'Pool / Reserva' ? null : out.de_player;
     const paraP = out.para_player === 'Pool / Reserva' ? null : out.para_player;
@@ -15412,6 +15425,7 @@ function Dashboard({
     };
   });
   const salvarResumos = async () => {
+    if (!soDono()) return;
     const pv = tsImp.preview;
     if (!pv) return;
     setTsImp(s => ({
@@ -15484,6 +15498,7 @@ function Dashboard({
   /* importa hand histories (.txt ou .zip): parseia no navegador, agrega por torneio e
      sobe SÓ os agregados (upsert por player+site+torneio — reimportar substitui, não duplica) */
   const importHH = async (files, player) => {
+    if (!soDono()) return;
     if (!files.length) return;
     setImp({
       busy: true,
@@ -16923,7 +16938,7 @@ function Dashboard({
       flex: 1,
       minWidth: 180
     }
-  }, "Painel de ", /*#__PURE__*/React.createElement("b", null, alunoAberto), " \xB7 s\xF3 leitura"), /*#__PURE__*/React.createElement("button", {
+  }, "Painel de ", /*#__PURE__*/React.createElement("b", null, alunoAberto), " \xB7 s\xF3 leitura: voc\xEA v\xEA tudo, s\xF3 ", alunoAberto, " lan\xE7a e muda"), /*#__PURE__*/React.createElement("button", {
     onClick: fecharAluno,
     style: {
       padding: '8px 14px',
@@ -17603,8 +17618,8 @@ function Dashboard({
       players: players,
       config: config,
       onAdd: somenteLeitura ? null : addTourOn,
-      onEdit: editTour,
-      onDelete: delTour
+      onEdit: somenteLeitura ? null : editTour,
+      onDelete: somenteLeitura ? null : delTour
     }), past.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
@@ -17619,8 +17634,8 @@ function Dashboard({
       players: players,
       config: config,
       onAdd: somenteLeitura ? null : addTourOn,
-      onEdit: editTour,
-      onDelete: delTour
+      onEdit: somenteLeitura ? null : editTour,
+      onDelete: somenteLeitura ? null : delTour
     })), /*#__PURE__*/React.createElement(VerMais, {
       resta: past.length - pastN,
       bloco: 10,
@@ -17852,8 +17867,8 @@ function Dashboard({
     players: players,
     config: config,
     onAdd: somenteLeitura ? null : addTourOn,
-    onEdit: editTour,
-    onDelete: delTour
+    onEdit: somenteLeitura ? null : editTour,
+    onDelete: somenteLeitura ? null : delTour
   })), /*#__PURE__*/React.createElement(VerMais, {
     resta: diaryDaily.length - diaryN,
     bloco: 12,
@@ -18471,7 +18486,7 @@ function Dashboard({
         fontWeight: 600,
         lineHeight: 1.1
       }
-    }, "Stats")), /*#__PURE__*/React.createElement(Card, {
+    }, "Stats")), !somenteLeitura && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 18
       }
@@ -19854,7 +19869,7 @@ function Dashboard({
         }
       }, "autorizado ", fmt(w.saqueAut), " \xB7 pago ", fmt(vs), " ", /*#__PURE__*/React.createElement(Badge, {
         text: st
-      }))), podePagar && /*#__PURE__*/React.createElement("button", {
+      }))), podePagar && !somenteLeitura && /*#__PURE__*/React.createElement("button", {
         onClick: () => setModal({
           type: 'wd',
           initial: {
@@ -19878,13 +19893,13 @@ function Dashboard({
     }) : /*#__PURE__*/React.createElement(Empty, null, "Nenhuma semana com saque autorizado ainda.");
   })()), /*#__PURE__*/React.createElement(ListView, {
     title: "Pagamentos registrados",
-    onAdd: () => setModal('wd'),
+    onAdd: somenteLeitura ? null : () => setModal('wd'),
     rows: [...wds].sort((a, b) => a.week_ending_date < b.week_ending_date ? 1 : -1),
     empty: "Nenhum pagamento registrado.",
     renderRow: w => /*#__PURE__*/React.createElement(Row, {
       key: w.id,
-      onDelete: () => del('withdrawals', w.id, setWds, wds),
-      onEdit: () => setEditing({
+      onDelete: somenteLeitura ? null : () => del('withdrawals', w.id, setWds, wds),
+      onEdit: somenteLeitura ? null : () => setEditing({
         type: 'wd',
         item: w
       }),
@@ -20288,15 +20303,15 @@ function Dashboard({
   }, "\u2139\uFE0F Esta \xE9 a vis\xE3o de ", /*#__PURE__*/React.createElement("b", null, "quem tem o qu\xEA"), ", montada a partir do saldo inicial que cada um declarou por plataforma. Ela ", /*#__PURE__*/React.createElement("b", null, "n\xE3o precisa bater"), " com o total da ", /*#__PURE__*/React.createElement("b", null, "banca central"), " l\xE1 em cima \u2014 a banca central parte da banca inicial da pool, n\xE3o desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em ", /*#__PURE__*/React.createElement("b", null, "\"Outros\""), ".")), /*#__PURE__*/React.createElement(ListView, {
     title: "Movimentos da banca",
     subtitle: modoTime ? "Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus." : "Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo.",
-    onAdd: () => setModal('bank'),
+    onAdd: somenteLeitura ? null : () => setModal('bank'),
     rows: [...ledger].sort((a, b) => a.entry_date < b.entry_date ? 1 : -1),
     empty: "Nenhum movimento na banca.",
     renderRow: l => {
       const net = num(l.entrada) - num(l.saida);
       return /*#__PURE__*/React.createElement(Row, {
         key: l.id,
-        onDelete: () => del('bankroll_ledger', l.id, setLedger, ledger),
-        onEdit: () => setEditing({
+        onDelete: somenteLeitura ? null : () => del('bankroll_ledger', l.id, setLedger, ledger),
+        onEdit: somenteLeitura ? null : () => setEditing({
           type: 'bank',
           item: l
         }),
@@ -22249,13 +22264,13 @@ function Dashboard({
       marginBottom: 12,
       lineHeight: 1.5
     }
-  }, "Torneios desta semana fora da grade. Toque no l\xE1pis pra corrigir."), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
+  }, "Torneios desta semana fora da grade.", somenteLeitura ? '' : ' Toque no lápis pra corrigir.'), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
     key: t.id,
-    onEdit: () => {
+    onEdit: somenteLeitura ? null : () => {
       setAlertDetail(null);
       editTour(t);
     },
-    onDelete: () => {
+    onDelete: somenteLeitura ? null : () => {
       delTour(t);
       setAlertDetail(d => d && {
         ...d,

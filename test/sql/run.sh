@@ -59,9 +59,11 @@ $M -f "$ROOT/supabase/migrations/20261121100000_console_plataforma.sql" >/dev/nu
 $M -f "$ROOT/supabase/migrations/20261121100000_console_plataforma.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261121110000_time_suspenso_no_banco.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261121110000_time_suspenso_no_banco.sql" >/dev/null   # idempotente
+$M -f "$ROOT/supabase/migrations/20261121120000_so_o_aluno_mexe_na_conta.sql" >/dev/null
+$M -f "$ROOT/supabase/migrations/20261121120000_so_o_aluno_mexe_na_conta.sql" >/dev/null   # idempotente
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null
 $M -f "$ROOT/supabase/migrations/20261118072145_webhook_revoga_so_o_plano_do_pedido.sql" >/dev/null   # idempotente
-for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis matriz_papeis entrada_time historico_jogador saida_jogador regras_reta gestor_geral salas marca console_plataforma time_suspenso bateria_permissoes exemplo_samba webhook; do
+for f in f05_f06 f17 fase1 fase1_fatos fase1_convites fase1_dinheiro fase1_abertura fase1_modo_time fase1_visao fase1_grade fase1_papeis matriz_papeis entrada_time historico_jogador saida_jogador regras_reta gestor_geral salas marca console_plataforma time_suspenso so_o_aluno bateria_permissoes exemplo_samba webhook; do
   $P -f "$DIR/$f.sql" >"$TMP/$f.out" 2>&1 || echo "FALHA  $f.sql abortou: $(grep -m1 -E 'ERROR|FATAL' "$TMP/$f.out")" >>"$TMP/$f.out"
 done
 # oráculo do dinheiro: históricos aleatórios (semente fixa) conferidos contra um modelo escrito a partir das regras

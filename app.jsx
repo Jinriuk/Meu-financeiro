@@ -2101,7 +2101,7 @@ function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
       {per.length>0&&<div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'2px 0 6px'}}>
         {per.map(x=><span key={x.p} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:99,background:C.bg,fontSize:12,fontWeight:700,color:C.ink}}><span style={{width:8,height:8,borderRadius:99,background:PLAYER_COLORS[x.i]}}/>{x.p.split(' ')[0]}: {x.res>=0?'+':'−'}{fmt(Math.abs(x.res))} <span style={{color:C.inkSoft,fontWeight:600}}>({x.n})</span></span>)}
       </div>}
-      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
+      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={onEdit?()=>onEdit(t):null} onDelete={onDelete?()=>onDelete(t):null}/>)}
       {onAdd&&<button onClick={()=>onAdd(date)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio {today?'de hoje':`em ${dLabel(date)}`}</button>}
     </div>}
   </Card>;
@@ -2139,8 +2139,8 @@ function DiaryCard({entry,dayTours,players,config,onAdd,onEdit,onDelete}){
         <MiniStat label="Cashes (ITM)" value={`${cashes}/${num(entry.qtd_torneios)}`}/>
         <MiniStat label="ROI do dia" value={pctFmt(roi)} tone={r>=0?C.greenMid:C.red}/>
       </div>
-      <div style={{fontSize:12,color:C.inkSoft,marginBottom:4}}>Corrija editando os torneios abaixo:</div>
-      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={()=>onEdit(t)} onDelete={()=>onDelete(t)}/>)}
+      {onEdit&&<div style={{fontSize:12,color:C.inkSoft,marginBottom:4}}>Corrija editando os torneios abaixo:</div>}
+      {sortByCreated(dayTours).map(t=><TourRow key={t.id} t={t} config={config} players={players} onEdit={onEdit?()=>onEdit(t):null} onDelete={onDelete?()=>onDelete(t):null}/>)}
       {onAdd&&<button onClick={()=>onAdd(entry.entry_date,entry.player)} style={{marginTop:12,display:'flex',alignItems:'center',justifyContent:'center',gap:6,background:'transparent',color:P,border:`1.5px dashed ${C.border}`,padding:'11px 14px',borderRadius:12,fontWeight:700,fontSize:13.5,cursor:'pointer',width:'100%'}}><IcoPlus s={16}/>Adicionar torneio de {entry.player.split(' ')[0]}</button>}
     </div>}
   </Card>;
@@ -4130,8 +4130,11 @@ function Dashboard({session,profile}){
     if(gradeAberturas.current>=2) return null;          // já avisou 2x nesta sessão: silêncio
     gradeAberturas.current++; return {items:[row]};
   });
+  // conta de um aluno aberta pela gestão: só leitura (regra do dono, 21/11). O banco também recusa.
+  const soDono=()=>{ if(!somenteLeitura) return true; alert(`Só ${alunoAberto} mexe na conta dele. Aqui você só vê.`); return false; };
   /* CRUD genérico (mesmo padrão do app original) */
   const add = async (table,data,setter,list)=>{
+    if(!soDono()) return;
     const {data:row,error}=await sb.from(table).insert(data).select().single();
     if(error){alert('Não consegui salvar. Tente de novo.');console.error(error);return;}
     if(table==='tournaments' && row){
@@ -4141,17 +4144,20 @@ function Dashboard({session,profile}){
     setter([row,...list]); setModal(null);
   };
   const del = async (table,id,setter,list)=>{
+    if(!soDono()) return;
     const {error}=await sb.from(table).delete().eq('id',id);
     if(error){alert('Não consegui remover.');console.error(error);return;}
     setter(list.filter(x=>x.id!==id));
   };
   const update = async (table,newData,setter,list)=>{
+    if(!soDono()) return;
     const {id,created_by,created_at,...payload}=newData;
     const {data:updated,error}=await sb.from(table).update(payload).eq('id',id).select().single();
     if(error){alert('Não consegui atualizar. Tente de novo.');console.error(error);return;}
     setter(list.map(x=>x.id===id?updated:x)); setEditing(null);
   };
   const saveConfig = async patch=>{
+    if(!soDono()) return false;
     const prev=config, next={...config,...patch}; setConfig(next); setQuickEdit(null);
     const {error}=await sb.from('pool_config').update(patch).eq('id',config.id);
     if(error){alert('Não consegui salvar a configuração — nada foi alterado.');console.error(error);setConfig(prev);return false;}
@@ -4174,6 +4180,7 @@ function Dashboard({session,profile}){
     setCfgConfirm({row,nv,oldShow:showCfgVal(row,old),newShow:showCfgVal(row,nv)});
   };
   const confirmSaveConfig=async()=>{
+    if(!soDono()) return;
     const {row,nv,oldShow,newShow}=cfgConfirm; setCfgConfirm(null);
     const oldRaw=config[row.key];
     const salvou=await saveConfig({[row.key]:nv});
@@ -4194,6 +4201,7 @@ function Dashboard({session,profile}){
   };
   // saldo inicial de um jogador numa plataforma (upsert por player+wallet)
   const saveWallet = async (player,wallet,saldo_inicial)=>{
+    if(!soDono()) return;
     setQuickEdit(null);
     const {data,error}=await sb.from('player_wallets').upsert({player,wallet,saldo_inicial},{onConflict:'workspace_id,player,wallet'}).select().single();
     if(error){alert('Não consegui salvar o saldo.');console.error(error);return;}
@@ -4203,6 +4211,7 @@ function Dashboard({session,profile}){
      saída de um lado + entrada do outro). Não muda a banca central (é zero-a-zero);
      só rebalanceia o saldo por jogador/plataforma. "Pool / Reserva" = dinheiro sem dono (player null). */
   const addTransfer = async (out)=>{
+    if(!soDono()) return;
     const val=num(out.valor);
     const deP=out.de_player==='Pool / Reserva'?null:out.de_player;
     const paraP=out.para_player==='Pool / Reserva'?null:out.para_player;
@@ -4322,6 +4331,7 @@ function Dashboard({session,profile}){
     return {...s,preview:{...s.preview,completa:s.preview.completa.map(muda)}};
   });
   const salvarResumos = async ()=>{
+    if(!soDono()) return;
     const pv=tsImp.preview; if(!pv) return;
     setTsImp(s=>({...s,busy:true,prog:'Salvando…'}));
     let inseridos=0, completados=0; const erros=[];
@@ -4353,6 +4363,7 @@ function Dashboard({session,profile}){
   /* importa hand histories (.txt ou .zip): parseia no navegador, agrega por torneio e
      sobe SÓ os agregados (upsert por player+site+torneio — reimportar substitui, não duplica) */
   const importHH = async (files,player)=>{
+    if(!soDono()) return;
     if(!files.length) return;
     setImp({busy:true,prog:'Lendo arquivos…',res:null});
     const issues=[]; const texts=[];
@@ -4873,7 +4884,7 @@ function Dashboard({session,profile}){
       {modoTime&&!timeGente.carregado&&<div style={{display:'grid',placeItems:'center',padding:60}}><div className="spin"/></div>}
       {/* gestor olhando o painel de um aluno: faixa fixa com o nome e o caminho de volta */}
       {somenteLeitura&&<div data-aluno-aberto style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
-        <span style={{fontSize:14,color:P,flex:1,minWidth:180}}>Painel de <b>{alunoAberto}</b> · só leitura</span>
+        <span style={{fontSize:14,color:P,flex:1,minWidth:180}}>Painel de <b>{alunoAberto}</b> · só leitura: você vê tudo, só {alunoAberto} lança e muda</span>
         <button onClick={fecharAluno} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>Voltar para a gestão</button>
       </div>}
       {modoTime&&timeGente.carregado&&!gestaoAtiva&&!jogadorSel&&view!=='config'&&<Card style={{padding:20,marginBottom:16}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div>
@@ -5044,9 +5055,9 @@ function Dashboard({session,profile}){
               Os arquivos de <b>mãos</b> (hand history) vão na aba <b>Stats</b>, não aqui.
             </div>
           </Recolhivel></>}
-          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>
+          <DayCard today date={today} dayTours={tours.filter(t=>t.entry_date===today)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={somenteLeitura?null:editTour} onDelete={somenteLeitura?null:delTour}/>
           {past.length>0&&<div style={{fontSize:13,fontWeight:700,color:C.inkSoft,margin:'4px 2px 0'}}>Dias anteriores</div>}
-          {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {past.slice(0,pastN).map(d=><DayCard key={d} date={d} dayTours={tours.filter(t=>t.entry_date===d)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={somenteLeitura?null:editTour} onDelete={somenteLeitura?null:delTour}/>)}
           <VerMais resta={past.length-pastN} bloco={10} rotulo="dias" onClick={()=>setPastN(n=>n+10)}/>
         </div>;
       })()}
@@ -5095,7 +5106,7 @@ function Dashboard({session,profile}){
         </Card>}
 
         {diaryDaily.length?<>
-          {diaryDaily.slice(0,diaryN).map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={editTour} onDelete={delTour}/>)}
+          {diaryDaily.slice(0,diaryN).map(e=><DiaryCard key={e.id} entry={e} dayTours={diaryTours.filter(t=>t.player===e.player&&t.entry_date===e.entry_date)} players={players} config={config} onAdd={somenteLeitura?null:addTourOn} onEdit={somenteLeitura?null:editTour} onDelete={somenteLeitura?null:delTour}/>)}
           <VerMais resta={diaryDaily.length-diaryN} bloco={12} rotulo="dias" onClick={()=>setDiaryN(n=>n+12)}/>
         </>:<Empty>{diFiltroAtivo?'Nenhum torneio nesse filtro/período.':'Sem torneios lançados ainda. Vá em Torneios e lance o primeiro.'}</Empty>}
       </div>}
@@ -5220,8 +5231,8 @@ function Dashboard({session,profile}){
         return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
           <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Estatísticas de jogo a partir dos hand histories — só agregados sobem pro banco.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Stats</div></div>
 
-          {/* importação */}
-          <Card style={{padding:18}}>
+          {/* importação: só o dono da conta (no painel do aluno a gestão só vê) */}
+          {!somenteLeitura&&<Card style={{padding:18}}>
             <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:17,fontWeight:600,margin:'0 0 4px'}}>Importar hand histories</h3>
             <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Arquivos .txt do PokerStars ou export do PokerCraft (GG) — pode mandar o .zip direto. Reimportar o mesmo torneio substitui, não duplica.</div>
             <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
@@ -5235,7 +5246,7 @@ function Dashboard({session,profile}){
               {imp.res.issues.length>0&&<div style={{marginTop:6,color:C.red}}>{imp.res.issues.map((x,i)=><div key={i}>• {x}</div>)}{imp.res.issuesTotal>imp.res.issues.length&&<div>… e mais {imp.res.issuesTotal-imp.res.issues.length}</div>}</div>}
             </div>}
             <div style={{fontSize:11.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>ℹ️ <b>PokerStars</b>: funciona tanto o histórico local (Configurações → Histórico de Mãos) quanto o <b>transcript pedido por e-mail</b>, em português ou inglês. <b>GG</b>: exporte o <b>hand history</b> pelo PokerCraft (pode mandar o .zip direto). Import grande é melhor no computador. <span style={{opacity:.6}}>build {HH_BUILD}</span></div>
-          </Card>
+          </Card>}
 
           {/* filtros */}
           <Card style={{padding:16,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-end'}}>
@@ -5549,14 +5560,14 @@ function Dashboard({session,profile}){
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(p),flexShrink:0}}/>
               <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{p} · semana até {dLabel(w.week)}</div>
                 <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>autorizado {fmt(w.saqueAut)} · pago {fmt(vs)} <Badge text={st}/></div></div>
-              {podePagar&&<button onClick={()=>setModal({type:'wd',initial:{week_ending_date:w.week,player:p,valor_sacado:String(Math.max(0,w.saqueAut-vs)).replace('.',',')}})} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>Registrar</button>}
+              {podePagar&&!somenteLeitura&&<button onClick={()=>setModal({type:'wd',initial:{week_ending_date:w.week,player:p,valor_sacado:String(Math.max(0,w.saqueAut-vs)).replace('.',',')}})} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer',flexShrink:0}}>Registrar</button>}
             </div>;}):<Empty>Nenhuma semana com saque autorizado ainda.</Empty>;
           })()}
         </Card>
-        <ListView title="Pagamentos registrados" onAdd={()=>setModal('wd')} rows={[...wds].sort((a,b)=>a.week_ending_date<b.week_ending_date?1:-1)} empty="Nenhum pagamento registrado."
+        <ListView title="Pagamentos registrados" onAdd={somenteLeitura?null:()=>setModal('wd')} rows={[...wds].sort((a,b)=>a.week_ending_date<b.week_ending_date?1:-1)} empty="Nenhum pagamento registrado."
           renderRow={w=><Row key={w.id}
-            onDelete={()=>del('withdrawals',w.id,setWds,wds)}
-            onEdit={()=>setEditing({type:'wd',item:w})}
+            onDelete={somenteLeitura?null:()=>del('withdrawals',w.id,setWds,wds)}
+            onEdit={somenteLeitura?null:()=>setEditing({type:'wd',item:w})}
             left={<><span style={{width:40,height:40,borderRadius:12,background:C.plumSoft,display:'grid',placeItems:'center',flexShrink:0,color:pcolor(w.player)}}><IcoCashOut s={19}/></span>
               <div><div style={{fontWeight:700,fontSize:15}}>{w.player}</div><div style={{fontSize:12.5,color:C.inkSoft}}>semana até {dLabel(w.week_ending_date)}{w.observacoes?` · ${w.observacoes}`:''}</div></div></>}
             right={<span style={{fontWeight:800,fontSize:16,color:P,flexShrink:0}}>{fmt(w.valor_sacado)}</span>}/>}/>
@@ -5621,10 +5632,10 @@ function Dashboard({session,profile}){
           <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8,lineHeight:1.5,padding:'10px 12px',borderRadius:12,background:C.bg}}>ℹ️ Esta é a visão de <b>quem tem o quê</b>, montada a partir do saldo inicial que cada um declarou por plataforma. Ela <b>não precisa bater</b> com o total da <b>banca central</b> lá em cima — a banca central parte da banca inicial da pool, não desses saldos por jogador. Torneio/movimento/saque num site fora das plataformas listadas cai em <b>"Outros"</b>.</div>
         </Card>}
 
-        <ListView title="Movimentos da banca" subtitle={modoTime?"Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus.":"Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo."} onAdd={()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
+        <ListView title="Movimentos da banca" subtitle={modoTime?"Reload e capital do time entram sozinhos quando o time confirma o envio, e saque pelo pedido de saque: não lance de novo aqui. Use para transferência entre salas, taxa, rakeback ou bônus.":"Só aportes e retiradas externas (dinheiro entrando ou saindo da pool). Resultado de jogo entra sozinho pelo Diário, e saque de jogador pela aba Saques — não registre eles aqui de novo."} onAdd={somenteLeitura?null:()=>setModal('bank')} rows={[...ledger].sort((a,b)=>a.entry_date<b.entry_date?1:-1)} empty="Nenhum movimento na banca."
           renderRow={l=>{const net=num(l.entrada)-num(l.saida); return <Row key={l.id}
-            onDelete={()=>del('bankroll_ledger',l.id,setLedger,ledger)}
-            onEdit={()=>setEditing({type:'bank',item:l})}
+            onDelete={somenteLeitura?null:()=>del('bankroll_ledger',l.id,setLedger,ledger)}
+            onEdit={somenteLeitura?null:()=>setEditing({type:'bank',item:l})}
             left={<><span style={{width:40,height:40,borderRadius:12,background:net>=0?C.greenSoft:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:net>=0?C.greenMid:C.red}}>{net>=0?<IcoUp s={20}/>:<IcoDown s={20}/>}</span>
               <div><div style={{fontWeight:700,fontSize:15}}>{l.wallet}{l.player?` · ${l.player}`:''}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dLabel(l.entry_date)}{l.observacao?` · ${l.observacao}`:''}</div></div></>}
             right={<span style={{fontWeight:800,fontSize:16,color:net>=0?C.greenMid:C.red,flexShrink:0}}>{net>=0?'+':'−'}{fmt(Math.abs(net))}</span>}/>;}}/>
@@ -6039,8 +6050,8 @@ function Dashboard({session,profile}){
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
           <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
-        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana fora da grade. Toque no lápis pra corrigir.</div>
-        {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={()=>{setAlertDetail(null);editTour(t);}} onDelete={()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
+        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana fora da grade.{somenteLeitura?'':' Toque no lápis pra corrigir.'}</div>
+        {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={somenteLeitura?null:()=>{setAlertDetail(null);editTour(t);}} onDelete={somenteLeitura?null:()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
           left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
             <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
             <div style={{fontSize:12,color:C.inkSoft,marginTop:2}}>{dLabel(t.entry_date)} · buy-in {fmt(t.buyin)} <span style={{color:C.red,fontWeight:700}}>({statusGrade(t,config).motivo})</span></div></div></>}
