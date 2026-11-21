@@ -10,6 +10,7 @@
 --   · A-022/A-013: aviso de saque com a divisão (jogador e time) e "MU" no aviso da planilha;
 --   · A-046/A-021: o aviso de um pedido (planilha, saque, reload) some quando o pedido é resolvido; mandar a planilha de
 --     novo troca o aviso em vez de repetir;
+--   · A-060: stop_semana_do_time diz quem bateu o stop da semana (pendência da gestão);
 --   · A-062: o jogador recebe aviso quando o time registra capital pra ele.
 -- ============================================================
 
@@ -91,6 +92,29 @@ begin
 end $$;
 revoke all on function public.situacao_jogador(uuid, date) from public, anon;
 grant execute on function public.situacao_jogador(uuid, date) to authenticated;
+
+-- ---------- A-060: quem bateu o stop semanal (pendência na Visão geral da gestão) ----------
+-- Por jogador que quem chama acompanha (ver_desempenho na reta dele): o resultado dos torneios da semana e se passou do
+-- limite (% da reta ou do time sobre a banca do começo da semana). Não devolve banca nem limite: isso é dinheiro.
+create or replace function public.stop_semana_do_time(p_inicio date) returns table(pessoa_id uuid, resultado numeric, bateu boolean)
+language sql stable security definer set search_path = '' as $$
+  with alvo as (
+    select pe.id, v.unidade_id, pe.workspace_id
+      from public.pessoa pe join public.vinculo v on v.pessoa_id = pe.id and v.fim is null
+     where pe.status = 'ativo' and pe.workspace_id in (select public.my_workspaces()) and public.pode('ver_desempenho', v.unidade_id)
+  ), sem as (
+    select a.id,
+           coalesce((select sum(t.prize + coalesce(t.bounty, 0) - case when t.ticket then 0 else t.buyin * (1 + coalesce(t.reentries, 0)) end)
+                       from public.tournaments t where t.pessoa_id = a.id and t.entry_date between p_inicio and p_inicio + 6), 0) as res,
+           coalesce((public.regra_efetiva(a.unidade_id, 'stop_semana_pct') #>> '{}')::numeric,
+                    (select c.stoploss_weekly_pct from public.pool_config c where c.workspace_id = a.workspace_id limit 1), 0) as pct
+      from alvo a
+  )
+  select s.id, round(s.res, 2), coalesce(s.pct > 0 and s.res < 0 and b.banca > 0 and -s.res >= s.pct * b.banca, false)
+    from sem s cross join lateral (select public.banca_na_data(s.id, p_inicio) as banca) b;
+$$;
+revoke all on function public.stop_semana_do_time(date) from public, anon;
+grant execute on function public.stop_semana_do_time(date) to authenticated;
 
 -- ---------- A-022/A-013/A-046: avisos de saque e de planilha ----------
 create or replace function public.aviso_saque() returns trigger

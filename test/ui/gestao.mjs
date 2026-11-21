@@ -86,7 +86,7 @@ await cenario('financeiro', dbFin, async (page, escritas) => {
   ok(await page.locator('[data-dinheiro-de="Iza N."]').count() === 0, 'convidada sem dinheiro no time não aparece na tabela');
   ok(/\+US\$\s10\.597,00\s*sacado US\$\s10\.240,00/.test(await page.locator('[data-lifetime-de="Enzo P."]').innerText()), 'lifetime como na planilha: já sacado 10.240 + profit 357 = 10.597');
   const sq = await page.locator('[data-saque="Bruno T."]').innerText();
-  ok(/Banca informada US\$\s412,00 · no sistema US\$\s380,00/.test(sq) && /US\$\s32,00 acima da do sistema/.test(sq), 'saque mostra a banca digitada e a do sistema, e avisa a diferença');
+  ok(/Banca:\s*informada US\$\s412,00 · no sistema US\$\s380,00/.test(sq) && /US\$\s32,00 acima da do sistema/.test(sq), 'saque mostra a banca digitada e a do sistema, e avisa a diferença');
   const corte = page.locator('[data-corte="Enzo P."]');
   ok(await corte.inputValue() === D(1), 'conferência: a data dos saldos começa no dia do envio (planilha sem "atualizado em")');
   await corte.fill(D(3));
@@ -153,7 +153,7 @@ await cenario('painel só desempenho', soDesempenho, async (page) => {
   ok(await page.locator('[data-sem-dinheiro]').count() === 1 && await page.locator('[data-banca-hero]').count() === 0 && await page.locator('[data-painel-mk]').count() === 0,
     'sem permissão de ver o dinheiro: o painel diz isso em vez de mostrar uma banca montada pela metade');
   ok(await page.getByRole('button', { name: /^Banca$/ }).count() === 0, '…e não tem a aba Banca');
-  ok(/TORNEIOS JOGADOS\s*1\s*em 1 dia/i.test(await page.locator('main').innerText()), 'o desempenho continua lá (o torneio do Caio)');
+  ok(/TORNEIOS JOGADOS\s*1\s*1 dia de jogo/i.test(await page.locator('main').innerText()), 'o desempenho continua lá (o torneio do Caio)');
 });
 
 // 4) link de convite de gestão: a tela diz o papel

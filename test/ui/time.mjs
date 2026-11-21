@@ -85,7 +85,8 @@ await cenario('admin', estrutura({
   await aba(page, 'Jogadores');
   await page.locator('[data-acoes="João"]').click();
   ok(await page.getByRole('menuitem', { name: 'Link pessoal' }).count() === 1, 'jogador sem conta tem link pessoal no menu');
-  await page.locator('[data-acoes="João"]').click();
+  await page.keyboard.press('Escape');
+  ok(await page.locator('[data-acoes-modal]').count() === 0, 'Esc fecha o painel de ações');
   await aba(page, 'Equipe e convites');
   await page.locator('[data-convidar]').first().click();
   await page.locator('[data-link-aberto]').check();
@@ -127,7 +128,7 @@ await cenario('conferir planilha', estrutura({
   ok(c && c.p_pessoa === 'p3' && c.p_mu === 200 && c.p_cashout === 500, 'confere com os valores da planilha');
   await page.locator('[data-modo-btn="jogo"]').first().click();
   await abrirTime(page);
-  ok(/até \$3,20/.test(await page.locator('[data-grade]').innerText()), 'em Meu jogo, vê a própria grade');
+  ok(/até US\$\s3,20/.test(await page.locator('[data-grade]').innerText()), 'em Meu jogo, vê a própria grade');
   ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida');
 });
 

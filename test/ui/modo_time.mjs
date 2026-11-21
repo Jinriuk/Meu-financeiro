@@ -41,7 +41,7 @@ await cenario('gestor que joga', time(), async (page) => {
   ok(/Painel de Maria/.test(await page.locator('[data-aluno-aberto]').innerText()), 'abre o painel da Maria com a faixa "só leitura"');
   await irPara(page, 'Torneios');
   let t = await page.locator('main').innerText();
-  ok(/TORNEIOS JOGADOS\s*1\s*em 1 dia/i.test(t) && /1 torneio · Maria/.test(t) && /−US\$\s20,00/.test(t), 'só os torneios da Maria');
+  ok(/TORNEIOS JOGADOS\s*1\s*1 dia de jogo/i.test(t) && /1 torneio · Maria/.test(t) && /−US\$\s20,00/.test(t), 'só os torneios da Maria');
   ok(await page.getByRole('button', { name: 'Adicionar' }).count() === 0 && !/Importar do site/.test(t), 'só leitura: sem lançar nem importar pelo aluno');
   ok(!/Meu time|Ajustes/.test(await nav(page)), 'no painel do aluno não aparece Meu time nem Ajustes');
   await page.getByRole('button', { name: 'Voltar para a gestão' }).click();
@@ -53,7 +53,7 @@ await cenario('gestor que joga', time(), async (page) => {
   ok(/Início/.test(n) && /Torneios/.test(n) && /Meu time/.test(n) && !/Visão geral/.test(n), 'Meu jogo: abas de jogador');
   await irPara(page, 'Torneios');
   t = await page.locator('main').innerText();
-  ok(/TORNEIOS JOGADOS\s*2\s*em 2 dias/i.test(t), 'Meu jogo: os 2 torneios dele (inclui "hero " com espaço e caixa diferentes), sem o da Maria');
+  ok(/TORNEIOS JOGADOS\s*2\s*2 dias de jogo/i.test(t), 'Meu jogo: os 2 torneios dele (inclui "hero " com espaço e caixa diferentes), sem o da Maria');
   for (const sub of ['Diário', 'Semana', 'Mês', 'Lista']) { await page.getByRole('tab', { name: sub, exact: true }).click(); await page.waitForTimeout(250); }
   ok(await page.locator('[data-sub-torneios]').count() === 1, 'Diário, Semana e Mês ficam dentro de Torneios');
   for (const aba of ['Stats', 'Banca', 'Início']) await irPara(page, aba);

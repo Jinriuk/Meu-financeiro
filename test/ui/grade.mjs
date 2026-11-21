@@ -43,17 +43,17 @@ await cenario('aluno', time({
   for (const b of await page.getByRole('button', { name: /^\d\d\/\d\d .*torneio/ }).all()) await b.click({ timeout: 4000 });  // abre os dias passados
   await page.waitForTimeout(300);
   const fora = page.locator('[data-selo-grade="fora"]'), at = page.locator('[data-selo-grade="atencao"]');
-  ok(await fora.count() === 1 && /acima do teto \$3,00 · grade simulada/.test(await fora.first().innerText()), 'Hot $44: FORA com o motivo e o aviso de grade simulada');
+  ok(await fora.count() === 1 && /acima do teto US\$\s3,00 · grade simulada/.test(await fora.first().innerText()), 'Hot $44: FORA com o motivo e o aviso de grade simulada');
   ok(await at.count() === 1 && /só vale com garantido 2k\+/.test(await at.first().innerText()), '$3 sem garantido no nome: ATENÇÃO com o motivo');
   const t = await page.locator('main').innerText();
   ok(/Sunday Storm/.test(t) && await page.locator('[data-selo-grade]').count() === 2, 'Sunday Storm de $11 (liberado pelo nome) e o $2,50 com 1 reentry não ganham selo, mesmo acima do teto de ABI $3 dos Ajustes');
   ok(/Antes do Time \$44/.test(t), 'o torneio de $44 de antes da entrada no time aparece pro aluno (o histórico é dele) e não ganha selo: as regras do time não valiam');
   await page.getByRole('tab', { name: 'Diário', exact: true }).click(); await page.waitForTimeout(300);
   for (const b of await page.getByRole('button', { name: /^Hero · / }).all()) await b.click({ timeout: 4000 });
-  ok(/Fora da grade — 1 torneio · semanal Regular: buy-in \$44,00 acima do teto \$3,00 · grade simulada/.test(await corpo(page)), 'Diário: o dia fica fora pela grade, com o motivo');
+  ok(/Fora da grade — 1 torneio · semanal Regular: buy-in US\$\s44,00 acima do teto US\$\s3,00 · grade simulada/.test(await corpo(page)), 'Diário: o dia fica fora pela grade, com o motivo');
   await irPara(page, 'Meu time');
   ok(await page.locator('[data-grade-simulada]').count() === 1 && /Grade da Reta 2/.test(await corpo(page)), 'Meu time: grade da reta com o aviso de simulada');
-  ok(/até \$2,50 \+ \$3 2k\+/.test(await page.locator('[data-grade]').innerText()), '…e o quadro como na planilha');
+  ok(/até US\$\s2,50 \+ US\$\s3 2k\+/.test(await page.locator('[data-grade]').innerText()), '…e o quadro como na planilha (valores no formato US$)');
   ok(await page.getByRole('button', { name: /^Grades$/ }).count() === 0 && await page.locator('[data-editar-grade]').count() === 0, 'aluno não edita grade');
 });
 
@@ -76,7 +76,7 @@ await cenario('gestor', time({
   await page.locator('[data-grade-linha="0"] [data-celula="regular"]').fill('até $2,50 + $3 2k+');
   await page.locator('[data-grade-linha="0"] [data-celula="prog_ko"]').fill('$1.10 + Bounty Builder até $3.30');
   const ent = await page.locator('[data-grade-linha="0"] [data-entendi]').allInnerTexts();
-  ok(ent[0] === 'até $2,50 · $3,00 com 2k+' && ent[1] === 'até $1,10 · Bounty Builder até $3,30', 'mostra o que entendeu de cada célula enquanto escreve');
+  ok(ent[0] === 'até US$ 2,50 · US$ 3,00 com 2k+' && ent[1] === 'até US$ 1,10 · Bounty Builder até US$ 3,30', 'mostra o que entendeu de cada célula enquanto escreve');
   await page.locator('[data-grade-simulada-check]').check();
   await page.getByRole('button', { name: 'Salvar grade de Reta 2' }).click();
   await page.waitForTimeout(800);

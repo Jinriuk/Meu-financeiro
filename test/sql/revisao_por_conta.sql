@@ -62,6 +62,24 @@ reset role;
 select teste.igual('antes da foto, a banca do dia é a das salas (a entrada foi há 20 dias)', $q$select public.banca_na_data('9f000000-0000-0000-0000-0000000000c1', current_date - 25)::text$q$, '100.00');
 set role authenticated;
 
+-- ---------- A-060: quem bateu o stop da semana, pra gestão ----------
+select teste.como('9e000000-0000-0000-0000-0000000000a1');
+select teste.ok('stop semanal da reta: 15%', $q$select public.definir_regra(teste.rvid('U'), 'stop_semana_pct', '0.15'::jsonb)$q$);
+select teste.igual('semana que começou há 3 dias: J +45 (o +50 e o −5), não bateu; K sem jogo',
+  $q$select string_agg(pe.nome || ':' || x.resultado || ':' || x.bateu, ' ' order by pe.nome) from public.stop_semana_do_time(current_date - 3) x join public.pessoa pe on pe.id = x.pessoa_id$q$,
+  'Joga R:45.00:false Kaio R:0.00:false');
+select teste.como('9e000000-0000-0000-0000-0000000000c1');
+select teste.ok('J perde 30 hoje', $q$insert into public.tournaments(workspace_id, entry_date, player, buyin, prize) values (teste.rvid('ws'), current_date, 'Joga R', 30, 0)$q$);
+select teste.como('9e000000-0000-0000-0000-0000000000a1');
+select teste.igual('semana de ontem pra cá: −35 com banca de 170 no começo (100 − 10 + 50 + 30 de capital; 15% = 25,50): bateu',
+  $q$select x.resultado || ':' || x.bateu from public.stop_semana_do_time(current_date - 1) x where x.pessoa_id = '9f000000-0000-0000-0000-0000000000c1'$q$, '-35.00:true');
+select teste.como('9e000000-0000-0000-0000-0000000000f1');
+select teste.igual('o financeiro (sem desempenho) não recebe a lista', $q$select count(*)::text from public.stop_semana_do_time(current_date - 1)$q$, '0');
+select teste.como('9e000000-0000-0000-0000-0000000000c2');
+select teste.igual('jogador não vê o stop dos outros', $q$select count(*)::text from public.stop_semana_do_time(current_date - 1)$q$, '0');
+select teste.como('9e000000-0000-0000-0000-0000000000c1');
+select teste.ok('J apaga o torneio de teste', $q$delete from public.tournaments where workspace_id = teste.rvid('ws') and entry_date = current_date and buyin = 30$q$);
+
 -- ---------- A-055 e A-046: reload em aberto aparece pro jogador e o aviso some quando resolvido ----------
 select teste.como('9e000000-0000-0000-0000-0000000000c1');
 insert into rv_pedido select 'reload', public.pedir_reload(40, 'GG Poker', null);
