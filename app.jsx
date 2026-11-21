@@ -1767,7 +1767,7 @@ function Login({aviso}){
     const nome=nNome.trim();
     const mail=nMail.trim().toLowerCase();
     const zap=nZap.replace(/\D/g,'');
-    if(nome.length<2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
+    if(nome.length<2) return setErr('Diga seu nome ou apelido (pelo menos 2 letras).');
     if(nome.length>30) return setErr('Apelido muito longo — no máximo 30 caracteres.');
     // o apelido também é login: com @ confundiria com e-mail, e só números com CPF
     if(nome.includes('@')) return setErr('O apelido não pode ter @ (é ele que você usa pra entrar).');
@@ -1794,7 +1794,7 @@ function Login({aviso}){
       if(/invalid/.test(m)&&/email/.test(m)) return setErr('Esse e-mail parece inválido — confere se digitou certo (ex.: termina em .com, não .con).');
       if(/weak|password/.test(m)) return setErr('Senha muito fraca — tenta uma com mais letras e números.');
       return setErr('Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
-    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.'); return; }
+    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirme no seu e-mail e depois entre aqui: seu apelido fica guardado.'); return; }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
     const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
     if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
@@ -1839,7 +1839,7 @@ function Login({aviso}){
   const esqueci=async()=>{
     setErr(''); setOk('');
     const id=ident.trim();
-    if(!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
+    if(!id) return setErr('Digite seu e-mail, apelido ou CPF no campo acima que o link vai pro seu e-mail.');
     setBusy(true);
     const redirectTo=window.location.origin+window.location.pathname;
     if(id.includes('@')){
@@ -1860,7 +1860,7 @@ function Login({aviso}){
           <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.marca_nome||conv.time}</div>
           <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{(()=>{ const pap=papelDe(conv.capacidades||[]);
             if(pap) return <>Você entra como <b>{conv.pessoa}</b>, <b>{(PAPEL_ROT[pap]||'gestão').toLowerCase()}</b> do time{conv.joga_em?<>, e também joga na <b>{conv.joga_em}</b></>:null}.</>;
-            return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
+            return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Crie sua conta (ou entre, se já tiver uma) e o time aparece direto.</div>
         </div>
         :<div data-convite="ruim" style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:13.5,color:C.gold}}>{conv.motivo||'Convite inválido.'}</div>
@@ -1872,7 +1872,7 @@ function Login({aviso}){
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         {confirmMail&&<div style={{background:C.goldSoft,borderRadius:11,padding:'12px 14px'}}>
-          <div style={{color:C.gold,fontSize:13.5,fontWeight:700}}>Falta confirmar teu e-mail 📬</div>
+          <div style={{color:C.gold,fontSize:13.5,fontWeight:700}}>Falta confirmar seu e-mail 📬</div>
           <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>Tua conta existe, mas antes de entrar você precisa clicar no link que mandamos pra <b>{confirmMail}</b>. Não achou? Olha o spam — ou reenvia:</div>
           <button onClick={reenviarConfirm} disabled={busy} style={{marginTop:8,padding:'9px 14px',borderRadius:10,border:'none',background:C.gold,color:'#fff',fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Reenviar e-mail de confirmação</button>
         </div>}
@@ -2627,7 +2627,7 @@ function ConsolePlataforma({session}){
   const nomeOk=novo.nome.trim().length>0&&novo.admin.trim().length>0;
   const criar=async()=>{ const n=novo.nome.trim(), adm=novo.admin.trim(), as=parseInt(novo.assentos,10);
     const r=await rodar('criar_time_plataforma',{p_nome:n,p_assentos:as>0?as:null,p_admin_nome:adm},`Time ${n} criado. Mande o link pra ${adm}.`);
-    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, teu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); setCriando(false); } };
+    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, seu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); setCriando(false); } };
 
   // ---------- números ----------
   const ts=times||[], cs=contas||[];
@@ -2648,7 +2648,7 @@ function ConsolePlataforma({session}){
     l.push(['Convidar admin',()=>setPerg({label:`Convidar admin pro ${t.nome}`,kind:'text',valor:'',
       hint:'Nome de quem vai administrar o time. Você recebe um link de uso único (vale 7 dias) pra mandar pra pessoa.',
       onSave:async v=>{ if(!v) return; setPerg(null); const tok=await rodar('convidar_admin_plataforma',{p_ws:t.id,p_nome:v},null);
-        if(tok&&typeof tok==='string') setLink({titulo:`Link de admin do ${t.nome}`,url:url(tok),texto:`${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }})]);
+        if(tok&&typeof tok==='string') setLink({titulo:`Link de admin do ${t.nome}`,url:url(tok),texto:`${v}, seu acesso de admin ao time ${t.nome} no GrinderBank:`}); }})]);
     if(t.admin_pendente) l.push(['Link novo do admin convidado',async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null);
       if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }]);
     l.push(['Marca (logo e nome)',()=>setMarcaDe(t)]);
@@ -2996,7 +2996,7 @@ function SaidaModal({nome,previa,onBanca,onConfirmar,onClose}){
 
 /* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
    Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
-function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeTime,onMarca}){
+function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeTime,onMarca,onPadrao}){
   const uid=session.user.id;
   const celular=useCelular();
   const [d,setD]=useState(null);
@@ -3148,7 +3148,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   const salasDoJogador=async p=>{ const {data,error}=await sb.rpc('salas_jogador',{p_pessoa:p.id}); if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; } return data; };
   const capital=async p=>{ setAviso(null); const dados=await salasDoJogador(p); setCapitalDe({p,salas:(dados&&dados.salas)||[]}); };
   const verSalas=async p=>{ setAviso(null); const dados=await salasDoJogador(p); if(dados) setSalasDe({p,dados}); };
-  const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, teu convite pro time no GrinderBank:`}); };
+  const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, seu convite pro time no GrinderBank:`}); };
   const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca). Depois que ele entrar com a conta dele, o nome passa a ser dele.',kind:'text',valor:p.nome,
     onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(nn&&nn!==p.nome) await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nn},`Agora é ${nn}.`); }});
   const previaSaida=async(p,banca)=>{ const {data,error}=await sb.rpc('previa_saida',{p_pessoa:p.id,p_banca:banca??null});
@@ -3161,9 +3161,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       if(quem==='jogador'&&tipo==='aberto'){ tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:null,p_dias:7,p_usos:null});
         titulo=`Link aberto da ${U[reta]?.nome}`; texto=`Convite pra jogar na ${U[reta]?.nome} pelo GrinderBank:`; }
       else if(quem==='jogador'){ pessoa=await chama('convidar_jogador',{p_unidade:reta,p_nome:nome,p_nick_ps:null,p_id_gg:null});
-        tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Link pessoal de ${nome}`; texto=`${nome}, teu convite pro time no GrinderBank:`; }
+        tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Link pessoal de ${nome}`; texto=`${nome}, seu convite pro time no GrinderBank:`; }
       else { pessoa=await chama('convidar_equipe',{p_nome:nome,p_unidades:onde,p_caps:PACOTES[quem],p_joga_em:joga?jogaEm:null});
-        tok=await chama('criar_convite',{p_unidade:onde[0],p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`; texto=`${nome}, teu convite pra gestão do time no GrinderBank:`; }
+        tok=await chama('criar_convite',{p_unidade:onde[0],p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`; texto=`${nome}, seu convite pra gestão do time no GrinderBank:`; }
       await Promise.all([carregar(),carregarResumo()]);
       return {titulo,url:urlConvite(tok),texto};
     }catch(e){ return {erro:e.message}; }
@@ -3794,16 +3794,23 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         const c=contratoEf(selU.id), cProprio=c&&c.unidade_id===selU.id;
         return <Card style={{padding:20}} data-regras-reta>
           <h3 style={tituloS}>Regras por reta</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Cada unidade herda da de cima; sem regra em nenhuma, vale o padrão do time (Regras de jogo). Mude só onde a reta é diferente.</div>
-          <select data-regra-unidade value={selU.id} onChange={e=>setRegraSel(e.target.value)} style={{...inputStyle,width:'auto',marginBottom:6}}>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Escolha "Time inteiro" pro padrão do time. Cada reta herda da de cima; mude só onde a reta é diferente.</div>
+          <div style={{position:'relative',display:'inline-block',marginBottom:6}}>
+          <select data-regra-unidade value={selU.id} onChange={e=>setRegraSel(e.target.value)} style={{...inputStyle,width:'auto',paddingRight:36}}>
             {unis.map(u=><option key={u.id} value={u.id}>{u.mae_id?caminhoNome(u):'Time inteiro'}</option>)}</select>
+          <span aria-hidden="true" style={{position:'absolute',right:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:C.inkSoft,fontSize:12}}>▼</span></div>
           {REGRAS_RETA.map(rr=>{ const r=regraComOrigem(selU.id,rr.k), proprio=!!(r&&r.unidade_id===selU.id), v=r?r.valor:rr.padrao(config||{});
             const origem=r?(proprio?(ehRaiz?'do time':'desta unidade'):`herdado de ${U[r.unidade_id]?.nome}`):'padrão do time';
-            const editavel=podeSel&&(!ehRaiz||['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k));
-            return <div key={rr.k} data-regra={rr.k} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-              <span style={{flex:1,minWidth:170,color:C.inkSoft}}>{rr.rot}</span><b data-regra-valor>{rr.txt(v)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {origem}</span>
-              {editavel&&<button style={btnS} onClick={()=>mudar(rr,v)}>Mudar</button>}
+            // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
+            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k)&&!proprio;
+            const editavel=podeSel&&(!doPadrao||!!onPadrao);
+            return <div key={rr.k} data-regra={rr.k} style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+              <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>{rr.rot}</span>
+              <span style={{minWidth:0}}><b data-regra-valor>{rr.txt(v)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}> · {origem}</span></span>
+              <span style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+              {editavel&&<button style={btnS} onClick={()=>doPadrao?onPadrao(rr.k):mudar(rr,v)}>Mudar</button>}
               {editavel&&proprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:rr.k},`${rr.rot}: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+              </span>
             </div>; })}
           {!ehRaiz&&<div data-regra="contrato" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
             <span style={{flex:1,minWidth:170,color:C.inkSoft}}>Contrato</span><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b>
@@ -4966,6 +4973,9 @@ function Dashboard({session,profile}){
   const MODAL_TABLE={tour:'tournaments',bank:'bankroll_ledger',wd:'withdrawals'};
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
+  // padrão do time editado no bloco de regras ("Time inteiro"): cada regra da reta aponta pra sua coluna da configuração
+  const PADRAO_TIME={abi_max:{label:'ABI máximo (reta sem grade)',kind:'money',key:'abi_max_player1'},stop_dia_buyins:{label:'Stop loss diário (buy-ins)',kind:'money',key:'stoploss_daily_buyins'},
+    stop_semana_pct:{label:'Stop loss semanal',kind:'percent',key:'stoploss_weekly_pct'},sites:{label:'Sites permitidos',kind:'list',key:'sites_permitidos'},modalidades:{label:'Modalidades permitidas',kind:'list',key:'modalidades_permitidas'}};
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
   let MAIN_TABS=['painel','torneios','diario','stats'];
   let nav=[
@@ -4998,7 +5008,7 @@ function Dashboard({session,profile}){
       nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},
         ...(semDinheiro?[]:[{id:'banca',label:'Banca',Icon:IcoStack}]),
         ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Ajustes',Icon:IcoGear}])];
-      MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','stats','time'];
+      MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','banca','time'];
     }
   }
   const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
@@ -5131,7 +5141,6 @@ function Dashboard({session,profile}){
               if(av.local) return;
               if(gestaoAtiva) return setView({saque:'g_financeiro',reload:'g_financeiro',planilha:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',capital:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
               setView({grade:'time',planilha:'time',entrada:'time'}[av.tipo]||(modoTime?'banca':'painel')); }}/>
-          <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
         </div>
       </div>
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
@@ -5937,12 +5946,13 @@ function Dashboard({session,profile}){
       {/* ---------------- CONFIG ---------------- */}
       {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
       {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}
+        onPadrao={timeGente.podeConfigurar?k=>{ const row=PADRAO_TIME[k]; if(row) setQuickEdit({label:`${row.label} · padrão do time`,kind:row.kind,current:config[row.key],onSave:nv=>askSaveConfig(row,nv)}); }:null}
         marca={ws?{nome:ws.marca_nome||'',logo:ws.marca_logo||null}:null} nomeTime={ws?.name} onMarca={loadAll}/>}
       {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
-        {!(gestaoAtiva&&view==='config')&&<>
+        {!modoTime&&<>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{modoTime?(view==='g_regras'?'Regras de jogo':'Configurações do time'):'Configurações da pool'}</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{solo?'Configurações':'Configurações da pool'}</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>{toque?'Toque no lápis':'Clique no lápis'} pra ajustar.{solo?'':' Todos veem a mesma configuração.'}</div>
           {modoTime&&<div data-ajustes-time style={{fontSize:12.5,color:C.inkSoft,marginTop:-6,marginBottom:8}}>{timeGente.podeConfigurar?'Regras do time inteiro: valem pra todos os jogadores.':'Regras do time: só quem configura o time altera.'}</div>}
           {(solo?[
             ...(modoTime?[]:[{label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'}]),
@@ -6015,8 +6025,9 @@ function Dashboard({session,profile}){
           <button onClick={()=>{setTour(1); setView(TOUR_STEPS[0].v);}} style={{marginTop:12,marginLeft:8,padding:'12px 20px',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Rever o tour do sistema</button>
         </Card>}
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Minha conta</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troque sua senha quando quiser.</div>
+          <button className="mobile-only" data-sair-conta onClick={sair} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12}}><IcoLogout s={16}/>Sair da conta</button>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
             {!isStandalone()&&<button onClick={instalar} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoChip s={18}/>Instalar na tela inicial</button>}
@@ -6040,8 +6051,9 @@ function Dashboard({session,profile}){
 
     {/* nav mobile: só o essencial + "Mais" */}
     <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
-      {nav.filter(n=>MAIN_TABS.includes(n.id)).map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
-      <NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!nav.filter(n=>MAIN_TABS.includes(n.id)).some(n=>navAtiva(n.id))} onClick={()=>setMenuOpen(true)} mobile/>
+      {(()=>{ const fora=nav.filter(n=>!MAIN_TABS.includes(n.id)), barra=fora.length===1?[...nav.filter(n=>MAIN_TABS.includes(n.id)),fora[0]]:nav.filter(n=>MAIN_TABS.includes(n.id));
+        return <>{barra.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
+          {fora.length>1&&<NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!barra.some(n=>navAtiva(n.id))} onClick={()=>setMenuOpen(true)} mobile/>}</>; })()}
     </nav>
 
     {/* gaveta "Mais" (demais telas) */}
@@ -6052,8 +6064,9 @@ function Dashboard({session,profile}){
           <button onClick={()=>setMenuOpen(false)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          {nav.filter(n=>!MAIN_TABS.includes(n.id)).map(n=><button key={n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'16px 14px',borderRadius:14,border:`1.5px solid ${view===n.id?P:C.border}`,background:view===n.id?C.plumSoft:C.warm,color:view===n.id?P:C.ink,fontWeight:700,fontSize:15,cursor:'pointer'}}><n.Icon s={20}/>{n.label}</button>)}
+          {nav.filter(n=>!MAIN_TABS.includes(n.id)).map(n=><button key={n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',justifyContent:'flex-start',textAlign:'left',gap:10,padding:'16px 14px',borderRadius:14,border:`1.5px solid ${view===n.id?P:C.border}`,background:view===n.id?C.plumSoft:C.warm,color:view===n.id?P:C.ink,fontWeight:700,fontSize:15,cursor:'pointer',lineHeight:1.25}}><span style={{flexShrink:0,display:'grid'}}><n.Icon s={20}/></span><span style={{minWidth:0}}>{n.label}</span></button>)}
         </div>
+        <button data-sair-mais onClick={sair} style={{marginTop:14,width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}><IcoLogout s={16}/>Sair da conta</button>
       </div>
     </div>}
 
@@ -6462,7 +6475,7 @@ function App(){
     const {data:sub}=sb.auth.onAuthStateChange((e,s)=>{ setSession(s); if(e==='PASSWORD_RECOVERY') setRecovery(true); });
     // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
     if(LINK_EMAIL){
-      const aviso='Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      const aviso='Esse link do e-mail venceu ou já foi usado. Entre com seu e-mail e senha. Se era pra trocar a senha, peça outro em "Esqueci minha senha".';
       if(LINK_EMAIL.invalido) setLinkAviso(aviso);
       else sb.auth.verifyOtp(LINK_EMAIL).then(({error})=>{ if(error) setLinkAviso(aviso); }).catch(()=>setLinkAviso(aviso));
     }

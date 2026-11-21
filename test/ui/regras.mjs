@@ -47,8 +47,13 @@ await cenario('admin: regras por reta', samba('admin', { regra_unidade: regras }
   await page.getByRole('button', { name: 'Salvar contrato' }).click(); await page.waitForTimeout(500);
   ok(rpc(escritas, 'definir_contrato').pop()?.p_unidade === 'u4', '…e grava o contrato na Cavaquinho');
   await page.locator('[data-regras-reta] [data-regra-unidade]').selectOption('u0'); await page.waitForTimeout(300);
-  ok(await linha(page, 'abi_max').getByRole('button', { name: 'Mudar' }).count() === 0 && await linha(page, 'reserva_por_sala').getByRole('button', { name: 'Mudar' }).count() === 1,
-    'Time inteiro: ABI e stop são o padrão do time (Regras de jogo); a reserva muda aqui');
+  ok(await linha(page, 'abi_max').getByRole('button', { name: 'Mudar' }).count() === 1 && await linha(page, 'reserva_por_sala').getByRole('button', { name: 'Mudar' }).count() === 1,
+    'Time inteiro: um bloco só, o padrão do time (ABI, stop) e a reserva mudam aqui');
+  ok(!/Regras de jogo/.test(await page.locator('main').innerText()), '…sem o bloco "Regras de jogo" repetido');
+  await linha(page, 'abi_max').getByRole('button', { name: 'Mudar' }).click(); await digitar(page, '4');
+  await page.getByRole('button', { name: 'Confirmar' }).click(); await page.waitForTimeout(500);
+  const cfg = escritas.filter(e => e.tabela === 'pool_config' && e.metodo !== 'GET').pop();
+  ok(cfg && /"abi_max_player1":4/.test(cfg.corpo || ''), 'ABI do Time inteiro grava o padrão do time (a configuração): ' + JSON.stringify(cfg || {}).slice(0, 120));
 });
 
 // 2) aluno: as regras da reta dele no "Meu time" e a sugestão de saque com a reserva

@@ -4827,7 +4827,7 @@ function Login({
     const nome = nNome.trim();
     const mail = nMail.trim().toLowerCase();
     const zap = nZap.replace(/\D/g, '');
-    if (nome.length < 2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
+    if (nome.length < 2) return setErr('Diga seu nome ou apelido (pelo menos 2 letras).');
     if (nome.length > 30) return setErr('Apelido muito longo — no máximo 30 caracteres.');
     // o apelido também é login: com @ confundiria com e-mail, e só números com CPF
     if (nome.includes('@')) return setErr('O apelido não pode ter @ (é ele que você usa pra entrar).');
@@ -4886,7 +4886,7 @@ function Login({
     if (!data || !data.session) {
       setBusy(false);
       setMode('login');
-      setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.');
+      setOk('Conta criada! Confirme no seu e-mail e depois entre aqui: seu apelido fica guardado.');
       return;
     }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
@@ -4991,7 +4991,7 @@ function Login({
     setErr('');
     setOk('');
     const id = ident.trim();
-    if (!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
+    if (!id) return setErr('Digite seu e-mail, apelido ou CPF no campo acima que o link vai pro seu e-mail.');
     setBusy(true);
     const redirectTo = window.location.origin + window.location.pathname;
     if (id.includes('@')) {
@@ -5083,7 +5083,7 @@ function Login({
     const pap = papelDe(conv.capacidades || []);
     if (pap) return /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", ", /*#__PURE__*/React.createElement("b", null, (PAPEL_ROT[pap] || 'gestão').toLowerCase()), " do time", conv.joga_em ? /*#__PURE__*/React.createElement(React.Fragment, null, ", e tamb\xE9m joga na ", /*#__PURE__*/React.createElement("b", null, conv.joga_em)) : null, ".");
     return conv.pessoa ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".");
-  })(), " Cria tua conta (ou entra, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
+  })(), " Crie sua conta (ou entre, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
     "data-convite": "ruim",
     style: {
       background: C.goldSoft,
@@ -5160,7 +5160,7 @@ function Login({
       fontSize: 13.5,
       fontWeight: 700
     }
-  }, "Falta confirmar teu e-mail \uD83D\uDCEC"), /*#__PURE__*/React.createElement("div", {
+  }, "Falta confirmar seu e-mail \uD83D\uDCEC"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.ink,
@@ -8770,7 +8770,7 @@ function ConsolePlataforma({
       setLink({
         titulo: `Link de admin do ${n}`,
         url: url(r.convite),
-        texto: `${adm}, teu acesso de admin ao time ${n} no GrinderBank:`
+        texto: `${adm}, seu acesso de admin ao time ${n} no GrinderBank:`
       });
       setNovo({
         nome: '',
@@ -8837,7 +8837,7 @@ function ConsolePlataforma({
         if (tok && typeof tok === 'string') setLink({
           titulo: `Link de admin do ${t.nome}`,
           url: url(tok),
-          texto: `${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`
+          texto: `${v}, seu acesso de admin ao time ${t.nome} no GrinderBank:`
         });
       }
     })]);
@@ -10482,7 +10482,8 @@ function TimeApp({
   onIr,
   marca,
   nomeTime,
-  onMarca
+  onMarca,
+  onPadrao
 }) {
   const uid = session.user.id;
   const celular = useCelular();
@@ -10881,7 +10882,7 @@ function TimeApp({
     if (t && typeof t === 'string') setLink({
       titulo: `Link pessoal de ${p.nome}`,
       url: urlConvite(t),
-      texto: `${p.nome}, teu convite pro time no GrinderBank:`
+      texto: `${p.nome}, seu convite pro time no GrinderBank:`
     });
   };
   const renomear = p => setPerg({
@@ -10968,7 +10969,7 @@ function TimeApp({
           p_usos: null
         });
         titulo = `Link pessoal de ${nome}`;
-        texto = `${nome}, teu convite pro time no GrinderBank:`;
+        texto = `${nome}, seu convite pro time no GrinderBank:`;
       } else {
         pessoa = await chama('convidar_equipe', {
           p_nome: nome,
@@ -10983,7 +10984,7 @@ function TimeApp({
           p_usos: null
         });
         titulo = `Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`;
-        texto = `${nome}, teu convite pra gestão do time no GrinderBank:`;
+        texto = `${nome}, seu convite pra gestão do time no GrinderBank:`;
       }
       await Promise.all([carregar(), carregarResumo()]);
       return {
@@ -14172,43 +14173,65 @@ function TimeApp({
           marginBottom: 10,
           lineHeight: 1.5
         }
-      }, "Cada unidade herda da de cima; sem regra em nenhuma, vale o padr\xE3o do time (Regras de jogo). Mude s\xF3 onde a reta \xE9 diferente."), /*#__PURE__*/React.createElement("select", {
+      }, "Escolha \"Time inteiro\" pro padr\xE3o do time. Cada reta herda da de cima; mude s\xF3 onde a reta \xE9 diferente."), /*#__PURE__*/React.createElement("div", {
+        style: {
+          position: 'relative',
+          display: 'inline-block',
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("select", {
         "data-regra-unidade": true,
         value: selU.id,
         onChange: e => setRegraSel(e.target.value),
         style: {
           ...inputStyle,
           width: 'auto',
-          marginBottom: 6
+          paddingRight: 36
         }
       }, unis.map(u => /*#__PURE__*/React.createElement("option", {
         key: u.id,
         value: u.id
-      }, u.mae_id ? caminhoNome(u) : 'Time inteiro'))), REGRAS_RETA.map(rr => {
+      }, u.mae_id ? caminhoNome(u) : 'Time inteiro'))), /*#__PURE__*/React.createElement("span", {
+        "aria-hidden": "true",
+        style: {
+          position: 'absolute',
+          right: 13,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          pointerEvents: 'none',
+          color: C.inkSoft,
+          fontSize: 12
+        }
+      }, "\u25BC")), REGRAS_RETA.map(rr => {
         const r = regraComOrigem(selU.id, rr.k),
           proprio = !!(r && r.unidade_id === selU.id),
           v = r ? r.valor : rr.padrao(config || {});
         const origem = r ? proprio ? ehRaiz ? 'do time' : 'desta unidade' : `herdado de ${U[r.unidade_id]?.nome}` : 'padrão do time';
-        const editavel = podeSel && (!ehRaiz || ['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k));
+        // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
+        const doPadrao = ehRaiz && !['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k) && !proprio;
+        const editavel = podeSel && (!doPadrao || !!onPadrao);
         return /*#__PURE__*/React.createElement("div", {
           key: rr.k,
           "data-regra": rr.k,
           style: {
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: celular ? '1fr auto' : 'minmax(170px,1fr) auto auto',
             alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            padding: '8px 0',
+            gap: '4px 10px',
+            padding: '9px 0',
             borderTop: `1px solid ${C.border}`,
             fontSize: 13.5
           }
         }, /*#__PURE__*/React.createElement("span", {
           style: {
-            flex: 1,
-            minWidth: 170,
-            color: C.inkSoft
+            color: C.inkSoft,
+            gridColumn: celular ? '1 / -1' : undefined
           }
-        }, rr.rot), /*#__PURE__*/React.createElement("b", {
+        }, rr.rot), /*#__PURE__*/React.createElement("span", {
+          style: {
+            minWidth: 0
+          }
+        }, /*#__PURE__*/React.createElement("b", {
           "data-regra-valor": true
         }, rr.txt(v)), /*#__PURE__*/React.createElement("span", {
           "data-regra-origem": true,
@@ -14216,16 +14239,22 @@ function TimeApp({
             fontSize: 12,
             color: C.inkSoft
           }
-        }, "\xB7 ", origem), editavel && /*#__PURE__*/React.createElement("button", {
+        }, " \xB7 ", origem)), /*#__PURE__*/React.createElement("span", {
+          style: {
+            display: 'flex',
+            gap: 6,
+            justifyContent: 'flex-end'
+          }
+        }, editavel && /*#__PURE__*/React.createElement("button", {
           style: btnS,
-          onClick: () => mudar(rr, v)
+          onClick: () => doPadrao ? onPadrao(rr.k) : mudar(rr, v)
         }, "Mudar"), editavel && proprio && /*#__PURE__*/React.createElement("button", {
           style: btnS,
           onClick: () => rodar('limpar_regra', {
             p_unidade: selU.id,
             p_chave: rr.k
           }, `${rr.rot}: ${selU.nome} volta a herdar.`)
-        }, "Herdar"));
+        }, "Herdar")));
       }), !ehRaiz && /*#__PURE__*/React.createElement("div", {
         "data-regra": "contrato",
         style: {
@@ -17434,6 +17463,34 @@ function Dashboard({
     wd: [wds, setWds]
   };
 
+  // padrão do time editado no bloco de regras ("Time inteiro"): cada regra da reta aponta pra sua coluna da configuração
+  const PADRAO_TIME = {
+    abi_max: {
+      label: 'ABI máximo (reta sem grade)',
+      kind: 'money',
+      key: 'abi_max_player1'
+    },
+    stop_dia_buyins: {
+      label: 'Stop loss diário (buy-ins)',
+      kind: 'money',
+      key: 'stoploss_daily_buyins'
+    },
+    stop_semana_pct: {
+      label: 'Stop loss semanal',
+      kind: 'percent',
+      key: 'stoploss_weekly_pct'
+    },
+    sites: {
+      label: 'Sites permitidos',
+      kind: 'list',
+      key: 'sites_permitidos'
+    },
+    modalidades: {
+      label: 'Modalidades permitidas',
+      kind: 'list',
+      key: 'modalidades_permitidas'
+    }
+  };
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
   let MAIN_TABS = ['painel', 'torneios', 'diario', 'stats'];
   let nav = [{
@@ -17538,7 +17595,7 @@ function Dashboard({
         label: 'Ajustes',
         Icon: IcoGear
       }])];
-      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'stats', 'time'];
+      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'banca', 'time'];
     }
   }
   const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
@@ -17880,25 +17937,7 @@ function Dashboard({
         entrada: 'time'
       }[av.tipo] || (modoTime ? 'banca' : 'painel'));
     }
-  }), /*#__PURE__*/React.createElement("button", {
-    className: "mobile-only",
-    onClick: sair,
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-      padding: '8px 14px',
-      borderRadius: 12,
-      border: `1px solid ${C.border}`,
-      background: 'transparent',
-      color: C.inkSoft,
-      fontWeight: 600,
-      cursor: 'pointer',
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement(IcoLogout, {
-    s: 16
-  }), "Sair"))), podeTrocarModo && /*#__PURE__*/React.createElement("div", {
+  }))), podeTrocarModo && /*#__PURE__*/React.createElement("div", {
     className: "mobile-only",
     style: {
       marginBottom: 14
@@ -21596,6 +21635,15 @@ function Dashboard({
     banca: bancaAtual,
     onVerJogador: abrirAluno,
     onIr: setView,
+    onPadrao: timeGente.podeConfigurar ? k => {
+      const row = PADRAO_TIME[k];
+      if (row) setQuickEdit({
+        label: `${row.label} · padrão do time`,
+        kind: row.kind,
+        current: config[row.key],
+        onSave: nv => askSaveConfig(row, nv)
+      });
+    } : null,
     marca: ws ? {
       nome: ws.marca_nome || '',
       logo: ws.marca_logo || null
@@ -21607,7 +21655,7 @@ function Dashboard({
     style: view === 'g_regras' ? {
       marginTop: 16
     } : undefined
-  }, !(gestaoAtiva && view === 'config') && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
+  }, !modoTime && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -21618,13 +21666,13 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, modoTime ? view === 'g_regras' ? 'Regras de jogo' : 'Configurações do time' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Configurações' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginBottom: 12
     }
-  }, "Toque no l\xE1pis pra ajustar. Todos veem a mesma configura\xE7\xE3o."), modoTime && /*#__PURE__*/React.createElement("div", {
+  }, toque ? 'Toque no lápis' : 'Clique no lápis', " pra ajustar.", solo ? '' : ' Todos veem a mesma configuração.'), modoTime && /*#__PURE__*/React.createElement("div", {
     "data-ajustes-time": true,
     style: {
       fontSize: 12.5,
@@ -22079,13 +22127,33 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Sua conta"), /*#__PURE__*/React.createElement("div", {
+  }, "Minha conta"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginBottom: 14
     }
-  }, "Troca a tua senha quando quiser. S\xF3 afeta o teu login."), /*#__PURE__*/React.createElement("div", {
+  }, "Troque sua senha quando quiser."), /*#__PURE__*/React.createElement("button", {
+    className: "mobile-only",
+    "data-sair-conta": true,
+    onClick: sair,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '11px 16px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer',
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(IcoLogout, {
+    s: 16
+  }), "Sair da conta"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -22207,23 +22275,27 @@ function Dashboard({
       boxShadow: '0 -8px 24px -16px rgba(0,0,0,.25)',
       zIndex: 20
     }
-  }, nav.filter(n => MAIN_TABS.includes(n.id)).map(n => /*#__PURE__*/React.createElement(NavBtn, {
-    key: n.id,
-    Icon: n.Icon,
-    label: n.label,
-    active: navAtiva(n.id),
-    onClick: () => {
-      setView(n.id);
-      setMenuOpen(false);
-    },
-    mobile: true
-  })), /*#__PURE__*/React.createElement(NavBtn, {
-    Icon: IcoMenu,
-    label: "Mais",
-    active: menuOpen || !nav.filter(n => MAIN_TABS.includes(n.id)).some(n => navAtiva(n.id)),
-    onClick: () => setMenuOpen(true),
-    mobile: true
-  })), menuOpen && /*#__PURE__*/React.createElement("div", {
+  }, (() => {
+    const fora = nav.filter(n => !MAIN_TABS.includes(n.id)),
+      barra = fora.length === 1 ? [...nav.filter(n => MAIN_TABS.includes(n.id)), fora[0]] : nav.filter(n => MAIN_TABS.includes(n.id));
+    return /*#__PURE__*/React.createElement(React.Fragment, null, barra.map(n => /*#__PURE__*/React.createElement(NavBtn, {
+      key: n.id,
+      Icon: n.Icon,
+      label: n.label,
+      active: navAtiva(n.id),
+      onClick: () => {
+        setView(n.id);
+        setMenuOpen(false);
+      },
+      mobile: true
+    })), fora.length > 1 && /*#__PURE__*/React.createElement(NavBtn, {
+      Icon: IcoMenu,
+      label: "Mais",
+      active: menuOpen || !barra.some(n => navAtiva(n.id)),
+      onClick: () => setMenuOpen(true),
+      mobile: true
+    }));
+  })()), menuOpen && /*#__PURE__*/React.createElement("div", {
     onClick: () => setMenuOpen(false),
     style: {
       position: 'fixed',
@@ -22289,6 +22361,8 @@ function Dashboard({
     style: {
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'flex-start',
+      textAlign: 'left',
       gap: 10,
       padding: '16px 14px',
       borderRadius: 14,
@@ -22297,11 +22371,42 @@ function Dashboard({
       color: view === n.id ? P : C.ink,
       fontWeight: 700,
       fontSize: 15,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      lineHeight: 1.25
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      flexShrink: 0,
+      display: 'grid'
     }
   }, /*#__PURE__*/React.createElement(n.Icon, {
     s: 20
-  }), n.label))))), report && (() => {
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0
+    }
+  }, n.label)))), /*#__PURE__*/React.createElement("button", {
+    "data-sair-mais": true,
+    onClick: sair,
+    style: {
+      marginTop: 14,
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      padding: '12px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement(IcoLogout, {
+    s: 16
+  }), "Sair da conta"))), report && (() => {
     const hoje = todayISO();
     const Hdr = ({
       title,
@@ -24027,7 +24132,7 @@ function App() {
     });
     // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
     if (LINK_EMAIL) {
-      const aviso = 'Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      const aviso = 'Esse link do e-mail venceu ou já foi usado. Entre com seu e-mail e senha. Se era pra trocar a senha, peça outro em "Esqueci minha senha".';
       if (LINK_EMAIL.invalido) setLinkAviso(aviso);else sb.auth.verifyOtp(LINK_EMAIL).then(({
         error
       }) => {
