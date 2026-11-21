@@ -209,10 +209,20 @@ const cent = v => {
   const r = Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-6) / 100;
   return r === 0 ? 0 : r;
 };
-const fmt = n => (Number(n) || 0).toLocaleString('pt-BR', {
-  style: 'currency',
-  currency: 'USD'
-});
+// um formatador só (A-026): US$ 1.234,56, e o negativo com o sinal de menos tipográfico (−US$), igual ao fmtSinal
+// valor curto de eixo de gráfico: US$ 1.234 (sem centavos), negativo com o sinal antes do US$
+const fmtEixo = v => {
+  const r = Math.round(Number(v) || 0);
+  return (r < 0 ? '−' : '') + 'US$ ' + Math.abs(r).toLocaleString('pt-BR');
+};
+const fmt = n => {
+  const v = cent(Number(n) || 0),
+    t = Math.abs(v).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'USD'
+    });
+  return v < 0 ? '−' + t : t;
+};
 const pctFmt = n => `${(Number(n) || 0).toFixed(1).replace('.', ',')}%`;
 const mKey = d => (d || '').slice(0, 7);
 const mLabel = k => {
@@ -3209,7 +3219,7 @@ function MultiBars({
       color: series[j].color,
       whiteSpace: 'nowrap'
     }
-  }, num(v) >= 0 ? '+' : '−', "$", Math.abs(num(v)).toFixed(2).replace('.', ',')))), hasNeg ? /*#__PURE__*/React.createElement("div", {
+  }, fmtSinal(num(v))))), hasNeg ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 4,
@@ -3340,7 +3350,7 @@ function LineChart({
   const pts = data.map((d, i) => `${(xF(i) * 100).toFixed(2)},${yF(num(d.value)).toFixed(2)}`);
   const area = `0,100 ${pts.join(' ')} 100,100`;
   const ticks = [0, 1, 2, 3].map(k => lo + range * k / 3);
-  const compact = v => '$' + Math.round(v).toLocaleString('pt-BR');
+  const compact = fmtEixo;
   const GUT = 44;
   const track = (cx, el) => {
     const r = el.getBoundingClientRect();
@@ -3529,7 +3539,7 @@ function MultiLineChart({
   const xF = i => n === 1 ? 0.5 : i / (n - 1);
   const yF = v => PADT + (1 - (v - lo) / range) * (100 - PADT - PADB);
   const ticks = [0, 1, 2, 3].map(k => lo + range * k / 3);
-  const compact = v => (v >= 0 ? '+' : '−') + '$' + Math.round(Math.abs(v)).toLocaleString('pt-BR');
+  const compact = v => (v > 0 ? '+' : '') + fmtEixo(v);
   const GUT = 46;
   const track = (cx, el) => {
     const r = el.getBoundingClientRect();
@@ -4184,7 +4194,7 @@ function AddModal({
     }
   }, aviso), /*#__PURE__*/React.createElement("div", {
     className: "modalgrid"
-  }, fields.map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
+  }, fields.filter(fd => !fd.oculto).map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
     key: fd.k,
     type: "button",
     className: fd.full ? 'full' : '',
@@ -6388,6 +6398,7 @@ function DayCard({
   today
 }) {
   const [open, setOpen] = useState(!!today);
+  const abre = dayTours.length > 0 || !!onAdd; // dia vazio no painel só leitura: nada pra abrir
   const per = players.map((p, i) => {
     const ts = dayTours.filter(t => t.player === p);
     return {
@@ -6405,7 +6416,12 @@ function DayCard({
       border: today ? `1.5px solid ${P}` : `1px solid ${C.border}`
     }
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setOpen(o => !o),
+    onClick: () => {
+      if (abre) setOpen(o => !o);
+    },
+    disabled: !abre,
+    "aria-expanded": abre ? open : undefined,
+    "aria-label": `${dLabel(date)} · ${pl(dayTours.length, 'torneio', 'torneios')}${today ? ' · hoje' : ''}`,
     style: {
       width: '100%',
       display: 'flex',
@@ -6414,8 +6430,9 @@ function DayCard({
       padding: '15px 18px',
       background: today ? C.plumSoft : 'transparent',
       border: 'none',
-      cursor: 'pointer',
-      textAlign: 'left'
+      cursor: abre ? 'pointer' : 'default',
+      textAlign: 'left',
+      color: 'inherit'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6442,7 +6459,8 @@ function DayCard({
       fontSize: 17,
       color: res >= 0 ? C.greenMid : C.red
     }
-  }, res >= 0 ? '+' : '−', fmt(Math.abs(res))), /*#__PURE__*/React.createElement("span", {
+  }, res >= 0 ? '+' : '−', fmt(Math.abs(res))), abre && /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
     style: {
       color: C.inkSoft,
       fontSize: 20,
@@ -11164,7 +11182,7 @@ function TimeApp({
         ...btnS,
         display: 'inline-block'
       }
-    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar planilha (modelo Samba)', /*#__PURE__*/React.createElement("input", {
+    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar planilha (modelo do time)', /*#__PURE__*/React.createElement("input", {
       type: "file",
       accept: ".xlsx",
       "data-importar-planilha": true,
@@ -11912,6 +11930,7 @@ function TimeApp({
     }, pend.map((p, i) => /*#__PURE__*/React.createElement("button", {
       key: i,
       "data-pendencia": p.t,
+      "aria-label": `${p.n}: ${p.t}`,
       onClick: () => {
         if (p.sit) setFiltro(f => ({
           ...f,
@@ -15302,6 +15321,9 @@ function SaqueModal({
     }
   }, "Pedir saque")));
 }
+
+// telas que têm endereço próprio (#tela). O resto do hash (ex.: o retorno do login por e-mail) não é tela.
+const TELAS = new Set(['painel', 'torneios', 'diario', 'semanal', 'mensal', 'stats', 'saques', 'banca', 'config', 'time', 'g_visao', 'g_jogadores', 'g_grades', 'g_financeiro', 'g_equipe', 'g_regras']);
 function Dashboard({
   session,
   profile
@@ -15344,7 +15366,13 @@ function Dashboard({
   });
   const [avisoPedido, setAvisoPedido] = useState(null); // {erro,texto} do último pedido pelo código
   const [codTime, setCodTime] = useState('');
-  const [viewSel, setView] = useState('painel');
+  const [viewSel, setView] = useState(() => {
+    try {
+      const v = decodeURIComponent(String(window.location.hash || '').slice(1));
+      if (TELAS.has(v)) return v;
+    } catch (e) {}
+    return 'painel';
+  });
   const view = viewSel;
   const [modal, setModal] = useState(null); // string type | {type, initial}
   const [menuOpen, setMenuOpen] = useState(false); // gaveta "Mais" do nav mobile
@@ -15492,6 +15520,39 @@ function Dashboard({
     };
   }, [modoTime, jogadorSel, timeGente, toursRaw, ledgerRaw, walletsRaw]);
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
+  // Esc fecha a janela de cima (confirmação, fora da grade, "Mais")
+  useEsc(() => {
+    if (cfgConfirm) return setCfgConfirm(null);
+    if (alertDetail) return setAlertDetail(null);
+    if (menuOpen) setMenuOpen(false);
+  }, !!(cfgConfirm || alertDetail || menuOpen));
+  // cada tela tem endereço (#banca, #g_jogadores...): o voltar do navegador volta de tela, e a tela nova abre no topo (A-024)
+  const viewRef = React.useRef(viewSel);
+  viewRef.current = viewSel;
+  const alunoRef = React.useRef(alunoAberto);
+  alunoRef.current = alunoAberto;
+  useEffect(() => {
+    try {
+      const h = '#' + viewSel;
+      if (window.location.hash !== h) window.history.pushState(null, '', h);
+    } catch (e) {}
+    try {
+      window.scrollTo(0, 0);
+    } catch (e) {}
+  }, [viewSel]);
+  useEffect(() => {
+    const f = () => {
+      const v = decodeURIComponent(String(window.location.hash || '').slice(1));
+      if (!TELAS.has(v) || v === viewRef.current) return;
+      if (alunoRef.current && v.startsWith('g_')) {
+        setAlunoAberto(null);
+        setAlunoResumo(null);
+      }
+      setView(v);
+    };
+    window.addEventListener('popstate', f);
+    return () => window.removeEventListener('popstate', f);
+  }, []);
   const [imp, setImp] = useState({
     busy: false,
     prog: '',
@@ -16930,6 +16991,7 @@ function Dashboard({
   const sites = Array.isArray(sitesReta) && sitesReta.length ? sitesReta : sitesTime;
   const modalidades = Array.isArray(modsReta) && modsReta.length ? modsReta : modalidadesTime;
   const CURWK = weekEnding(todayISO());
+  const temWpt = !modoTime || sites.some(x => /wpt/i.test(String(x))); // no time, WPT só aparece se for sala permitida
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
      (atualiza sozinha a cada torneio lançado; saque de jogador entra pela aba Saques) */
@@ -17292,7 +17354,9 @@ function Dashboard({
       k: 'player',
       label: 'Jogador',
       type: 'select',
-      opts: players
+      opts: players,
+      def: players[0],
+      oculto: players.length === 1
     }, {
       k: 'tournament_name',
       label: 'Torneio',
@@ -17391,7 +17455,9 @@ function Dashboard({
       k: 'player',
       label: 'Jogador',
       type: 'select',
-      opts: players
+      opts: players,
+      def: players[0],
+      oculto: players.length === 1
     }, {
       k: 'wallet',
       label: 'Saiu de qual carteira',
@@ -18427,7 +18493,7 @@ function Dashboard({
       flex: 1,
       minWidth: 0
     }
-  }, foraGradeTours.length, " torneio", foraGradeTours.length !== 1 ? 's' : '', " fora da grade nesta semana"), /*#__PURE__*/React.createElement("span", {
+  }, foraGradeTours.length, " torneio", foraGradeTours.length !== 1 ? 's' : '', " fora da grade nesta semana (desde ", dataBR(iniSemana), ")"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 18,
       flexShrink: 0
@@ -18781,7 +18847,7 @@ function Dashboard({
       key: i
     }, "\u2022 ", x))))), /*#__PURE__*/React.createElement(Recolhivel, {
       titulo: "Onde pego esse arquivo?",
-      sub: "GG \xB7 WPT \xB7 PokerStars"
+      sub: ['GG', ...(temWpt ? ['WPT'] : []), 'PokerStars'].join(' · ')
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
@@ -18792,7 +18858,7 @@ function Dashboard({
       style: {
         color: C.ink
       }
-    }, "GG e WPT:"), " PokerCraft \u2192 o ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " do torneio (o resultado, n\xE3o as m\xE3os). Pode mandar a pasta toda ou o .zip.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+    }, temWpt ? 'GG e WPT:' : 'GG:'), " PokerCraft \u2192 o ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " do torneio (o resultado, n\xE3o as m\xE3os). Pode mandar a pasta toda ou o .zip.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
       style: {
         color: C.ink
       }
@@ -18860,7 +18926,7 @@ function Dashboard({
       gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
       gap: 12
     }
-  }, /*#__PURE__*/React.createElement(Seg, {
+  }, !solo && /*#__PURE__*/React.createElement(Seg, {
     label: "Jogador",
     value: diF.player,
     options: ['Todos', ...players],
@@ -19283,7 +19349,7 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 12px'
     }
-  }, "Por jogador"), perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Resumo do mês' : 'Por jogador'), perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("div", {
     key: pm.p,
     style: {
       padding: '12px 0',
@@ -19361,7 +19427,7 @@ function Dashboard({
       gap: 12,
       marginTop: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12,
       borderRadius: 12,
@@ -19378,7 +19444,7 @@ function Dashboard({
       fontWeight: 700,
       marginTop: 2
     }
-  }, maisLucrativo ? `${maisLucrativo.p} (${fmt(maisLucrativo.res)})` : '—')), /*#__PURE__*/React.createElement("div", {
+  }, maisLucrativo ? `${maisLucrativo.p} (${fmt(maisLucrativo.res)})` : '—')), !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12,
       borderRadius: 12,
@@ -21367,7 +21433,7 @@ function Dashboard({
       marginTop: 2,
       lineHeight: 1.5
     }
-  }, "Saldo de cada sala na foto: ", sitSel && sitSel.abertura === 'confirmada' ? 'o da planilha conferida' : 'o que você tinha quando entrou no time', ". Jogos, movimentos, reload e saques entram sozinhos na banca l\xE1 em cima."), /*#__PURE__*/React.createElement("div", {
+  }, "O que ", somenteLeitura ? `${alunoAberto} tinha` : 'você tinha', " em cada sala na entrada: ", sitSel && sitSel.abertura === 'confirmada' ? 'o da planilha conferida' : 'quando entrou no time', ". Jogos, movimentos, reload e saques entram sozinhos na banca l\xE1 em cima.", somenteLeitura ? ` Só leitura: só ${alunoAberto} muda.` : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -21843,6 +21909,7 @@ function Dashboard({
       textOverflow: 'ellipsis'
     }
   }, row.show != null ? row.show : String(row.val))), (!modoTime || timeGente.podeConfigurar) && /*#__PURE__*/React.createElement("button", {
+    "aria-label": `Mudar ${row.label}`,
     onClick: () => setQuickEdit({
       label: row.label,
       kind: row.kind,
@@ -23580,6 +23647,7 @@ function Dashboard({
     s: 20
   })), "Fora da grade"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setAlertDetail(null),
+    "aria-label": "Fechar",
     style: {
       width: 38,
       height: 38,
@@ -23600,7 +23668,7 @@ function Dashboard({
       marginBottom: 12,
       lineHeight: 1.5
     }
-  }, "Torneios desta semana fora da grade.", somenteLeitura ? '' : ' Toque no lápis pra corrigir.'), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
+  }, "Torneios desta semana (desde ", dataBR(iniSemana), ") fora da grade.", somenteLeitura ? '' : ` ${toque ? 'Toque' : 'Clique'} no lápis pra corrigir.`), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
     key: t.id,
     onEdit: somenteLeitura ? null : () => {
       setAlertDetail(null);

@@ -102,7 +102,10 @@ const num = v => Number(v)||0;
 // dinheiro no centavo: soma de float deixa resto (0,1+0,2 = 0,30000000000000004) e um make-up de 0,000…04 já muda
 // status ("Bloqueado por make-up" com US$ 0,00). Meio centavo vai pra longe do zero, igual ao round() do banco.
 const cent = v => { const n=Number(v); if(!Number.isFinite(n)) return 0; const r=Math.sign(n)*Math.round(Math.abs(n)*100+1e-6)/100; return r===0?0:r; };
-const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'USD'});
+// um formatador só (A-026): US$ 1.234,56, e o negativo com o sinal de menos tipográfico (−US$), igual ao fmtSinal
+// valor curto de eixo de gráfico: US$ 1.234 (sem centavos), negativo com o sinal antes do US$
+const fmtEixo=v=>{ const r=Math.round(Number(v)||0); return (r<0?'−':'')+'US$ '+Math.abs(r).toLocaleString('pt-BR'); };
+const fmt = n => { const v=cent(Number(n)||0), t=Math.abs(v).toLocaleString('pt-BR',{style:'currency',currency:'USD'}); return v<0?'−'+t:t; };
 const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
 const mKey = d => (d||'').slice(0,7);
 const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
@@ -1365,7 +1368,7 @@ function MultiBars({data, series}){
     <div style={{display:'flex',alignItems:'flex-end',gap:12,height:H,padding:'0 2px'}}>
       {data.map((d,i)=><div key={i} onClick={()=>setAct(a=>a===i?null:i)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,minWidth:0,cursor:'pointer'}}>
         <div style={{height:16,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',gap:1}}>
-          {act===i&&d.vals.map((v,j)=><span key={j} style={{fontSize:9.5,fontWeight:800,lineHeight:1,color:series[j].color,whiteSpace:'nowrap'}}>{num(v)>=0?'+':'−'}${Math.abs(num(v)).toFixed(2).replace('.',',')}</span>)}
+          {act===i&&d.vals.map((v,j)=><span key={j} style={{fontSize:9.5,fontWeight:800,lineHeight:1,color:series[j].color,whiteSpace:'nowrap'}}>{fmtSinal(num(v))}</span>)}
         </div>
         {hasNeg
           ? <div style={{display:'flex',gap:4,alignItems:'stretch',justifyContent:'center',width:'100%',height:H-40}}>
@@ -1402,7 +1405,7 @@ function LineChart({data, color=P, ref_}){
   const pts=data.map((d,i)=>`${(xF(i)*100).toFixed(2)},${yF(num(d.value)).toFixed(2)}`);
   const area=`0,100 ${pts.join(' ')} 100,100`;
   const ticks=[0,1,2,3].map(k=>lo+range*k/3);
-  const compact=v=>'$'+Math.round(v).toLocaleString('pt-BR');
+  const compact=fmtEixo;
   const GUT=44;
   const track=(cx,el)=>{ const r=el.getBoundingClientRect(); const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width)); setAct(Math.round(fr*(n-1))); };
   return <div style={{userSelect:'none'}}>
@@ -1448,7 +1451,7 @@ function MultiLineChart({labels, series}){
   const xF=i=> n===1?0.5:i/(n-1);
   const yF=v=> PADT+(1-((v-lo)/range))*(100-PADT-PADB);
   const ticks=[0,1,2,3].map(k=>lo+range*k/3);
-  const compact=v=>(v>=0?'+':'−')+'$'+Math.round(Math.abs(v)).toLocaleString('pt-BR');
+  const compact=v=>(v>0?'+':'')+fmtEixo(v);
   const GUT=46;
   const track=(cx,el)=>{const r=el.getBoundingClientRect();const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width));setAct(Math.round(fr*(n-1)));};
   return <div style={{userSelect:'none'}}>
@@ -1600,7 +1603,7 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit, avi
         </div>
         {aviso&&<div data-aviso-form role="alert" style={{background:C.redSoft,color:C.red,borderRadius:12,padding:'10px 13px',fontSize:13.5,fontWeight:700,lineHeight:1.45,marginBottom:14}}>{aviso}</div>}
         <div className="modalgrid">
-          {fields.map(fd=>fd.type==='toggle'
+          {fields.filter(fd=>!fd.oculto).map(fd=>fd.type==='toggle'
             ? <button key={fd.k} type="button" className={fd.full?'full':''} onClick={()=>set(fd.k,!f[fd.k])}
                 style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:13,cursor:'pointer',textAlign:'left',
                   border:`1.5px solid ${f[fd.k]?P:C.border}`,background:f[fd.k]?C.plumSoft:C.surface}}>
@@ -2120,16 +2123,18 @@ const MiniStat = ({label,value,tone}) =>{
 
 function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
+  const abre=dayTours.length>0||!!onAdd;   // dia vazio no painel só leitura: nada pra abrir
   const per=players.map((p,i)=>{const ts=dayTours.filter(t=>t.player===p);return {p,i,n:ts.length,res:ts.reduce((s,t)=>s+lucroTorneio(t),0)};}).filter(x=>x.n>0);
   const res=per.reduce((s,x)=>s+x.res,0);
   return <Card style={{padding:0,overflow:'hidden',border:today?`1.5px solid ${P}`:`1px solid ${C.border}`}}>
-    <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:today?C.plumSoft:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+    <button onClick={()=>{ if(abre) setOpen(o=>!o); }} disabled={!abre} aria-expanded={abre?open:undefined} aria-label={`${dLabel(date)} · ${pl(dayTours.length,'torneio','torneios')}${today?' · hoje':''}`}
+      style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:today?C.plumSoft:'transparent',border:'none',cursor:abre?'pointer':'default',textAlign:'left',color:'inherit'}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16.5,fontWeight:600,color:today?P:C.ink}}>{today?'Hoje · ':''}{dLabel(date)}</div>
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>{dayTours.length} torneio{dayTours.length!==1?'s':''}{per.length?' · '+per.map(x=>x.p.split(' ')[0]).join(' + '):''}</div>
       </div>
       <span style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:17,color:res>=0?C.greenMid:C.red}}>{res>=0?'+':'−'}{fmt(Math.abs(res))}</span>
-      <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+      {abre&&<span aria-hidden="true" style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>}
     </button>
     {open&&<div style={{padding:'0 18px 16px'}}>
       {per.length>0&&<div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'2px 0 6px'}}>
@@ -3207,7 +3212,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           :<div style={{marginTop:10}}>
             {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar planilha (modelo Samba)'}
+              <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar planilha (modelo do time)'}
                 <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
               <button data-abertura-manual style={btnS} onClick={()=>setManualAberta(true)}>Preencher à mão</button></div>
           </div>}
@@ -3366,7 +3371,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <h3 style={tituloS}>Pendências</h3>
         {pend.length===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada pendente agora.</div>}
         {pend.length>0&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:10}}>
-          {pend.map((p,i)=><button key={i} data-pendencia={p.t} onClick={()=>{ if(p.sit) setFiltro(f=>({...f,sit:p.sit,reta:null})); onIr(p.ir); }} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:14,border:`1px solid ${C.border}`,background:C.warm,cursor:'pointer',textAlign:'left',font:'inherit',color:C.ink}}>
+          {pend.map((p,i)=><button key={i} data-pendencia={p.t} aria-label={`${p.n}: ${p.t}`} onClick={()=>{ if(p.sit) setFiltro(f=>({...f,sit:p.sit,reta:null})); onIr(p.ir); }} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:14,border:`1px solid ${C.border}`,background:C.warm,cursor:'pointer',textAlign:'left',font:'inherit',color:C.ink}}>
             <Tag tom={p.tom}>{p.n}</Tag><span style={{flex:1,fontSize:14,lineHeight:1.35}}>{p.t}</span><span aria-hidden="true" style={{color:P,fontWeight:800}}>›</span></button>)}
         </div>}
       </Card>
@@ -4032,6 +4037,8 @@ function SaqueModal({pessoa,salas,onClose,onPedir}){
   </div>;
 }
 
+// telas que têm endereço próprio (#tela). O resto do hash (ex.: o retorno do login por e-mail) não é tela.
+const TELAS=new Set(['painel','torneios','diario','semanal','mensal','stats','saques','banca','config','time','g_visao','g_jogadores','g_grades','g_financeiro','g_equipe','g_regras']);
 function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
@@ -4062,7 +4069,7 @@ function Dashboard({session,profile}){
   const [saidaVista,setSaidaVista]=useState(()=>{ try{ return localStorage.getItem('gb_saida_vista')||''; }catch(e){ return ''; } });
   const [avisoPedido,setAvisoPedido]=useState(null);  // {erro,texto} do último pedido pelo código
   const [codTime,setCodTime]=useState('');
-  const [viewSel,setView]=useState('painel');
+  const [viewSel,setView]=useState(()=>{ try{ const v=decodeURIComponent(String(window.location.hash||'').slice(1)); if(TELAS.has(v)) return v; }catch(e){} return 'painel'; });
   const view=viewSel;
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
@@ -4128,6 +4135,16 @@ function Dashboard({session,profile}){
       if(!error&&data) setSitSel({...data,_pessoa:pp.id}); else setSitSel(s=>s&&s._pessoa===pp.id?s:null); }).catch(()=>{}); },250);
     return ()=>{ vivo=false; clearTimeout(t); }; },[modoTime,jogadorSel,timeGente,toursRaw,ledgerRaw,walletsRaw]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
+  // Esc fecha a janela de cima (confirmação, fora da grade, "Mais")
+  useEsc(()=>{ if(cfgConfirm) return setCfgConfirm(null); if(alertDetail) return setAlertDetail(null); if(menuOpen) setMenuOpen(false); },!!(cfgConfirm||alertDetail||menuOpen));
+  // cada tela tem endereço (#banca, #g_jogadores...): o voltar do navegador volta de tela, e a tela nova abre no topo (A-024)
+  const viewRef=React.useRef(viewSel); viewRef.current=viewSel;
+  const alunoRef=React.useRef(alunoAberto); alunoRef.current=alunoAberto;
+  useEffect(()=>{ try{ const h='#'+viewSel; if(window.location.hash!==h) window.history.pushState(null,'',h); }catch(e){} try{ window.scrollTo(0,0); }catch(e){} },[viewSel]);
+  useEffect(()=>{ const f=()=>{ const v=decodeURIComponent(String(window.location.hash||'').slice(1)); if(!TELAS.has(v)||v===viewRef.current) return;
+      if(alunoRef.current&&v.startsWith('g_')){ setAlunoAberto(null); setAlunoResumo(null); }
+      setView(v); };
+    window.addEventListener('popstate',f); return ()=>window.removeEventListener('popstate',f); },[]);
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [hhDono,setHhDono]=useState(null);   // import de mãos parado: os torneios já estão lançados no nome do outro jogador
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
@@ -4756,6 +4773,7 @@ function Dashboard({session,profile}){
   const sites=Array.isArray(sitesReta)&&sitesReta.length?sitesReta:sitesTime;
   const modalidades=Array.isArray(modsReta)&&modsReta.length?modsReta:modalidadesTime;
   const CURWK=weekEnding(todayISO());
+  const temWpt=!modoTime||sites.some(x=>/wpt/i.test(String(x)));   // no time, WPT só aparece se for sala permitida
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
      (atualiza sozinha a cada torneio lançado; saque de jogador entra pela aba Saques) */
@@ -4931,7 +4949,7 @@ function Dashboard({session,profile}){
   const FIELDS={
     tour:[
       {k:'entry_date',label:'Data',type:'date',def:todayISO()},
-      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'player',label:'Jogador',type:'select',opts:players,def:players[0],oculto:players.length===1},
       {k:'tournament_name',label:'Torneio',type:'text',full:true},
       {k:'site',label:'Site',type:'select',opts:sites},
       {k:'modality',label:'Modalidade',type:'select',opts:modalidades},
@@ -4954,7 +4972,7 @@ function Dashboard({session,profile}){
     ],
     wd:[
       {k:'week_ending_date',label:'Semana (domingo de fechamento)',type:'date',def:CURWK,full:true},
-      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'player',label:'Jogador',type:'select',opts:players,def:players[0],oculto:players.length===1},
       {k:'wallet',label:'Saiu de qual carteira',type:'select',opts:['Não informar',...WALLETS]},
       {k:'valor_sacado',label:'Valor sacado (US$)',type:'money',def:'0'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
@@ -5244,7 +5262,7 @@ function Dashboard({session,profile}){
         {foraGradeTours.length>0&&<button onClick={()=>setAlertDetail({items:foraGradeTours})}
           style={{display:'flex',alignItems:'center',gap:9,width:'100%',textAlign:'left',cursor:'pointer',
             padding:'12px 15px',borderRadius:14,border:`1.5px solid ${C.red}55`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5}}>
-          <IcoAlert s={17}/><span style={{flex:1,minWidth:0}}>{foraGradeTours.length} torneio{foraGradeTours.length!==1?'s':''} fora da grade nesta semana</span>
+          <IcoAlert s={17}/><span style={{flex:1,minWidth:0}}>{foraGradeTours.length} torneio{foraGradeTours.length!==1?'s':''} fora da grade nesta semana (desde {dataBR(iniSemana)})</span>
           <span style={{fontSize:18,flexShrink:0}}>›</span>
         </button>}
 
@@ -5336,9 +5354,9 @@ function Dashboard({session,profile}){
               {tsImp.res.erros.length>0&&<div style={{marginTop:6,color:C.red}}>{tsImp.res.erros.map((x,i)=><div key={i}>• {x}</div>)}</div>}
             </div>}
           </Card>
-          <Recolhivel titulo="Onde pego esse arquivo?" sub="GG · WPT · PokerStars">
+          <Recolhivel titulo="Onde pego esse arquivo?" sub={['GG',...(temWpt?['WPT']:[]),'PokerStars'].join(' · ')}>
             <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
-              <b style={{color:C.ink}}>GG e WPT:</b> PokerCraft → o <b>Tournament Summary</b> do torneio (o resultado, não as mãos). Pode mandar a pasta toda ou o .zip.<br/>
+              <b style={{color:C.ink}}>{temWpt?'GG e WPT:':'GG:'}</b> PokerCraft → o <b>Tournament Summary</b> do torneio (o resultado, não as mãos). Pode mandar a pasta toda ou o .zip.<br/>
               <b style={{color:C.ink}}>PokerStars:</b> o resumo que chega por e-mail, ou o do histórico local.<br/>
               O sistema lê nome, buy-in, re-entries, field, colocação e premiação — você <b>confere antes de salvar</b> e reimportar a mesma pasta não duplica nada.<br/>
               Os arquivos de <b>mãos</b> (hand history) vão na aba <b>Stats</b>, não aqui.
@@ -5358,7 +5376,7 @@ function Dashboard({session,profile}){
         {/* filtros */}
         <Card style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
-            <Seg label="Jogador" value={diF.player} options={['Todos',...players]} onChange={v=>setDiF(f=>({...f,player:v}))}/>
+            {!solo&&<Seg label="Jogador" value={diF.player} options={['Todos',...players]} onChange={v=>setDiF(f=>({...f,player:v}))}/>}
             {diarySites.length>1&&<Seg label="Plataforma" value={diF.site} options={diarySites} onChange={v=>setDiF(f=>({...f,site:v}))}/>}
             {diaryMods.length>1&&<Seg label="Modalidade" value={diF.mod} options={diaryMods} onChange={v=>setDiF(f=>({...f,mod:v}))}/>}
           </div>
@@ -5434,7 +5452,7 @@ function Dashboard({session,profile}){
           <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
         </div>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>{solo?'Resumo do mês':'Por jogador'}</h3>
           {perPlayerMonth.map(pm=><div key={pm.p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
@@ -5453,8 +5471,8 @@ function Dashboard({session,profile}){
             </div>
           </div>)}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
-            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
+            {!solo&&<div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>}
+            {!solo&&<div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>}
             <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(melhorDia.r)}</span></>:'—'}</div></div>
             <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(piorDia.r)}</span></>:'—'}</div></div>
           </div>
@@ -5898,7 +5916,7 @@ function Dashboard({session,profile}){
         </Card>}
         {modoTime?<Card data-salas-time style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Saldo de entrada (por sala)</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>Saldo de cada sala na foto: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'o que você tinha quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.</div>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>O que {somenteLeitura?`${alunoAberto} tinha`:'você tinha'} em cada sala na entrada: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.{somenteLeitura?` Só leitura: só ${alunoAberto} muda.`:''}</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
             {(salasTravadas||somenteLeitura?wallets.map(w=>w.wallet):[...new Set([...wallets.map(w=>w.wallet),...WALLETS.filter(x=>x!=='Reserva')])]).map(w=>{ const wr=wallets.find(x=>x.wallet===w); const editar=!salasTravadas&&!somenteLeitura;
               return <button key={w} data-sala={w} disabled={!editar} onClick={()=>editar&&setQuickEdit({label:`Saldo inicial · ${w}`,hint:'O que você tinha nessa sala quando entrou no time, antes de qualquer reload. Depois do primeiro reload ou saque, esse saldo trava (o reload já entra sozinho).',kind:'money',current:wr?num(wr.saldo_inicial):0,onSave:nv=>saveWallet(jogadorSel,w,nv)})}
@@ -5981,7 +5999,7 @@ function Dashboard({session,profile}){
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
-            {(!modoTime||timeGente.podeConfigurar)&&<button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}
+            {(!modoTime||timeGente.podeConfigurar)&&<button aria-label={`Mudar ${row.label}`} onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
@@ -6354,9 +6372,9 @@ function Dashboard({session,profile}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:480,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'80vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
-          <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button onClick={()=>setAlertDetail(null)} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
-        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana fora da grade.{somenteLeitura?'':' Toque no lápis pra corrigir.'}</div>
+        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana (desde {dataBR(iniSemana)}) fora da grade.{somenteLeitura?'':` ${toque?'Toque':'Clique'} no lápis pra corrigir.`}</div>
         {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={somenteLeitura?null:()=>{setAlertDetail(null);editTour(t);}} onDelete={somenteLeitura?null:()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
           left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
             <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
