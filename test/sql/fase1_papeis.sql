@@ -54,11 +54,26 @@ select teste.igual('…sai do time e o link dela é cancelado',
 set role authenticated;
 
 -- ---------- renomear pessoa ----------
+-- o nome de quem já tem conta é dele (só o aluno mexe na conta dele): o time renomeia só quem ainda é convidado
 select teste.como('dd000000-0000-0000-0000-000000000003');
 select teste.erro('professor só de desempenho NÃO renomeia', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000005', 'Hack')$q$);
 select teste.como('dd000000-0000-0000-0000-000000000001');
+select teste.erro('admin NÃO renomeia quem já tem conta (o nome do Outro D é dele)', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000005', 'Outro Novo')$q$);
+create temp table cvd(id uuid);
+reset role; grant all on cvd to authenticated; set role authenticated;
+select teste.como('dd000000-0000-0000-0000-000000000001');
+insert into cvd select public.convidar_jogador('df000000-0000-0000-0000-00000000000b', 'Convidado D');
+select teste.ok('admin renomeia quem ainda é convidado (sem conta)', $q$select public.renomear_pessoa((select id from cvd), 'Convidado Certo')$q$);
+select teste.como('dd000000-0000-0000-0000-000000000003');
+select teste.erro('…mas o professor não', $q$select public.renomear_pessoa((select id from cvd), 'Hack')$q$);
+reset role;
+select teste.igual('…o convidado ficou com o nome certo', $q$select nome from public.pessoa where id=(select id from cvd)$q$, 'Convidado Certo');
+delete from public.vinculo where pessoa_id=(select id from cvd); delete from public.pessoa where id=(select id from cvd);
+set role authenticated;
+select teste.como('dd000000-0000-0000-0000-000000000005');
 select teste.erro_qualquer('renomear pra um nome que já existe', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000005', 'Gabriel D')$q$);
-select teste.ok('admin renomeia o Outro D', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000005', 'Outro Novo')$q$);
+select teste.erro('o Outro D NÃO renomeia outra pessoa', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000004', 'Hack')$q$);
+select teste.ok('o Outro D muda o próprio nome', $q$select public.renomear_pessoa('d1000000-0000-0000-0000-000000000005', 'Outro Novo')$q$);
 reset role;
 select teste.igual('os torneios dele acompanham o nome e continuam ligados a ele',
   $q$select (select count(*) from public.tournaments where pessoa_id='d1000000-0000-0000-0000-000000000005')||'='||

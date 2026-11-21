@@ -20,7 +20,7 @@ db1.__rpc = { ...db1.__rpc, salas_jogador: SALAS, pedir_reload: 'r9',
   conferir_saldos: { salas: [{ chave: 'gg', sala: 'GG Poker', informado: 425, sistema: 425, diferenca: 0 }, { chave: 'ps', sala: 'PokerStars', informado: 210, sistema: 200, diferenca: 10 }],
     total_informado: 635, total_sistema: 615, diferenca: 20, diverge: true } };
 await cenario('jogador: salas', db1, async (page, escritas) => {
-  await aba(page, 'Meu time');
+  await aba(page, 'Banca');   // o dinheiro do jogador (salas, conferência, reload, saque) fica na Banca
   const card = page.locator('[data-minhas-salas]'); await card.waitFor({ timeout: 15000 });
   const t = (await card.innerText()).replace(/\s+/g, ' ');
   ok(/GG Poker sistema US\$ 425,00/.test(t) && /PokerStars sistema US\$ 200,00/.test(t) && /Sem sala .* [-−]US\$ 10,00/.test(t) && /Total \(banca\) US\$ 615,00/.test(t),
@@ -57,7 +57,7 @@ await cenario('jogador: salas', db1, async (page, escritas) => {
 const db2 = samba('aluno');
 db2.__rpc = { ...db2.__rpc, situacao_jogador: { ...db2.__rpc.situacao_jogador, abertura: 'sem' }, salas_jogador: { ...SALAS, salas: SALAS.salas.slice(0, 2), sem_sala: 0 }, enviar_planilha: 'a9' };
 await cenario('abertura à mão', db2, async (page, escritas) => {
-  await aba(page, 'Meu time');
+  await aba(page, 'Banca');
   await page.locator('[data-abertura-manual]').click({ timeout: 15000 });
   const m = page.locator('[data-planilha-manual]'); await m.waitFor({ timeout: 5000 });
   ok((await m.locator('[data-manual-sala="0"]').inputValue()) === 'GG Poker' && (await m.locator('[data-manual-sala="1"]').inputValue()) === 'PokerStars', 'já vem com as salas do jogador');

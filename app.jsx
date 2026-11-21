@@ -102,7 +102,10 @@ const num = v => Number(v)||0;
 // dinheiro no centavo: soma de float deixa resto (0,1+0,2 = 0,30000000000000004) e um make-up de 0,000…04 já muda
 // status ("Bloqueado por make-up" com US$ 0,00). Meio centavo vai pra longe do zero, igual ao round() do banco.
 const cent = v => { const n=Number(v); if(!Number.isFinite(n)) return 0; const r=Math.sign(n)*Math.round(Math.abs(n)*100+1e-6)/100; return r===0?0:r; };
-const fmt = n => (Number(n)||0).toLocaleString('pt-BR',{style:'currency',currency:'USD'});
+// um formatador só (A-026): US$ 1.234,56, e o negativo com o sinal de menos tipográfico (−US$), igual ao fmtSinal
+// valor curto de eixo de gráfico: US$ 1.234 (sem centavos), negativo com o sinal antes do US$
+const fmtEixo=v=>{ const r=Math.round(Number(v)||0); return (r<0?'−':'')+'US$ '+Math.abs(r).toLocaleString('pt-BR'); };
+const fmt = n => { const v=cent(Number(n)||0), t=Math.abs(v).toLocaleString('pt-BR',{style:'currency',currency:'USD'}); return v<0?'−'+t:t; };
 const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
 const mKey = d => (d||'').slice(0,7);
 const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
@@ -650,6 +653,7 @@ const isZip=u=>u.length>3&&u[0]===0x50&&u[1]===0x4B&&u[2]<=8;   // "PK…" mesmo
    por arquivo e traz o resultado oficial do site — é a fonte da verdade do que aconteceu. */
 const TS_START=/^(?:PokerStars |GGPoker )?Tournament #\d+[,\s]/m;
 // "$9,815.75" -> 9815.75 (vírgula só é separador de milhar nesses arquivos, que são sempre en-US)
+const pl=(n,um,varios)=>`${n} ${n===1?um:varios}`;   // plural certo: "1 torneio", "2 torneios" (A-064)
 const tsMoney = s => { const n=parseFloat(String(s).replace(/[^\d.,-]/g,'').replace(/,(?=\d{3}(\D|$))/g,'').replace(',','.')); return isNaN(n)?0:n; };
 function parseSummaries(text){
   const rows=[];
@@ -835,7 +839,7 @@ function hhInsights(d){
   // então contar blinds no gap acusaria "passividade" injustamente
   const nb=['EP','MP','CO','BTN'].reduce((a,k)=>{const x=d.pos&&d.pos[k]; if(x){a.h+=num(x.h);a.v+=num(x.v);a.p+=num(x.p);} return a;},{h:0,v:0,p:0});
   const gapNB=nb.h>=200?(nb.v-nb.p)/nb.h*100:null;
-  if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
+  if(d.hands<300) add('info','Amostra pequena',`Com ${pl(d.hands,'mão','mãos')}, as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
   if(d.hands>=200){
     if(p.vpip>29){
       const ep=pp('EP'), mp=pp('MP');
@@ -1102,7 +1106,12 @@ function gradeCelulaAceita(c,buyin,gtd,nome){
   const topo=Math.max(c.teto??0,...c.degraus.map(d=>d.buyin),...c.liberados.map(l=>l.ate??0));
   return {ok:false,motivo:topo>0?`buy-in ${fmtGrade(buyin)} acima do teto ${fmtGrade(topo)}`:'nada liberado'};
 }
-const fmtGrade=v=>'$'+(Math.round(v*100)/100).toFixed(2).replace('.',',');
+const fmtGrade=v=>'US$ '+(Math.round(v*100)/100).toFixed(2).replace('.',',');
+// nome de sala do jeito que cada um escreve ("GGpoker", "gg") aparece de um jeito só (A-026, A-066)
+const NOME_SALA={gg:'GG Poker',ps:'PokerStars',pses:'PokerStars.es',wpn:'WPN (ACR)',party:'partypoker','888':'888poker'};
+const nomeSala=s=>NOME_SALA[salaChave(s)]||String(s||'').trim();
+// valor escrito na grade ("$1.08", "$3,3") no formato do app: US$ 1,08. Só muda a tela: a célula guardada fica como foi escrita
+const fmtGradeTexto=t=>String(t||'').replace(/\$\s?(\d+)(?:[.,](\d{1,2}))?(?![\d.,])/g,(m,i,d)=>'US$ '+i+(d!=null?','+(d.length===1?d+'0':d):''));
 const fmtGtd=v=>v>=1e6?(v/1e6)+'M':v>=1000?(Math.round(v/100)/10)+'k':String(v);
 // torneio x grade -> {status:'dentro'|'atencao'|'fora', motivo (1 linha)}
 function classificarTorneioGrade(t,grade){
@@ -1287,19 +1296,37 @@ function SLMeter({label,used,limit,detail}){
     <Bar2 pct={pct} color={col}/>
   </div>;
 }
-function StopLossCard({players,config,daily,curWeek,bancaAtual}){
+// buy-in de referência do stop diário ("10 buy-ins"): o teto da reta (regra abi_max); se a reta tem grade (um teto por
+// tipo de torneio, não um só), o ABI do próprio jogador nos últimos 30 dias; sem nada disso, o ABI máximo do time
+function abiDoStop(config,player,tours,data){
+  const d=String(data||todayISO()).slice(0,10);
+  const daReta=regraDoJogador('abi_max',player,d); if(daReta!=null&&num(daReta)>0) return {valor:num(daReta),origem:'teto da reta'};
+  if(comGrade(player,d)){
+    const desde=addDaysISO(d,-29); let bi=0,ent=0;
+    (tours||[]).forEach(t=>{ if(!nomeIgual(t.player,player)||t.entry_date<desde||t.entry_date>d) return; const e=1+num(t.reentries); bi+=num(t.buyin)*e; ent+=e; });
+    if(ent>0) return {valor:Math.round(bi/ent*100)/100,origem:'ABI dos últimos 30 dias'};
+  }
+  return {valor:abiMaxFor(config,player,d),origem:'ABI máximo do time'};
+}
+// a reta do jogador tem grade naquela data? (aí não existe um teto de ABI só: a grade confere torneio a torneio)
+function comGrade(player,data){
+  const u=(GRADE_CTX.unidadeDe||{})[String(player||'').trim().toLowerCase()];
+  return !!(u&&gradeDoTorneio({unidade_id:u,entry_date:String(data||todayISO()).slice(0,10)},GRADE_CTX.unidades,GRADE_CTX.grades));
+}
+// stop semanal: % da banca do COMEÇO da semana (a de agora cai com um saque e faria o stop "estourar" sem ser verdade)
+function StopLossCard({players,config,daily,curWeek,bancaSemana,tours,leitura}){
   const today=todayISO();
   const [open,setOpen]=useState(null);   // null = automático (abre sozinho se alguém passou de 70%)
   if(!players.some(p=>{ const s=stopDe(config,p); return s.dia>0||s.semana>0; })) return null;
   const rows=players.map((p,i)=>{
     const st=stopDe(config,p);                       // no time: o stop da reta do jogador
-    const abiMax=abiMaxFor(config,p,today);
+    const abi=abiDoStop(config,p,tours,today), abiMax=abi.valor;
     const slDay=st.dia*abiMax;
     const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
-    const wkLim=st.semana*bancaAtual;
+    const wkLim=Math.max(0,st.semana*bancaSemana);
     const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
     const pct=Math.max(slDay>0?dayLoss/slDay*100:0, wkLim>0?wkLoss/wkLim*100:0);
-    return {p,i,abiMax,slDay,dayLoss,wkLim,wkLoss,pct,st};
+    return {p,i,abi,abiMax,slDay,dayLoss,wkLim,wkLoss,pct,st};
   });
   const worst=Math.max(0,...rows.map(r=>r.pct));
   const isOpen=open==null?worst>=70:open;
@@ -1314,12 +1341,15 @@ function StopLossCard({players,config,daily,curWeek,bancaAtual}){
       <span style={{color:C.inkSoft,fontSize:20,transform:isOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
     {isOpen&&<div style={{padding:'0 18px 18px'}}>
-      <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto — quando a barra fica vermelha, o dia (ou a semana) acabou.</div>
+      <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>{leitura?`Quanto do limite de ${leitura} já foi usado. Quando a barra fica vermelha, o dia (ou a semana) dele acabou.`
+        :<>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto: quando a barra fica vermelha, o dia (ou a semana) acabou.</>}</div>
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
         {rows.map(r=><div key={r.p} style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>
-          {r.slDay>0&&<SLMeter label={`Hoje · limite ${r.st.dia} buy-ins`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${r.st.dia} bi`}/>}
-          {r.wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(r.st.semana*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>}
+          {rows.length>1&&<div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>}
+          {r.slDay>0&&<div data-stop-dia><SLMeter label={`Hoje · limite ${r.st.dia} buy-ins (${fmt(r.slDay)})`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${r.st.dia} bi`}/>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:4}}>1 buy-in = {fmt(r.abiMax)} ({r.abi.origem})</div></div>}
+          {r.wkLim>0&&<div data-stop-semana><SLMeter label={`Semana · limite ${pctFmt(r.st.semana*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:4}}>banca no começo da semana: {fmt(bancaSemana)}</div></div>}
         </div>)}
       </div>
     </div>}
@@ -1338,7 +1368,7 @@ function MultiBars({data, series}){
     <div style={{display:'flex',alignItems:'flex-end',gap:12,height:H,padding:'0 2px'}}>
       {data.map((d,i)=><div key={i} onClick={()=>setAct(a=>a===i?null:i)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:5,minWidth:0,cursor:'pointer'}}>
         <div style={{height:16,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',gap:1}}>
-          {act===i&&d.vals.map((v,j)=><span key={j} style={{fontSize:9.5,fontWeight:800,lineHeight:1,color:series[j].color,whiteSpace:'nowrap'}}>{num(v)>=0?'+':'−'}${Math.abs(num(v)).toFixed(2).replace('.',',')}</span>)}
+          {act===i&&d.vals.map((v,j)=><span key={j} style={{fontSize:9.5,fontWeight:800,lineHeight:1,color:series[j].color,whiteSpace:'nowrap'}}>{fmtSinal(num(v))}</span>)}
         </div>
         {hasNeg
           ? <div style={{display:'flex',gap:4,alignItems:'stretch',justifyContent:'center',width:'100%',height:H-40}}>
@@ -1375,7 +1405,7 @@ function LineChart({data, color=P, ref_}){
   const pts=data.map((d,i)=>`${(xF(i)*100).toFixed(2)},${yF(num(d.value)).toFixed(2)}`);
   const area=`0,100 ${pts.join(' ')} 100,100`;
   const ticks=[0,1,2,3].map(k=>lo+range*k/3);
-  const compact=v=>'$'+Math.round(v).toLocaleString('pt-BR');
+  const compact=fmtEixo;
   const GUT=44;
   const track=(cx,el)=>{ const r=el.getBoundingClientRect(); const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width)); setAct(Math.round(fr*(n-1))); };
   return <div style={{userSelect:'none'}}>
@@ -1421,7 +1451,7 @@ function MultiLineChart({labels, series}){
   const xF=i=> n===1?0.5:i/(n-1);
   const yF=v=> PADT+(1-((v-lo)/range))*(100-PADT-PADB);
   const ticks=[0,1,2,3].map(k=>lo+range*k/3);
-  const compact=v=>(v>=0?'+':'−')+'$'+Math.round(Math.abs(v)).toLocaleString('pt-BR');
+  const compact=v=>(v>0?'+':'')+fmtEixo(v);
   const GUT=46;
   const track=(cx,el)=>{const r=el.getBoundingClientRect();const fr=Math.max(0,Math.min(1,(cx-r.left)/r.width));setAct(Math.round(fr*(n-1)));};
   return <div style={{userSelect:'none'}}>
@@ -1497,13 +1527,16 @@ function Select({value,onChange,opts}){
 }
 
 /* ---------- modal rápido (config: texto, número, %, data, lista) ---------- */
-function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSave}){
+function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSave,exigeMudar}){
+  useEsc(onClose);
   const init = kind==='percent' ? String(((num(currentValue))*100)).replace('.',',')
     : kind==='list' ? (Array.isArray(currentValue)?currentValue.join(', '):String(currentValue||''))
     : kind==='text'||kind==='date' ? String(currentValue??'')
     : String(currentValue??0).replace('.',',');
   const [val,setVal]=useState(init);
+  const travado=!!exigeMudar&&val===init;   // ex.: mover de reta começa na reta atual e só salva quando muda (A-011)
   const save=()=>{
+    if(travado) return;
     if(kind==='text') return onSave(val.trim());
     if(kind==='date') return onSave(val);
     if(kind==='list') return onSave(val.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean));
@@ -1526,14 +1559,15 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
           : kind==='text'||kind==='list'
           ? <input style={{...inputStyle,marginBottom:16}} value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus placeholder={kind==='list'?'Separe por vírgula':''}/>
           : <input style={{...inputStyle,fontSize:24,fontFamily:"'Space Grotesk',sans-serif",marginBottom:16}} inputMode="decimal" value={val} onChange={e=>setVal(e.target.value)} onKeyDown={e=>e.key==='Enter'&&save()} autoFocus/>}
-        <button onClick={save} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:'pointer'}}>Salvar</button>
+        <button onClick={save} disabled={travado} style={{width:'100%',padding:'15px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:16,cursor:travado?'not-allowed':'pointer',opacity:travado?.45:1}}>Salvar</button>
       </div>
     </div>
   );
 }
 
 /* ---------- modal adicionar / editar (genérico por schema de campos) ---------- */
-function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
+function AddModal({title, fields, editing, initial, onClose, onSave, onEdit, aviso}){
+  useEsc(onClose);
   const [f,setF]=useState(()=>{
     const o={};
     fields.forEach(fd=>{
@@ -1565,10 +1599,11 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'92vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
-          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button onClick={onClose} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
+        {aviso&&<div data-aviso-form role="alert" style={{background:C.redSoft,color:C.red,borderRadius:12,padding:'10px 13px',fontSize:13.5,fontWeight:700,lineHeight:1.45,marginBottom:14}}>{aviso}</div>}
         <div className="modalgrid">
-          {fields.map(fd=>fd.type==='toggle'
+          {fields.filter(fd=>!fd.oculto).map(fd=>fd.type==='toggle'
             ? <button key={fd.k} type="button" className={fd.full?'full':''} onClick={()=>set(fd.k,!f[fd.k])}
                 style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:13,cursor:'pointer',textAlign:'left',
                   border:`1.5px solid ${f[fd.k]?P:C.border}`,background:f[fd.k]?C.plumSoft:C.surface}}>
@@ -1644,6 +1679,7 @@ function RecoveryReset(){
 }
 
 function ChangePassModal({onClose,email}){
+  useEsc(onClose);
   const [p0,setP0]=useState(''); const [p1,setP1]=useState(''); const [p2,setP2]=useState('');
   const [err,setErr]=useState(''); const [busy,setBusy]=useState(false); const [ok,setOk]=useState(false);
   const save=async()=>{
@@ -1688,6 +1724,7 @@ function ChangePassModal({onClose,email}){
 
 /* ---------- excluir conta (LGPD): apaga TUDO no servidor e desloga ---------- */
 function DeleteAccountModal({nickname,onClose}){
+  useEsc(onClose);
   const [txt,setTxt]=useState(''); const [busy,setBusy]=useState(false); const [err,setErr]=useState('');
   const alvo='EXCLUIR';
   const go=async()=>{
@@ -1733,7 +1770,7 @@ function Login({aviso}){
     const nome=nNome.trim();
     const mail=nMail.trim().toLowerCase();
     const zap=nZap.replace(/\D/g,'');
-    if(nome.length<2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
+    if(nome.length<2) return setErr('Diga seu nome ou apelido (pelo menos 2 letras).');
     if(nome.length>30) return setErr('Apelido muito longo — no máximo 30 caracteres.');
     // o apelido também é login: com @ confundiria com e-mail, e só números com CPF
     if(nome.includes('@')) return setErr('O apelido não pode ter @ (é ele que você usa pra entrar).');
@@ -1760,7 +1797,7 @@ function Login({aviso}){
       if(/invalid/.test(m)&&/email/.test(m)) return setErr('Esse e-mail parece inválido — confere se digitou certo (ex.: termina em .com, não .con).');
       if(/weak|password/.test(m)) return setErr('Senha muito fraca — tenta uma com mais letras e números.');
       return setErr('Não consegui criar a conta. Confere o e-mail e tenta de novo.'); }
-    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.'); return; }
+    if(!data||!data.session){ setBusy(false); setMode('login'); setOk('Conta criada! Confirme no seu e-mail e depois entre aqui: seu apelido fica guardado.'); return; }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
     const {error:pe}=await sb.from('player_profiles').insert({user_id:data.session.user.id,email:data.session.user.email,nickname:nome,whatsapp:zap||null,password_changed:true,role:'solo'});
     if(pe&&pe.code==='23505'){ setBusy(false); return setErr('Esse apelido acabou de ser registrado por outra pessoa — escolhe outro.'); }
@@ -1805,7 +1842,7 @@ function Login({aviso}){
   const esqueci=async()=>{
     setErr(''); setOk('');
     const id=ident.trim();
-    if(!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
+    if(!id) return setErr('Digite seu e-mail, apelido ou CPF no campo acima que o link vai pro seu e-mail.');
     setBusy(true);
     const redirectTo=window.location.origin+window.location.pathname;
     if(id.includes('@')){
@@ -1826,7 +1863,7 @@ function Login({aviso}){
           <div style={{fontWeight:800,fontSize:14,color:P}}>Convite pro time {conv.marca_nome||conv.time}</div>
           <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>{(()=>{ const pap=papelDe(conv.capacidades||[]);
             if(pap) return <>Você entra como <b>{conv.pessoa}</b>, <b>{(PAPEL_ROT[pap]||'gestão').toLowerCase()}</b> do time{conv.joga_em?<>, e também joga na <b>{conv.joga_em}</b></>:null}.</>;
-            return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Cria tua conta (ou entra, se já tiver uma) e o time aparece direto.</div>
+            return conv.pessoa?<>Você entra como <b>{conv.pessoa}</b>, em <b>{conv.unidade}</b>.</>:<>Você entra em <b>{conv.unidade}</b>.</>; })()} Crie sua conta (ou entre, se já tiver uma) e o time aparece direto.</div>
         </div>
         :<div data-convite="ruim" style={{background:C.goldSoft,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
           <div style={{fontWeight:700,fontSize:13.5,color:C.gold}}>{conv.motivo||'Convite inválido.'}</div>
@@ -1838,7 +1875,7 @@ function Login({aviso}){
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="current-password" value={pass} onChange={e=>setPass(e.target.value)} onEnter={entrar}/></div>
         {err&&<div style={{color:C.red,fontSize:13.5,fontWeight:600}}>{err}</div>}
         {confirmMail&&<div style={{background:C.goldSoft,borderRadius:11,padding:'12px 14px'}}>
-          <div style={{color:C.gold,fontSize:13.5,fontWeight:700}}>Falta confirmar teu e-mail 📬</div>
+          <div style={{color:C.gold,fontSize:13.5,fontWeight:700}}>Falta confirmar seu e-mail 📬</div>
           <div style={{fontSize:12.5,color:C.ink,lineHeight:1.5,marginTop:3}}>Tua conta existe, mas antes de entrar você precisa clicar no link que mandamos pra <b>{confirmMail}</b>. Não achou? Olha o spam — ou reenvia:</div>
           <button onClick={reenviarConfirm} disabled={busy} style={{marginTop:8,padding:'9px 14px',borderRadius:10,border:'none',background:C.gold,color:'#fff',fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Reenviar e-mail de confirmação</button>
         </div>}
@@ -2086,16 +2123,18 @@ const MiniStat = ({label,value,tone}) =>{
 
 function DayCard({date,dayTours,players,config,onAdd,onEdit,onDelete,today}){
   const [open,setOpen]=useState(!!today);
+  const abre=dayTours.length>0||!!onAdd;   // dia vazio no painel só leitura: nada pra abrir
   const per=players.map((p,i)=>{const ts=dayTours.filter(t=>t.player===p);return {p,i,n:ts.length,res:ts.reduce((s,t)=>s+lucroTorneio(t),0)};}).filter(x=>x.n>0);
   const res=per.reduce((s,x)=>s+x.res,0);
   return <Card style={{padding:0,overflow:'hidden',border:today?`1.5px solid ${P}`:`1px solid ${C.border}`}}>
-    <button onClick={()=>setOpen(o=>!o)} style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:today?C.plumSoft:'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+    <button onClick={()=>{ if(abre) setOpen(o=>!o); }} disabled={!abre} aria-expanded={abre?open:undefined} aria-label={`${dLabel(date)} · ${pl(dayTours.length,'torneio','torneios')}${today?' · hoje':''}`}
+      style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'15px 18px',background:today?C.plumSoft:'transparent',border:'none',cursor:abre?'pointer':'default',textAlign:'left',color:'inherit'}}>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:16.5,fontWeight:600,color:today?P:C.ink}}>{today?'Hoje · ':''}{dLabel(date)}</div>
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>{dayTours.length} torneio{dayTours.length!==1?'s':''}{per.length?' · '+per.map(x=>x.p.split(' ')[0]).join(' + '):''}</div>
       </div>
       <span style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:17,color:res>=0?C.greenMid:C.red}}>{res>=0?'+':'−'}{fmt(Math.abs(res))}</span>
-      <span style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
+      {abre&&<span aria-hidden="true" style={{color:C.inkSoft,fontSize:20,transform:open?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>}
     </button>
     {open&&<div style={{padding:'0 18px 16px'}}>
       {per.length>0&&<div style={{display:'flex',gap:8,flexWrap:'wrap',margin:'2px 0 6px'}}>
@@ -2163,7 +2202,9 @@ function WeekRow({w,player,config,solo}){
       <div style={{color:C.inkSoft}}>Parte do jogador: <b style={{color:C.ink}}>{fmt(w.parteJog)}</b></div>
       <div style={{color:C.inkSoft}}>Saque autorizado: <b style={{color:P}}>{fmt(w.saqueAut)}</b></div>
     </div>}
-    {wkTorn>0&&<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>}
+    {wkTorn>0&&(comGrade(player,w.week)
+      ?<div data-abi-semana style={{marginTop:8,fontSize:11.5,color:C.inkSoft}}>ABI médio da semana {fmt(wkAbi)} · a grade da reta confere cada torneio</div>
+      :<div style={{marginTop:8}}><div style={{fontSize:11.5,color:C.inkSoft,marginBottom:4}}>ABI médio da semana {fmt(wkAbi)} / máx {fmt(pAbi)}</div><Bar2 pct={pAbi>0?(wkAbi/pAbi)*100:0} color={wkAbi>=pAbi*0.9?C.red:wkAbi>=pAbi*0.7?C.gold:C.greenMid}/></div>)}
   </div>;
 }
 // bloco recolhível: o padrão pra tirar texto/gráfico da frente sem apagar a informação
@@ -2187,14 +2228,14 @@ function ResumoTorneios({tours,players,solo,periodo,abi}){
     const ts=tours.filter(t=>t.player===p);
     return {p,i,n:ts.length,res:ts.reduce((s,t)=>s+lucroTorneio(t),0)};
   });
-  const dias=[...new Set(tours.map(t=>t.entry_date))].length;
+  const datas=[...new Set(tours.map(t=>t.entry_date))].sort(), dias=datas.length;
   return <Card style={{padding:18}}>
     <div style={{display:'flex',alignItems:'flex-end',gap:12}}>
       <div style={{minWidth:0,flex:1}}>
         <div style={{fontSize:11,color:C.inkSoft,fontWeight:800,textTransform:'uppercase',letterSpacing:'.05em'}}>Torneios jogados{periodo?` · ${periodo}`:''}</div>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:34,fontWeight:600,lineHeight:1.1}}>{tours.length}</div>
       </div>
-      <div style={{fontSize:12,color:C.inkSoft,textAlign:'right',flexShrink:0,lineHeight:1.5}}>em {dias} dia{dias!==1?'s':''}{abi>0&&<><br/>ABI médio {fmt(abi)}</>}</div>
+      <div data-dias-de-jogo style={{fontSize:12,color:C.inkSoft,textAlign:'right',flexShrink:0,lineHeight:1.5}}>{dias} dia{dias!==1?'s':''} de jogo{datas.length?` desde ${dataBR(datas[0])}`:''}{abi>0&&<><br/>ABI médio {fmt(abi)}</>}</div>
     </div>
     {!solo&&<div style={{marginTop:12,display:'flex',flexDirection:'column',gap:7}}>
       {porP.map(x=><div key={x.p} style={{display:'flex',alignItems:'center',gap:8,fontSize:13.5}}>
@@ -2249,10 +2290,11 @@ function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual,solo}){
 /* ---------- sininho: avisos do time (saque, reload, planilha, entrada). Cada um apaga os seus. ---------- */
 function Sininho({avisos,onAbrir,onApagar,onLimpar,onIr}){
   const [aberto,setAberto]=useState(false);
+  useEsc(()=>setAberto(false),aberto);
   const novos=avisos.filter(a=>!a.lido_em).length;
   const quando=t=>{ const m=Math.round((Date.now()-Date.parse(t))/60000); return m<1?'agora':m<60?`há ${m} min`:m<1440?`há ${Math.round(m/60)} h`:dataBR(t); };
   return <div style={{position:'relative'}}>
-    <button data-sininho aria-label={`Avisos${novos?` (${novos} novos)`:''}`} onClick={()=>{ const v=!aberto; setAberto(v); if(v&&novos) onAbrir(); }}
+    <button data-sininho aria-label={`Avisos${novos?`: ${novos} ${novos===1?'aviso novo':'avisos novos'}`:''}`} aria-expanded={aberto} onClick={()=>{ const v=!aberto; setAberto(v); if(v&&novos) onAbrir(); }}
       style={{position:'relative',zIndex:aberto?42:'auto',width:40,height:40,borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:novos?P:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}>
       <IcoBell s={19}/>
       {novos>0&&<span data-sininho-novos style={{position:'absolute',top:-5,right:-5,minWidth:19,height:19,padding:'0 5px',borderRadius:99,background:C.red,color:'#fff',fontSize:11,fontWeight:800,display:'grid',placeItems:'center'}}>{novos>9?'9+':novos}</span>}
@@ -2261,16 +2303,17 @@ function Sininho({avisos,onAbrir,onApagar,onLimpar,onIr}){
       <div onClick={()=>setAberto(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
       <div data-avisos className="ftfade" style={{position:'fixed',right:16,top:72,zIndex:41,width:'min(360px, calc(100vw - 32px))',maxHeight:'70vh',overflowY:'auto',background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,boxShadow:'0 16px 40px -18px rgba(25,35,29,.45)'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderBottom:`1px solid ${C.border}`}}>
-          <b style={{fontSize:14.5}}>Avisos</b>
-          {avisos.length>0&&<button onClick={onLimpar} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar tudo</button>}
+          <b style={{fontSize:14.5}}>Avisos{novos?<span style={{fontWeight:600,color:C.inkSoft,fontSize:12.5}}> · {novos} {novos===1?'novo':'novos'}</span>:null}</b>
+          <span style={{display:'flex',gap:4}}>{avisos.length>0&&<button onClick={onLimpar} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar tudo</button>}
+            <button aria-label="Fechar avisos" onClick={()=>setAberto(false)} style={{width:28,height:28,borderRadius:8,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}><IcoX s={15}/></button></span>
         </div>
         {avisos.length===0&&<div style={{padding:'22px 14px',textAlign:'center',color:C.inkSoft,fontSize:13.5}}>Nenhum aviso.</div>}
         {avisos.map(a=><div key={a.id} data-aviso={a.tipo} style={{display:'flex',gap:8,padding:'11px 14px',borderBottom:`1px solid ${C.border}`,background:a.lido_em?'transparent':C.plumSoft}}>
-          <div onClick={()=>{ setAberto(false); onIr(a); }} style={{flex:1,minWidth:0,cursor:'pointer'}}>
-            <div style={{fontWeight:700,fontSize:13.5,color:a.tone===C.red?C.red:C.ink}}>{a.titulo}</div>
+          <button data-aviso-ir onClick={()=>{ setAberto(false); onIr(a); }} style={{flex:1,minWidth:0,cursor:'pointer',textAlign:'left',border:'none',background:'transparent',padding:0,font:'inherit',color:'inherit'}}>
+            <div style={{fontWeight:700,fontSize:13.5,color:a.tone===C.red?C.red:C.ink}}>{a.titulo}{a.vezes>1?<span style={{color:C.inkSoft,fontWeight:600}}> · {a.vezes}×</span>:null}</div>
             {a.texto&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.4}}>{a.texto}</div>}
-            <div style={{fontSize:11,color:C.inkSoft,marginTop:3}}>{a.criado_em?quando(a.criado_em):'situação atual da banca'}{a.items&&a.items.length?' · toque pra ver':''}</div>
-          </div>
+            <div style={{fontSize:11,color:C.inkSoft,marginTop:3}}>{a.criado_em?quando(a.criado_em):'situação atual da banca'} · <span style={{color:P,fontWeight:700}}>ver ›</span></div>
+          </button>
           <button aria-label="Apagar aviso" onClick={()=>onApagar(a)} style={{width:28,height:28,flexShrink:0,borderRadius:8,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}><IcoX s={15}/></button>
         </div>)}
       </div>
@@ -2316,11 +2359,11 @@ const btnP={...btnS,background:P,color:'#fff',border:`1.5px solid ${P}`};
 const tituloS={fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 10px'};
 const Kpi=({rot,val,sub,tom,onClick,...r})=>{ const cor=tom==='ok'?C.greenMid:tom==='bad'?C.red:tom==='warn'?'#7a5a1f':C.ink;
   const corpo=<><div style={{fontSize:11,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:C.inkSoft}}>{rot}</div>
-    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,marginTop:4,color:cor}}>{val}</div>
+    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:'clamp(18px,5vw,24px)',fontWeight:700,marginTop:4,color:cor,overflowWrap:'anywhere',lineHeight:1.2}}>{val}</div>
     {sub&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:2}}>{sub}</div>}</>;
   const st={background:C.surface,border:`1px solid ${C.border}`,borderRadius:18,padding:'15px 17px',textAlign:'left',minWidth:0};
   return onClick?<button {...r} onClick={onClick} style={{...st,cursor:'pointer',font:'inherit',color:'inherit'}}>{corpo}</button>:<div {...r} style={st}>{corpo}</div>; };
-const Chip=({on,onClick,children,...r})=><button {...r} onClick={onClick} aria-pressed={!!on} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${on?P:C.border}`,background:on?C.plumSoft:C.surface,color:on?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>{children}</button>;
+const Chip=({on,onClick,children,disabled,...r})=><button {...r} onClick={onClick} disabled={disabled} aria-pressed={!!on} style={{padding:'6px 11px',borderRadius:99,border:`1.5px solid ${on?P:C.border}`,background:on?C.plumSoft:C.surface,color:on?P:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:disabled?'not-allowed':'pointer',opacity:disabled?.45:1}}>{children}</button>;
 
 /* chave Gestão | Meu jogo: só aparece pra quem tem papel na gestão e também joga */
 function ModoSwitch({modo,onTrocar,compacto}){
@@ -2346,6 +2389,7 @@ function LinkPronto({titulo,url,texto,onFechar}){
 
 /* convite único: quem entra, onde e que link */
 function ConviteModal({unidades,podeGerir,podeAdmin,inicial,nomeUnidade,onGerar,onClose}){
+  useEsc(onClose);
   // onde se joga: as retas (unidades sem nada dentro); time só com a raiz joga na raiz
   const folha=u=>!unidades.some(x=>x.mae_id===u.id);
   const retas=unidades.filter(u=>folha(u)&&(u.mae_id||unidades.length===1)&&podeGerir(u.id));
@@ -2422,8 +2466,10 @@ function ConviteModal({unidades,podeGerir,podeAdmin,inicial,nomeUnidade,onGerar,
 }
 
 /* editar alguém da gestão: nome, papel e onde */
-function PessoaModal({p,unidades,podeAdmin,nomeUnidade,onSalvar,onRemover,onLink,onClose}){
+function PessoaModal({p,unidades,podeAdmin,nomeUnidade,onSalvar,onRemover,onLink,onClose,souEu,ultimoAdmin}){
+  useEsc(onClose);
   const [nome,setNome]=useState(p.nome);
+  const nomeLivre=!p.user_id||souEu;   // o nome de quem já tem conta é dele: só ele muda
   const [papel,setPapel]=useState(p.papel==='personalizado'?'personalizado':(p.papel||'professor'));
   const [onde,setOnde]=useState(p.unidades);
   const raiz=unidades.find(u=>!u.mae_id);
@@ -2435,12 +2481,14 @@ function PessoaModal({p,unidades,podeAdmin,nomeUnidade,onSalvar,onRemover,onLink
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Editar {p.nome}</h3>
         <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
       </div>
-      <div><label style={labelStyle} htmlFor="ed-nome">Nome no time</label><input id="ed-nome" data-ed-nome style={inputStyle} value={nome} onChange={e=>setNome(e.target.value)}/></div>
+      <div><label style={labelStyle} htmlFor="ed-nome">Nome no time</label><input id="ed-nome" data-ed-nome style={{...inputStyle,...(nomeLivre?{}:{background:C.bg,color:C.inkSoft})}} value={nome} disabled={!nomeLivre} onChange={e=>setNome(e.target.value)}/>
+        {!nomeLivre&&<div data-nome-dele style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>O nome de quem já tem conta é dele: só ele muda.</div>}</div>
       <div><div style={labelStyle}>Papel</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-          {['professor','financeiro','admin',...(p.papel==='personalizado'?['personalizado']:[])].map(k=><Chip key={k} on={papel===k} onClick={()=>setPapel(k)}>{PAPEL_ROT[k]}</Chip>)}
+          {['professor','financeiro','admin',...(p.papel==='personalizado'?['personalizado']:[])].map(k=><Chip key={k} on={papel===k} disabled={ultimoAdmin&&k!=='admin'} onClick={()=>{ if(!(ultimoAdmin&&k!=='admin')) setPapel(k); }}>{PAPEL_ROT[k]}</Chip>)}
         </div>
-        {papel!=='personalizado'&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>{PAPEL_DICA[papel]}.</div>}
+        {ultimoAdmin&&<div data-ultimo-admin style={{fontSize:12.5,color:C.red,fontWeight:700,marginTop:6}}>Único admin do time: faça outra pessoa admin antes de mudar este papel ou tirar do time.</div>}
+        {!ultimoAdmin&&papel!=='personalizado'&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>{PAPEL_DICA[papel]}.</div>}
       </div>
       {papel!=='admin'&&<div><div style={labelStyle}>Cuida de</div>
         <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
@@ -2450,15 +2498,17 @@ function PessoaModal({p,unidades,podeAdmin,nomeUnidade,onSalvar,onRemover,onLink
         style={{padding:'14px 0',borderRadius:14,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:15.5,cursor:'pointer',opacity:nome.trim()&&ondeEf.length?1:.5}}>Salvar</button>
       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
         {onLink&&<button data-gerar-link-pessoal onClick={onLink} style={btnS}>Gerar link pessoal de novo</button>}
-        <button onClick={onRemover} style={{...btnS,color:C.red}}>{p.joga?'Tirar da gestão (continua jogando)':'Tirar do time'}</button>
+        {!ultimoAdmin&&<button onClick={onRemover} style={{...btnS,color:C.red}}>{p.joga?'Tirar da gestão (continua jogando)':'Tirar do time'}</button>}
       </div>
     </div>
   </div>;
 }
 
 /* estrutura: criar, renomear e arquivar unidades */
-function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClose}){
+function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClose,ocupada}){
+  useEsc(onClose);
   const nivel=u=>String(u.caminho).split('/').filter(Boolean).length-1;
+  // arquivar só vale com a unidade vazia: sem unidade dentro e sem ninguém (ocupada diz quantos)
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
     <div onClick={e=>e.stopPropagation()} data-estrutura-modal className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:10,maxHeight:'92vh',overflowY:'auto'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -2467,17 +2517,19 @@ function EstruturaModal({unidades,podeAdmin,onCriar,onRenomear,onArquivar,onClos
       </div>
       {unidades.map(u=><div key={u.id} data-unidade-ed={u.nome} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderBottom:`1px solid ${C.border}`,paddingLeft:nivel(u)*16}}>
         <div style={{flex:1,minWidth:140,fontWeight:700,fontSize:14}}>{u.nome}{u.rotulo&&<span style={{fontWeight:500,color:C.inkSoft,fontSize:12.5}}> · {u.rotulo}</span>}</div>
-        {podeAdmin(u.id)&&<button style={btnS} onClick={()=>onCriar(u)}>+ Dentro</button>}
+        {podeAdmin(u.id)&&<button style={btnS} onClick={()=>onCriar(u)}>+ Nova unidade dentro</button>}
         {podeAdmin(u.id)&&<button style={btnS} onClick={()=>onRenomear(u)}>Renomear</button>}
-        {u.mae_id&&podeAdmin(u.mae_id)&&<button style={{...btnS,color:C.red}} onClick={()=>onArquivar(u)}>Arquivar</button>}
+        {u.mae_id&&podeAdmin(u.mae_id)&&(()=>{ const filhas=unidades.some(f=>f.mae_id===u.id), gente=ocupada?ocupada(u):0, vazia=!filhas&&!gente;
+          return <button data-arquivar={u.nome} disabled={!vazia} title={vazia?undefined:filhas?'Tem unidade dentro':`Tem ${gente} pessoa${gente!==1?'s':''}`} style={{...btnS,color:C.red,opacity:vazia?1:.45,cursor:vazia?'pointer':'not-allowed'}} onClick={()=>{ if(vazia) onArquivar(u); }}>Arquivar</button>; })()}
       </div>)}
-      <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Arquivar só funciona com a unidade vazia (sem jogador e sem unidade dentro). O histórico fica.</div>
+      <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Arquivar só fica liberado com a unidade vazia (sem jogador, sem gestor e sem unidade dentro). O histórico fica.</div>
     </div>
   </div>;
 }
 
 /* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
 function ContratoModal({atual,titulo,onSalvar,onClose}){
+  useEsc(onClose);
   const f=Array.isArray(atual)&&atual.length?[...atual].sort((a,b)=>(a.ate==null?1e15:a.ate)-(b.ate==null?1e15:b.ate)):[{ate:10000,jogador:.35},{ate:null,jogador:.4}];
   const [lim,setLim]=useState(String(f[0].ate??10000)); const [a,setA]=useState(String(Math.round(Number(f[0].jogador)*1000)/10));
   const [b,setB]=useState(String(Math.round(Number((f[1]||f[0]).jogador)*1000)/10)); const [ini,setIni]=useState(todayISO());
@@ -2580,7 +2632,7 @@ function ConsolePlataforma({session}){
   const nomeOk=novo.nome.trim().length>0&&novo.admin.trim().length>0;
   const criar=async()=>{ const n=novo.nome.trim(), adm=novo.admin.trim(), as=parseInt(novo.assentos,10);
     const r=await rodar('criar_time_plataforma',{p_nome:n,p_assentos:as>0?as:null,p_admin_nome:adm},`Time ${n} criado. Mande o link pra ${adm}.`);
-    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, teu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); setCriando(false); } };
+    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, seu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); setCriando(false); } };
 
   // ---------- números ----------
   const ts=times||[], cs=contas||[];
@@ -2601,7 +2653,7 @@ function ConsolePlataforma({session}){
     l.push(['Convidar admin',()=>setPerg({label:`Convidar admin pro ${t.nome}`,kind:'text',valor:'',
       hint:'Nome de quem vai administrar o time. Você recebe um link de uso único (vale 7 dias) pra mandar pra pessoa.',
       onSave:async v=>{ if(!v) return; setPerg(null); const tok=await rodar('convidar_admin_plataforma',{p_ws:t.id,p_nome:v},null);
-        if(tok&&typeof tok==='string') setLink({titulo:`Link de admin do ${t.nome}`,url:url(tok),texto:`${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }})]);
+        if(tok&&typeof tok==='string') setLink({titulo:`Link de admin do ${t.nome}`,url:url(tok),texto:`${v}, seu acesso de admin ao time ${t.nome} no GrinderBank:`}); }})]);
     if(t.admin_pendente) l.push(['Link novo do admin convidado',async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null);
       if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }]);
     l.push(['Marca (logo e nome)',()=>setMarcaDe(t)]);
@@ -2792,13 +2844,48 @@ function SalaCampo({salas,valor,onChange,rotulo='Sala'}){
     {outra&&<input data-sala-outra style={{...inputStyle,marginTop:nomes.length?8:0}} value={valor||''} placeholder="ex.: GG, PokerStars, WPN" onChange={e=>onChange(e.target.value)}/>}
   </div>;
 }
+// janelas por cima de tudo vão direto pro body: dentro de um bloco com animação, filtro ou rolagem, uma janela "fixa"
+// fica presa nele e abre fora da tela (A-010)
+const Portal=({children})=>ReactDOM.createPortal(children,document.body);
+// celular: as tabelas largas viram cartões (A-034)
+function useCelular(max=640){
+  const q=()=>typeof window!=='undefined'&&window.matchMedia?window.matchMedia(`(max-width: ${max}px)`).matches:false;
+  const [m,setM]=useState(q);
+  useEffect(()=>{ if(!window.matchMedia) return; const mq=window.matchMedia(`(max-width: ${max}px)`), f=e=>setM(e.matches);
+    mq.addEventListener?mq.addEventListener('change',f):mq.addListener(f); return ()=>{ mq.removeEventListener?mq.removeEventListener('change',f):mq.removeListener(f); }; },[max]);
+  return m;
+}
+// unidades na ordem da árvore: mãe antes das filhas; irmãs pela ordem e depois pelo rótulo/nome com número natural
+// ("Reta 2" antes de "Reta 10"). O caminho é feito de ids, então ordenar por ele embaralhava as retas (A-025)
+function ordenarUnidades(us){
+  const filhos={}; (us||[]).forEach(u=>{ const k=u.mae_id||''; (filhos[k]||(filhos[k]=[])).push(u); });
+  const cmp=(a,b)=>(num(a.ordem)-num(b.ordem))||String(a.rotulo||a.nome).localeCompare(String(b.rotulo||b.nome),'pt-BR',{numeric:true})||String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true});
+  const out=[], vistos=new Set(); const vai=k=>{ (filhos[k]||[]).sort(cmp).forEach(u=>{ if(vistos.has(u.id)) return; vistos.add(u.id); out.push(u); vai(u.id); }); };
+  vai(''); (us||[]).forEach(u=>{ if(!vistos.has(u.id)){ vistos.add(u.id); out.push(u); vai(u.id); } });
+  return out;
+}
+// Esc fecha a janela aberta (a de cima: cada uma registra o seu e só a última responde)
+const pilhaEsc=[];
+function useEsc(onClose,ativo=true){
+  const ref=React.useRef(onClose); ref.current=onClose;
+  useEffect(()=>{ if(!ativo) return; const f=()=>ref.current&&ref.current(); pilhaEsc.push(f);
+    const k=e=>{ if(e.key==='Escape'&&pilhaEsc[pilhaEsc.length-1]===f){ e.stopPropagation(); f(); } };
+    window.addEventListener('keydown',k); return ()=>{ window.removeEventListener('keydown',k); const i=pilhaEsc.lastIndexOf(f); if(i>=0) pilhaEsc.splice(i,1); }; },[ativo]);
+}
 const fundoModal={position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50};
 const caixaModal={background:C.surface,width:'100%',maxWidth:500,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12};
+// janela de baixo (o padrão do app): fundo escuro, Esc fecha e vai pro body
+function Janela({onClose,children,rotulo,attrs,largura}){
+  useEsc(onClose);
+  return <Portal><div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label={rotulo} className="ftfade"
+    style={{...caixaModal,...(largura?{maxWidth:largura}:{})}} {...(attrs||{})}>{children}</div></div></Portal>;
+}
 const topoModal=(titulo,onClose)=><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
   <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>{titulo}</h3>
   <button onClick={onClose} aria-label="Fechar" style={{width:40,height:40,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button></div>;
 // capital mandado pelo time: valor e sala (cada sala tem o seu jeito de depósito)
 function CapitalModal({nome,salas,onSalvar,onClose}){
+  useEsc(onClose);
   const [valor,setValor]=useState(''); const [sala,setSala]=useState(''); const [indo,setIndo]=useState(false);
   const v=parseValor(valor), ok=v!==0&&String(sala).trim().length>0&&!indo;
   return <div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-capital-modal className="ftfade" style={caixaModal}>
@@ -2811,6 +2898,7 @@ function CapitalModal({nome,salas,onSalvar,onClose}){
 }
 // as salas de um jogador pelo sistema, a soma (= banca) e a última conferência dele
 function SalasModal({nome,dados,onClose}){
+  useEsc(onClose);
   const salas=(dados&&dados.salas)||[], conf=dados&&dados.ultima_conferencia;
   const difDe=ch=>{ const l=conf&&(conf.salas||[]).find(x=>x.chave===ch); return l&&l.diferenca!=null?Number(l.diferenca):null; };
   return <div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-salas-modal className="ftfade" style={caixaModal}>
@@ -2825,6 +2913,7 @@ function SalasModal({nome,dados,onClose}){
 }
 // abertura sem planilha: o jogador preenche o que a planilha do time diria (serve pra qualquer time)
 function PlanilhaManualModal({nome,salas,onPronto,onClose}){
+  useEsc(onClose);
   const base=(salas||[]).filter(s=>s.chave).map(s=>s.sala);
   const [mk,setMk]=useState(''); const [co,setCo]=useState(''); const [data,setData]=useState(todayISO());
   const [ls,setLs]=useState(()=>(base.length?base:['GG Poker','PokerStars']).map(sala=>({sala,saldo:''})));
@@ -2838,7 +2927,7 @@ function PlanilhaManualModal({nome,salas,onPronto,onClose}){
       <input data-manual-sala={i} style={inputStyle} value={l.sala} placeholder="Sala" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,sala:e.target.value}:y))}/>
       <input data-manual-saldo={i} style={inputStyle} inputMode="decimal" value={l.saldo} placeholder="Saldo" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,saldo:e.target.value}:y))}/></div>)}
     <button style={{...btnS,alignSelf:'flex-start'}} onClick={()=>setLs(x=>[...x,{sala:'',saldo:''}])}>+ sala</button>
-    <div><label style={labelStyle} htmlFor="pm-mk">MakeUp (capital do time com você)</label><input id="pm-mk" data-manual-makeup style={inputStyle} inputMode="decimal" value={mk} onChange={e=>setMk(e.target.value)}/></div>
+    <div><label style={labelStyle} htmlFor="pm-mk">MU: capital do time com você (na planilha, "MakeUp")</label><input id="pm-mk" data-manual-makeup style={inputStyle} inputMode="decimal" value={mk} onChange={e=>setMk(e.target.value)}/></div>
     <div><label style={labelStyle} htmlFor="pm-co">Cashout (lucro que você já sacou no time)</label><input id="pm-co" data-manual-cashout style={inputStyle} inputMode="decimal" value={co} onChange={e=>setCo(e.target.value)}/></div>
     <div><label style={labelStyle} htmlFor="pm-dt">Saldos de que dia</label><input id="pm-dt" type="date" style={inputStyle} value={data} max={todayISO()} onChange={e=>setData(e.target.value)}/></div>
     <div style={{fontSize:13.5}}>Banca (soma das salas): <b>{fmt(banca)}</b> · profit {fmtSinal(cent(banca-makeup))}</div>
@@ -2861,6 +2950,7 @@ const REGRAS_RETA=[
 // saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
 // o que vai pra conta individual nova dele e o que fica com o time. Confirma digitando SAIU.
 function SaidaModal({nome,previa,onBanca,onConfirmar,onClose}){
+  useEsc(onClose);
   const a=previa.acerto||{}, r=previa.resultado||{}, lv=previa.leva||{}, pend=previa.pendencias||[];
   const [banca,setBanca]=useState(String(a.banca_sistema??0)); const [recebido,setRecebido]=useState(''); const [conf,setConf]=useState(''); const [indo,setIndo]=useState(false);
   const B=parseValor(banca), R=String(recebido).trim()===''?null:parseValor(recebido);
@@ -2911,8 +3001,9 @@ function SaidaModal({nome,previa,onBanca,onConfirmar,onClose}){
 
 /* o time: telas de gestão (visão, jogadores, grades, financeiro, equipe, regras) e o "Meu time" do jogador.
    Os dados vêm do banco já filtrados pelo que cada um pode ver (RLS); a tela só escolhe o que mostrar. */
-function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeTime,onMarca}){
+function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeTime,onMarca,onPadrao}){
   const uid=session.user.id;
+  const celular=useCelular();
   const [d,setD]=useState(null);
   const [cortes,setCortes]=useState({});       // conferência da planilha: até que dia os saldos dela valem (por planilha)
   const [pedEsc,setPedEsc]=useState({});       // pedido de entrada: reta e nome escolhidos antes de aprovar
@@ -2961,22 +3052,26 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const [u,p,v,a,cv,sq,ct,ab,rl,gr,rg,tc,pd,acs,cfs]=await Promise.all([q('unidade'),q('pessoa'),q('vinculo'),q('acesso'),
       q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade'),
       sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida'),q('conferencia_saldo')]);
+    const stp=await sb.rpc('stop_semana_do_time',{p_inicio:weekStart(weekEnding(todayISO()))});
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
     let salasEu=null;
     if(eu&&vinculos.some(x=>x.pessoa_id===eu.id&&!x.fim)){ const r=await sb.rpc('situacao_jogador',{p_pessoa:eu.id}); if(!r.error) sit=r.data;
       const r2=await sb.rpc('salas_jogador',{p_pessoa:eu.id}); if(!r2.error&&r2.data) salasEu=r2.data; }
-    setD({unidades:(u.data||[]).filter(x=>!x.arquivada).sort((x,y)=>String(x.caminho).localeCompare(String(y.caminho))),pessoas,vinculos,
+    setD({unidades:ordenarUnidades((u.data||[]).filter(x=>!x.arquivada)),pessoas,vinculos,
       acessos:a.data||[],convites:cv.error?[]:(cv.data||[]),saques:(sq.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),
       contratos:ct.data||[],aberturas:ab.data||[],reloads:(rl.data||[]).sort((x,y)=>String(y.solicitado_em).localeCompare(String(x.solicitado_em))),eu,sit,salasEu,
       conferencias:cfs.error?[]:(cfs.data||[]).sort((x,y)=>String(y.criado_em).localeCompare(String(x.criado_em))),
       grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[]),
       codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em))),
-      acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em)))});
+      acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em))),
+      stopSemana:stp&&!stp.error&&Array.isArray(stp.data)?stp.data:[]});
   };
   useEffect(()=>{ carregar(); },[]);
-  useEffect(()=>{ setAviso(null); setMenuDe(null); },[secao]);
+  // trocou de tela: nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
+  useEffect(()=>{ setAviso(null); setMenuDe(null); setPerg(null); setCapitalDe(null); setSalasDe(null); setSaidaDe(null); setConvite(null); setGradeAberta(null);
+    setPessoaEd(null); setEstrutura(false); setContratoAberto(false); setSaqueAberto(false); setReloadAberto(false); setManualAberta(false); setPlanilha(null); },[secao]);
   const rodar=async(nome,args,okTexto)=>{
     setAviso(null);
     const {data,error}=await sb.rpc(nome,args);
@@ -2988,6 +3083,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
 
   /* ---------- quem pode o quê (o banco confere de novo em cada ação) ---------- */
   const U=Object.fromEntries(d.unidades.map(u=>[u.id,u]));
+  const posU=Object.fromEntries(d.unidades.map((u,i)=>[u.id,i]));   // posição na árvore (ordem das retas)
   const raiz=d.unidades.find(u=>!u.mae_id);
   const meus=d.eu?d.acessos.filter(a=>a.pessoa_id===d.eu.id):[];
   const pode=(cap,uid_)=>{ const t=U[uid_]; if(!t) return false;
@@ -3032,6 +3128,15 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   const reloadsParaDecidir=d.reloads.filter(r=>['solicitado','aprovado'].includes(r.status)&&(!d.eu||r.pessoa_id!==d.eu.id)&&pode('aprovar_saques',r.unidade_id));
   const paraConferir=d.aberturas.filter(a=>a.status==='enviada'&&(!d.eu||a.pessoa_id!==d.eu.id)&&pode('aprovar_saques',a.unidade_id));
   const parados=linhas.filter(l=>l.status==='ativo'&&l.torneios!=null&&(l.ultimo_lancamento==null||diasDesde(l.ultimo_lancamento)>7));
+  // stop loss batido (A-060): o semanal vem do servidor (base = banca do começo da semana); o diário, dos torneios de hoje
+  const stops=linhas.filter(l=>l.status==='ativo'&&(!d.eu||l.pessoa_id!==d.eu.id)&&pode('ver_desempenho',l.unidade_id)).map(l=>{
+    const sem=(d.stopSemana||[]).find(x=>x.pessoa_id===l.pessoa_id);
+    const hojeRes=(tours||[]).filter(t=>t.entry_date===hoje&&(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))).reduce((a,t)=>a+lucroTorneio(t),0);
+    const slDia=stopDe(config||{},l.nome).dia*abiDoStop(config||{},l.nome,tours,hoje).valor;
+    return (sem&&sem.bateu)||(slDia>0&&hojeRes<=-slDia)?{pessoa_id:l.pessoa_id,nome:l.nome}:null; }).filter(Boolean);
+  // conferência de saldos que não bateu (a última de cada um): pendência de quem vê o dinheiro (A-012)
+  const ultimaConf={}; (d.conferencias||[]).forEach(c=>{ if(!ultimaConf[c.pessoa_id]) ultimaConf[c.pessoa_id]=c; });
+  const divergentes=Object.values(ultimaConf).filter(c=>c.diverge&&(!d.eu||c.pessoa_id!==d.eu.id)&&pode('ver_financeiro',c.unidade_id)&&linhas.some(l=>l.pessoa_id===c.pessoa_id&&l.status==='ativo'));
   const convidados=linhas.filter(l=>l.status==='convidado');
   const RELOAD_ROTULO={solicitado:'aguardando aprovação',aprovado:'aprovado · falta mandar',recusado:'recusado',cancelado:'cancelado',enviado:'enviado'};
   const contratoRaiz=raiz?d.contratos.filter(c=>c.unidade_id===raiz.id&&!c.pessoa_id).sort((a,b)=>String(b.criado_em).localeCompare(String(a.criado_em)))[0]:null;
@@ -3041,13 +3146,15 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     if(!destinos.length) return setAviso({erro:true,texto:'Você não tem outra reta pra onde mover.'});
     const l=linhaDe(p.id), mk=l?mkDe(l.banca,l.mu):null, bloqueia=regraEf(uAtual,'bloquear_promocao_com_mk')===true;
     setPerg({label:`Mover ${p.nome}`,hint:(mk!=null&&mk<0?`Atenção: ${p.nome} está em MK (${fmtSinal(mk)}).${bloqueia?' Este time não promove com MK: o servidor vai recusar.':''} `:'')+'O histórico até hoje fica na reta atual; daqui pra frente conta na nova.',
-      kind:'select',opts:destinos.map(caminhoNome),valor:caminhoNome(destinos[0]),
+      // começa na reta atual (marcada) e o Salvar só liga quando escolher outra
+      kind:'select',opts:d.unidades.filter(x=>x.id===uAtual||destinos.includes(x)).map(x=>x.id===uAtual?`${caminhoNome(x)} (atual)`:caminhoNome(x)),
+      valor:U[uAtual]?`${caminhoNome(U[uAtual])} (atual)`:caminhoNome(destinos[0]),exigeMudar:!!U[uAtual],
       onSave:async nome=>{ setPerg(null); const alvo=destinos.find(x=>caminhoNome(x)===nome); if(alvo) await rodar('mover_jogador',{p_alvo:p.id,p_destino:alvo.id,p_motivo:'promocao'},`${p.nome} agora está em ${alvo.nome}.`); }}); };
   const salasDoJogador=async p=>{ const {data,error}=await sb.rpc('salas_jogador',{p_pessoa:p.id}); if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; } return data; };
   const capital=async p=>{ setAviso(null); const dados=await salasDoJogador(p); setCapitalDe({p,salas:(dados&&dados.salas)||[]}); };
   const verSalas=async p=>{ setAviso(null); const dados=await salasDoJogador(p); if(dados) setSalasDe({p,dados}); };
-  const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, teu convite pro time no GrinderBank:`}); };
-  const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',kind:'text',valor:p.nome,
+  const linkPessoal=async(p,u)=>{ const t=await rodar('criar_convite',{p_unidade:u,p_pessoa:p.id,p_dias:7,p_usos:null}); if(t&&typeof t==='string') setLink({titulo:`Link pessoal de ${p.nome}`,url:urlConvite(t),texto:`${p.nome}, seu convite pro time no GrinderBank:`}); };
+  const renomear=p=>setPerg({label:`Nome de ${p.nome}`,hint:'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca). Depois que ele entrar com a conta dele, o nome passa a ser dele.',kind:'text',valor:p.nome,
     onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(nn&&nn!==p.nome) await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nn},`Agora é ${nn}.`); }});
   const previaSaida=async(p,banca)=>{ const {data,error}=await sb.rpc('previa_saida',{p_pessoa:p.id,p_banca:banca??null});
     if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; } return data; };
@@ -3059,16 +3166,18 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       if(quem==='jogador'&&tipo==='aberto'){ tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:null,p_dias:7,p_usos:null});
         titulo=`Link aberto da ${U[reta]?.nome}`; texto=`Convite pra jogar na ${U[reta]?.nome} pelo GrinderBank:`; }
       else if(quem==='jogador'){ pessoa=await chama('convidar_jogador',{p_unidade:reta,p_nome:nome,p_nick_ps:null,p_id_gg:null});
-        tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Link pessoal de ${nome}`; texto=`${nome}, teu convite pro time no GrinderBank:`; }
+        tok=await chama('criar_convite',{p_unidade:reta,p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Link pessoal de ${nome}`; texto=`${nome}, seu convite pro time no GrinderBank:`; }
       else { pessoa=await chama('convidar_equipe',{p_nome:nome,p_unidades:onde,p_caps:PACOTES[quem],p_joga_em:joga?jogaEm:null});
-        tok=await chama('criar_convite',{p_unidade:onde[0],p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`; texto=`${nome}, teu convite pra gestão do time no GrinderBank:`; }
+        tok=await chama('criar_convite',{p_unidade:onde[0],p_pessoa:pessoa,p_dias:7,p_usos:null}); titulo=`Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`; texto=`${nome}, seu convite pra gestão do time no GrinderBank:`; }
       await Promise.all([carregar(),carregarResumo()]);
       return {titulo,url:urlConvite(tok),texto};
     }catch(e){ return {erro:e.message}; }
   };
 
   /* ================= MEU TIME (jogador) ================= */
-  if(secao==='meu'){
+  // jogador: "meu" é a reta (regras, grade, contrato); "dinheiro" (dentro da Banca) é MU, planilha, saque, reload e salas (A-058)
+  if(secao==='meu'||secao==='dinheiro'){
+    const soDinheiro=secao==='dinheiro';
     const meusSaques=d.eu?d.saques.filter(s=>s.pessoa_id===d.eu.id):[];
     const meusReloads=d.eu?d.reloads.filter(r=>r.pessoa_id===d.eu.id):[];
     const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
@@ -3077,27 +3186,37 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const minhaGradeReta=minhaUnidade?gradeEf(minhaUnidade):null;
     const mk=d.sit?mkDe(banca,d.sit.mu):null;
     const saqueAberto_=meusSaques.some(s=>['solicitado','aprovado'].includes(s.status)), reloadAberto_=meusReloads.some(r=>['solicitado','aprovado'].includes(r.status));
-    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-      {header('Meu time')}
+    return <div className={soDinheiro?undefined:'ftfade'} data-secao-time={secao} style={{display:'flex',flexDirection:'column',gap:16}}>
+      {!soDinheiro&&header('Meu time')}
       {avisoBox}
-      {!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
-      {d.sit&&<Card style={{padding:20}}>
-        <h3 style={tituloS}>Minha conta no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+      {!soDinheiro&&!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
+      {!soDinheiro&&d.sit&&<Card data-minha-reta style={{padding:20}}>
+        <h3 style={tituloS}>Sua reta{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+        {d.eu&&<div data-meu-nome style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',fontSize:13.5,marginBottom:6}}>
+          <span style={{flex:1,minWidth:180}}><span style={{color:C.inkSoft}}>Seu nome no time: </span><b>{d.eu.nome}</b></span>
+          <button style={btnS} onClick={()=>setPerg({label:'Seu nome no time',hint:'É como o time vê você e como aparecem os seus lançamentos (os torneios acompanham a troca).',kind:'text',valor:d.eu.nome,
+            onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(!nn||nn===d.eu.nome) return; const r=await rodar('renomear_pessoa',{p_alvo:d.eu.id,p_nome:nn},`Agora você é ${nn} no time.`); if(r&&onMarca) onMarca(); }})}>Mudar</button></div>}
+        <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:10}}><span style={{fontSize:13,color:C.inkSoft,flex:1,minWidth:200}}>MU, planilha de abertura, saque, reload e salas ficam na Banca.</span>
+          {onIr&&<button style={btnS} onClick={()=>onIr('banca')}>Ir pra Banca</button>}</div>
+      </Card>}
+      {soDinheiro&&d.sit&&<Card data-meu-dinheiro style={{padding:20}}>
+        <h3 style={tituloS}>Seu dinheiro no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
           <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
-          <div><div style={labelStyle}>{mk!=null&&mk<0?'Make-up':'Profit'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
+          <div><div style={labelStyle}>{mk!=null&&mk<0?'MK (quanto falta pro MU)':'Profit (passou do MU)'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
           {/* lifetime como na planilha do Samba: o que já sacou + o profit de agora (a relação total com o time) */}
           <div><div style={labelStyle}>Lifetime no time</div><div data-lifetime style={{fontWeight:800,fontSize:20}}>{mk==null?fmt(d.sit.lifetime):fmtSinal(cent(num(d.sit.lifetime)+mk))}</div>
             <div style={{fontSize:12,color:C.inkSoft}}>já sacado {fmt(d.sit.lifetime)}{mk!=null?` · profit agora ${fmtSinal(mk)}`:''}</div></div>
         </div>
-        {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: dá pra pedir saque.'}</div>}
+        {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{saqueAberto_?'Saque em andamento: veja abaixo.':mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: pode pedir saque.'}</div>}
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
         {minhaAbertura?.status==='confirmada'
           ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
           :<div style={{marginTop:10}}>
             {minhaAbertura&&<div data-abertura="enviada" style={{fontSize:12.5,color:C.gold,fontWeight:600,marginBottom:6}}>Planilha enviada em {dataBR(minhaAbertura.enviado_em)}: aguardando o time conferir. Até lá o MU e o lucro sacado dela não contam.</div>}
             <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar planilha (modelo Samba)'}
+              <label style={{...btnS,display:'inline-block'}}>{minhaAbertura?'Enviar a planilha de novo':'Importar planilha (modelo do time)'}
                 <input type="file" accept=".xlsx" data-importar-planilha style={{display:'none'}} onChange={e=>{ lerPlanilha(e.target.files&&e.target.files[0]); e.target.value=''; }}/></label>
               <button data-abertura-manual style={btnS} onClick={()=>setManualAberta(true)}>Preencher à mão</button></div>
           </div>}
@@ -3105,19 +3224,21 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           <button disabled={saqueAberto_||!d.sit.contrato} onClick={()=>setSaqueAberto(true)} style={{...btnP,padding:'12px 18px',fontSize:14.5,opacity:saqueAberto_||!d.sit.contrato?.5:1}}>Pedir saque</button>
           <button data-pedir-reload disabled={reloadAberto_} onClick={()=>setReloadAberto(true)} style={{...btnS,padding:'12px 18px',fontSize:14.5,opacity:reloadAberto_?.5:1}}>Pedir reload</button>
         </div>
-        {meusReloads.slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
+        {/* aqui só o que está em andamento ou foi recusado há pouco: o que já virou dinheiro está no histórico da Banca */}
+        {meusReloads.filter(r=>['solicitado','aprovado'].includes(r.status)||(['recusado','cancelado'].includes(r.status)&&diasDesde(r.decidido_em||r.solicitado_em)<=30)).slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
           <div style={{flex:1,minWidth:160}}>{dataBR(r.solicitado_em)} · reload {fmt(r.status==='enviado'?r.enviado_valor:r.valor)}{r.sala?` · ${r.sala}`:''}</div>
           <span style={{fontWeight:700,color:r.status==='enviado'?C.greenMid:r.status==='recusado'?C.red:C.gold}}>{RELOAD_ROTULO[r.status]}{r.motivo_recusa?` · ${r.motivo_recusa}`:''}</span>
           {r.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_reload',{p_id:r.id},'Pedido de reload cancelado.')}>Cancelar</button>}
         </div>)}
-        {meusSaques.length>0&&<div style={{marginTop:10}}>{meusSaques.slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
+        {meusSaques.length>0&&<div style={{marginTop:10}}>{meusSaques.filter(s=>['solicitado','aprovado'].includes(s.status)||(['recusado','cancelado'].includes(s.status)&&diasDesde(s.decidido_em||s.solicitado_em)<=30)).slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
           <div style={{flex:1,minWidth:160}}>{dataBR(s.solicitado_em)} · MU {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → time {fmt(s.total_time)}, você {fmt(s.parte_jogador)}</div>
           <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}{s.motivo?` · ${s.motivo}`:''}</span>
           {s.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
         </div>)}</div>}
       </Card>}
-      {d.salasEu&&<Card style={{padding:20}} data-minhas-salas>
-        <h3 style={tituloS}>Minhas salas</h3>
+      {soDinheiro&&d.salasEu&&<Card style={{padding:20}} data-minhas-salas>
+        <h3 style={tituloS}>Saldo de cada sala agora</h3>
+        <div style={{fontSize:12.5,color:C.inkSoft,marginTop:-4,marginBottom:6}}>O que o sistema calcula hoje: saldo de entrada + jogos + movimentos + capital e reload − saques.</div>
         {(d.salasEu.salas||[]).length===0&&<div style={{fontSize:13.5,color:C.inkSoft}}>Nenhuma sala ainda. Elas aparecem com a planilha conferida, com o capital do time ou com os torneios de cada site.</div>}
         {(d.salasEu.salas||[]).map(s=>{ const r=conf&&conf.resultado&&(conf.resultado.salas||[]).find(x=>x.chave===s.chave);
           return <div key={s.chave||'sem'} data-minha-sala={s.sala} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
@@ -3130,7 +3251,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:800,padding:'8px 0 0'}}><span>Total (banca)</span><span>{fmt(d.salasEu.total)}</span></div>
         {conf&&conf.resultado&&<div data-conferencia-resultado style={{marginTop:8,fontSize:13,fontWeight:600,color:conf.resultado.diverge?C.red:C.greenMid}}>
           {conf.resultado.diverge?`Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.`:'Bateu com o sistema.'}</div>}
-        {!conf&&d.salasEu.ultima_conferencia&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>Última conferência: {dataBR(d.salasEu.ultima_conferencia.criado_em)} · {d.salasEu.ultima_conferencia.diverge?'não bateu':'bateu'}.</div>}
+        {!conf&&d.salasEu.ultima_conferencia&&(()=>{ const uc=d.salasEu.ultima_conferencia, difs=(Array.isArray(uc.salas)?uc.salas:[]).filter(x=>Math.abs(Number(x.diferenca)||0)>=0.01);
+          // diz quanto e onde (A-054): "GG Poker: US$ 15,00 a mais"
+          return <div data-ultima-conferencia style={{fontSize:12.5,color:uc.diverge?C.red:C.inkSoft,fontWeight:uc.diverge?600:400,marginTop:6,lineHeight:1.5}}>Última conferência: {dataBR(uc.criado_em)} · {uc.diverge
+            ?<>não bateu. {difs.map(x=>`${x.sala}: ${fmt(Math.abs(Number(x.diferenca)))} a ${Number(x.diferenca)>0?'mais':'menos'} que o sistema`).join(' · ')}. O time foi avisado: confira os torneios e movimentos dessas salas.</>:'bateu.'}</div>; })()}
         <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
           {!conf&&(d.salasEu.salas||[]).some(s=>s.chave)&&<button data-conferir-saldos style={btnS} onClick={()=>setConf({valores:{},resultado:null})}>Conferir saldos</button>}
           {conf&&!conf.resultado&&<button data-enviar-conferencia style={btnP} onClick={async()=>{
@@ -3141,27 +3265,29 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           {conf&&<button style={btnS} onClick={()=>{ setConf(null); carregar(); }}>{conf.resultado?'Fechar':'Cancelar'}</button>}
         </div>
       </Card>}
-      {minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
+      {!soDinheiro&&minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
         <h3 style={tituloS}>Regras da sua reta</h3>
         {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
           return <div key={rr.k} data-minha-regra={rr.k} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rr.rot}</span><b>{rr.txt(v)}</b></div>; })}
       </Card>}
-      {minhaGradeReta&&<Card style={{padding:20}}>
+      {!soDinheiro&&minhaGradeReta&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'} {minhaGradeReta.simulada?<Tag tom="warn">simulada</Tag>:<Tag tom="ok">oficial</Tag>}</h3>
         {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
         <GradeTabela celulas={minhaGradeReta.celulas||[]}/>
         <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(minhaGradeReta.vigente_desde)}{minhaGradeReta.unidade_id!==minhaUnidade?` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})`:''}. Cada torneio lançado é conferido com ela.</div>
       </Card>}
-      {!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
+      {!soDinheiro&&!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Minha grade</h3>
         <GradeTabela celulas={minhaGrade}/>
         <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
       </Card>}
-      {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+      <Portal>
+      {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} exigeMudar={perg.exigeMudar} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
       {reloadAberto&&<ReloadModal salas={d.salasEu?.salas} onClose={()=>setReloadAberto(false)} onPedir={async a=>{ const r=await rodar('pedir_reload',a,'Pedido de reload enviado. O time foi avisado.'); if(r) setReloadAberto(false); }}/>}
       {planilha&&<PlanilhaModal p={planilha} onClose={()=>setPlanilha(null)} onEnviar={async()=>{ const r=await rodar('enviar_planilha',{p_planilha:planilha},'Planilha enviada. Agora o time confere os valores.'); if(r) setPlanilha(null); }}/>}
       {manualAberta&&d.eu&&<PlanilhaManualModal nome={d.eu.nome} salas={d.salasEu?.salas} onClose={()=>setManualAberta(false)} onPronto={p=>{ setManualAberta(false); setPlanilha(p); }}/>}
       {saqueAberto&&d.eu&&<SaqueModal pessoa={d.eu.id} salas={d.salasEu?.salas} onClose={()=>setSaqueAberto(false)} onPedir={async a=>{ const r=await rodar('solicitar_saque',a,'Pedido de saque enviado. Aguarde a aprovação do time.'); if(r) setSaqueAberto(false); }}/>}
+      </Portal>
     </div>;
   }
 
@@ -3175,7 +3301,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       onBanca={async b=>{ const pv=await previaSaida(saidaDe.p,b); if(pv) setSaidaDe(x=>x&&{...x,previa:pv}); }}
       onConfirmar={async({banca,recebido})=>{ const p=saidaDe.p; const r=await rodar('registrar_saida',{p_alvo:p.id,p_banca:banca,p_recebido:recebido,p_obs:null},
         `Saída de ${p.nome} registrada. O histórico dele foi pra conta individual nova; o acerto está no Financeiro.`); if(r) setSaidaDe(null); }}/>}
-    {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
+    {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} opts={perg.opts} currentValue={perg.valor} exigeMudar={perg.exigeMudar} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
     {convite&&<ConviteModal unidades={d.unidades} podeGerir={u=>pode('gerir_pessoas',u)} podeAdmin={u=>pode('administrar',u)} inicial={convite} nomeUnidade={nomeUnidade} onGerar={gerarConvite} onClose={()=>setConvite(null)}/>}
     {gradeAberta&&U[gradeAberta]&&(()=>{ const u=U[gradeAberta], g=gradeEf(u.id);
       const planilhas=d.aberturas.filter(a=>a.planilha&&Array.isArray(a.planilha.grade)&&a.planilha.grade.length&&U[a.unidade_id]&&String(U[a.unidade_id].caminho).startsWith(u.caminho))
@@ -3185,6 +3311,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         onSalvar={async({desde,simulada,celulas,obs})=>{ const r=await rodar('salvar_grade',{p_unidade:u.id,p_desde:desde,p_simulada:simulada,p_celulas:celulas,p_obs:obs||null},`Grade de ${u.nome} salva. Os jogadores dela foram avisados.`); if(r) setGradeAberta(null); }}
         onApagar={async h=>{ await rodar('apagar_grade',{p_id:h.id},'Versão da grade apagada.'); }}/>; })()}
     {pessoaEd&&<PessoaModal p={pessoaEd} unidades={d.unidades} podeAdmin={u=>pode('administrar',u)} nomeUnidade={nomeUnidade} onClose={()=>setPessoaEd(null)}
+      souEu={pessoaEd.user_id===uid} ultimoAdmin={pessoaEd.papel==='admin'&&!!raiz&&new Set(d.acessos.filter(a=>a.unidade_id===raiz.id&&(a.capacidades||[]).includes('administrar')
+        &&d.pessoas.some(x=>x.id===a.pessoa_id&&x.status!=='saiu')).map(a=>a.pessoa_id)).size<=1}
       onLink={pessoaEd.status==='convidado'?()=>{ const p=pessoaEd; setPessoaEd(null); linkPessoal(p,p.unidades[0]); }:null}
       onSalvar={async({nome,caps,unidades})=>{ const p=pessoaEd; setPessoaEd(null);
         if(nome!==p.nome){ const r=await rodar('renomear_pessoa',{p_alvo:p.id,p_nome:nome}); if(!r) return; }
@@ -3192,6 +3320,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       onRemover={()=>{ const p=pessoaEd; setPessoaEd(null); setPerg({label:p.joga?`Tirar ${p.nome} da gestão`:`Tirar ${p.nome} do time`,hint:p.joga?'Ele continua jogando na reta dele, só perde o papel na gestão. Digite TIRAR pra confirmar.':'Ele perde o acesso ao time. Digite TIRAR pra confirmar.',kind:'text',valor:'',
         onSave:async t=>{ setPerg(null); if(String(t).trim().toUpperCase()==='TIRAR') await rodar('definir_papel',{p_alvo:p.id,p_unidades:null,p_caps:null},`${p.nome} saiu da gestão.`); }}); }}/>}
     {estrutura&&<EstruturaModal unidades={d.unidades} podeAdmin={u=>pode('administrar',u)} onClose={()=>setEstrutura(false)}
+      ocupada={u=>new Set([...d.vinculos.filter(v=>!v.fim&&v.unidade_id===u.id).map(v=>v.pessoa_id),...d.acessos.filter(a=>a.unidade_id===u.id).map(a=>a.pessoa_id)]
+        .filter(pid=>d.pessoas.some(x=>x.id===pid&&x.status!=='saiu'))).size}
       onCriar={u=>setPerg({label:`Nova unidade dentro de ${u.nome}`,hint:'Ex.: Pandeiro, Reco-reco, Turma A.',kind:'text',valor:'',
         onSave:async nome=>{ setPerg(null); if(nome) await rodar('criar_unidade',{p_mae:u.id,p_nome:nome,p_rotulo:null,p_ordem:0},`${nome} criada.`); }})}
       onRenomear={u=>setPerg({label:`Renomear ${u.nome}`,hint:'Nome e, se quiser, o rótulo depois de ";" (ex.: Banjo;Reta 3).',kind:'text',valor:u.rotulo?`${u.nome};${u.rotulo}`:u.nome,
@@ -3208,20 +3338,23 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   if(secao==='g_visao'){
     const vis=linhas.filter(l=>l.status!=='convidado');
     const soma=(ls,k)=>{ const v=ls.map(l=>l[k]).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+Number(b),0):null; };
-    const temPerf=vis.some(l=>l.torneios!=null);
+    const temPerf=vis.some(l=>l.torneios!=null), temDin=vis.some(l=>l.banca!=null);
     const torn=soma(vis,'torneios'), inv=soma(vis,'investido'), luc=soma(vis,'lucro');
+    const emMk=vis.filter(l=>mkDe(l.banca,l.mu)!=null&&mkDe(l.banca,l.mu)<0).length;
     // ABI por entrada (reentry conta), igual ao do aluno: a média do grupo pesa pelas entradas de cada um
     const pesoAbi=l=>Number(l.entradas??l.torneios)||0;
     const abiPond=(()=>{ const ls=vis.filter(l=>l.abi!=null&&pesoAbi(l)); const n=ls.reduce((a,l)=>a+pesoAbi(l),0); return n?ls.reduce((a,l)=>a+Number(l.abi)*pesoAbi(l),0)/n:null; })();
     const foraTot=Object.values(gradePorPessoa).reduce((a,g)=>a+g.fora,0), foraAlunos=Object.values(gradePorPessoa).filter(g=>g.fora>0).length;
     const porReta=Object.values(vis.reduce((m,l)=>{ const k=l.unidade_id; (m[k]||(m[k]={u:U[k],ls:[]})).ls.push(l); return m; },{}))
-      .filter(x=>x.u).sort((a,b)=>String(a.u.caminho).localeCompare(String(b.u.caminho)));
+      .filter(x=>x.u).sort((a,b)=>posU[a.u.id]-posU[b.u.id]);
     const pend=[
       ...(paraDecidir.filter(s=>s.status==='solicitado').length?[{n:paraDecidir.filter(s=>s.status==='solicitado').length,t:'Saques para aprovar',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(paraDecidir.filter(s=>s.status==='aprovado').length?[{n:paraDecidir.filter(s=>s.status==='aprovado').length,t:'Saques aprovados esperando o dinheiro chegar',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(reloadsParaDecidir.length?[{n:reloadsParaDecidir.length,t:'Reloads pedidos',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(paraConferir.length?[{n:paraConferir.length,t:'Planilhas para conferir',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(parados.length?[{n:parados.length,t:'Alunos sem lançar há mais de 7 dias',ir:'g_jogadores',sit:'parados',tom:'bad'}]:[]),
+      ...(stops.length?[{n:stops.length,t:`Bateram o stop loss: ${stops.slice(0,3).map(x=>x.nome).join(', ')}${stops.length>3?'…':''}`,ir:'g_jogadores',sit:'stop',tom:'bad'}]:[]),
+      ...(divergentes.length?[{n:divergentes.length,t:`Conferência de saldos com diferença: ${divergentes.slice(0,3).map(c=>nomeDe(c.pessoa_id)).join(', ')}${divergentes.length>3?'…':''}`,ir:'g_financeiro',tom:'bad'}]:[]),
       ...(convidados.length&&podeConvidar?[{n:convidados.length,t:'Convites ainda não aceitos',ir:'g_jogadores',sit:'convidados',tom:'plum'}]:[]),
       ...((d.pedidos||[]).length&&podeAlgum('gerir_pessoas')?[{n:d.pedidos.length,t:'Pedidos pra entrar no time',ir:'g_equipe',tom:'plum'}]:[]),
     ];
@@ -3230,16 +3363,19 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       {avisoBox}{linkBox}
       {resumo==null?<Card style={{padding:30,display:'grid',placeItems:'center'}}><div className="spin"/></Card>:<>
       <div data-kpis style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:12}}>
-        <Kpi rot="Alunos ativos" val={vis.length} sub={parados.length?`${parados.length} sem lançar há 7+ dias`:'todos lançando'}/>
+        <Kpi rot="Alunos ativos" val={vis.length} sub={temPerf?(parados.length?`${parados.length} sem lançar há 7+ dias`:'todos lançando'):null}/>
         {temPerf&&<Kpi rot="Torneios" val={(torn||0).toLocaleString('pt-BR')} sub={abiPond!=null?`ABI médio ${fmt(abiPond)}`:null}/>}
         {temPerf&&<Kpi rot="Resultado" val={luc==null?'—':fmtSinal(luc)} tom={luc>0?'ok':luc<0?'bad':null} sub={inv>0?`ROI ${pctFmt(luc/inv*100)}`:null}/>}
-        <Kpi data-kpi-fora rot="Fora da grade · 7 dias" val={`${foraTot} torneio${foraTot!==1?'s':''}`} tom={foraTot?'bad':'ok'} sub={foraTot?`de ${foraAlunos} aluno${foraAlunos!==1?'s':''} · ver quais`:'tudo dentro'} onClick={foraTot?()=>onIr('g_grades'):null}/>
+        {temPerf&&<Kpi data-kpi-fora rot="Fora da grade · 7 dias" val={`${foraTot} torneio${foraTot!==1?'s':''}`} tom={foraTot?'bad':'ok'} sub={foraTot?`de ${foraAlunos} aluno${foraAlunos!==1?'s':''} · ver quais`:'tudo dentro'}
+          onClick={foraTot?()=>{ setFiltro({reta:null,sit:'fora',busca:''}); onIr('g_jogadores'); }:null}/>}
+        {!temPerf&&temDin&&<Kpi rot="Banca dos alunos" val={fmt(soma(vis,'banca')||0)} sub="todas as salas"/>}
+        {!temPerf&&temDin&&<Kpi rot="Em MK" val={`${emMk} aluno${emMk!==1?'s':''}`} tom={emMk?'warn':'ok'} sub={emMk?'banca abaixo do MU':'ninguém em MK'}/>}
       </div>
       <Card style={{padding:20}}>
         <h3 style={tituloS}>Pendências</h3>
         {pend.length===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada pendente agora.</div>}
         {pend.length>0&&<div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:10}}>
-          {pend.map((p,i)=><button key={i} data-pendencia={p.t} onClick={()=>{ if(p.sit) setFiltro(f=>({...f,sit:p.sit,reta:null})); onIr(p.ir); }} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:14,border:`1px solid ${C.border}`,background:C.warm,cursor:'pointer',textAlign:'left',font:'inherit',color:C.ink}}>
+          {pend.map((p,i)=><button key={i} data-pendencia={p.t} aria-label={`${p.n}: ${p.t}`} onClick={()=>{ if(p.sit) setFiltro(f=>({...f,sit:p.sit,reta:null})); onIr(p.ir); }} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',borderRadius:14,border:`1px solid ${C.border}`,background:C.warm,cursor:'pointer',textAlign:'left',font:'inherit',color:C.ink}}>
             <Tag tom={p.tom}>{p.n}</Tag><span style={{flex:1,fontSize:14,lineHeight:1.35}}>{p.t}</span><span aria-hidden="true" style={{color:P,fontWeight:800}}>›</span></button>)}
         </div>}
       </Card>
@@ -3247,8 +3383,14 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <Card style={{padding:20,minWidth:0}}>
           <h3 style={tituloS}>Por reta</h3>
           {!porReta.length&&<div style={{fontSize:14,color:C.inkSoft}}>Nenhum aluno com vínculo ainda. Use <b>+ Convidar</b> pra chamar os jogadores.</div>}
-          {porReta.length>0&&<div style={{overflowX:'auto'}}><table data-por-reta style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Reta','Alunos',...(temPerf?['Torneios','ABI','ROI','Resultado']:[]),'Fora da grade'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+          {porReta.length>0&&celular&&<div data-por-reta-cartoes style={{display:'flex',flexDirection:'column',gap:8}}>
+            {porReta.map(({u,ls})=>{ const i_=soma(ls,'investido'), l_=soma(ls,'lucro'), n_=soma(ls,'torneios'), fora=ls.reduce((a,l)=>a+(gradePorPessoa[l.pessoa_id]?.fora||0),0), g=gradeEf(u.id);
+              return <button key={u.id} data-reta={u.nome} onClick={()=>{ setFiltro({reta:u.id,sit:null,busca:''}); onIr('g_jogadores'); }} style={{textAlign:'left',font:'inherit',color:C.ink,background:C.warm,border:`1px solid ${C.border}`,borderRadius:14,padding:'11px 13px',cursor:'pointer'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}><b>{u.nome}</b>{u.rotulo&&<span style={{color:C.inkSoft,fontSize:12.5}}>· {u.rotulo}</span>}{g&&g.simulada&&<Tag tom="warn">grade simulada</Tag>}<span style={{marginLeft:'auto',color:P,fontWeight:800}} aria-hidden="true">›</span></div>
+                <div style={{fontSize:12.5,color:C.inkSoft,marginTop:4,lineHeight:1.5}}>{ls.length} aluno{ls.length!==1?'s':''}{temPerf?<> · {n_??0} torneios · <span style={{color:l_>0?C.greenMid:l_<0?C.red:C.inkSoft,fontWeight:700}}>{l_==null?'—':fmtSinal(l_)}</span>{i_>0?` · ROI ${pctFmt(l_/i_*100)}`:''} · <span style={{color:fora?C.red:C.inkSoft,fontWeight:fora?700:400}}>{fora} fora da grade</span></>:null}</div></button>; })}
+          </div>}
+          {porReta.length>0&&!celular&&<div style={{overflowX:'auto'}}><table data-por-reta style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Reta','Alunos',...(temPerf?['Torneios','ABI','ROI','Resultado','Fora da grade']:[])].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{porReta.map(({u,ls})=>{ const i_=soma(ls,'investido'), l_=soma(ls,'lucro'), n_=soma(ls,'torneios');
               const ab=(()=>{ const x=ls.filter(l=>l.abi!=null&&pesoAbi(l)); const n=x.reduce((a,l)=>a+pesoAbi(l),0); return n?x.reduce((a,l)=>a+Number(l.abi)*pesoAbi(l),0)/n:null; })();
               const fora=ls.reduce((a,l)=>a+(gradePorPessoa[l.pessoa_id]?.fora||0),0); const g=gradeEf(u.id);
@@ -3256,33 +3398,44 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
                 <td style={tdS}><b>{u.nome}</b>{u.rotulo&&<span style={{color:C.inkSoft}}> · {u.rotulo}</span>} {g&&g.simulada&&<Tag tom="warn">grade simulada</Tag>}</td>
                 <td style={tdS}>{ls.length}</td>
                 {temPerf&&<><td style={tdS}>{n_??'—'}</td><td style={tdS}>{ab!=null?fmt(ab):'—'}</td>
-                  <td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{i_>0?pctFmt(l_/i_*100):'—'}</td><td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{l_==null?'—':fmtSinal(l_)}</td></>}
-                <td style={{...tdS,color:fora?C.red:C.ink,fontWeight:fora?700:400}}>{fora}</td></tr>; })}
+                  <td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{i_>0?pctFmt(l_/i_*100):'—'}</td><td style={{...tdS,color:l_>0?C.greenMid:l_<0?C.red:C.ink}}>{l_==null?'—':fmtSinal(l_)}</td>
+                  <td style={{...tdS,color:fora?C.red:C.ink,fontWeight:fora?700:400}}>{fora}</td></>}</tr>; })}
               {porReta.length>1&&<tr><td style={{...tdS,fontWeight:800}}>Total</td><td style={{...tdS,fontWeight:800}}>{vis.length}</td>
-                {temPerf&&<><td style={{...tdS,fontWeight:800}}>{torn??'—'}</td><td style={{...tdS,fontWeight:800}}>{abiPond!=null?fmt(abiPond):'—'}</td>
-                  <td style={{...tdS,fontWeight:800}}>{inv>0?pctFmt(luc/inv*100):'—'}</td><td style={{...tdS,fontWeight:800}}>{luc==null?'—':fmtSinal(luc)}</td></>}
-                <td style={{...tdS,fontWeight:800}}>{foraTot}</td></tr>}
+                {temPerf&&<><td style={{...tdS,fontWeight:800}}>{torn==null?'—':Number(torn).toLocaleString('pt-BR')}</td><td style={{...tdS,fontWeight:800}}>{abiPond!=null?fmt(abiPond):'—'}</td>
+                  <td style={{...tdS,fontWeight:800}}>{inv>0?pctFmt(luc/inv*100):'—'}</td><td style={{...tdS,fontWeight:800}}>{luc==null?'—':fmtSinal(luc)}</td>
+                  <td style={{...tdS,fontWeight:800}}>{foraTot}</td></>}</tr>}
             </tbody></table></div>}
-          <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Clique na reta pra ver os jogadores dela. ROI do bloco é pelo total investido. Fora da grade: últimos 7 dias.</div>
+          <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>{celular?'Toque':'Clique'} na reta pra ver os jogadores dela.{temPerf?' ROI do bloco é pelo total investido. Fora da grade: últimos 7 dias.':''}</div>
         </Card>
       </div></>}
-      {modais}
+      <Portal>{modais}</Portal>
     </div>;
   }
 
   /* ---------- JOGADORES ---------- */
   if(secao==='g_jogadores'){
-    const retasComJogador=[...new Set(linhas.map(l=>l.unidade_id))].map(id=>U[id]).filter(Boolean).sort((a,b)=>String(a.caminho).localeCompare(String(b.caminho)));
+    const retasComJogador=[...new Set(linhas.map(l=>l.unidade_id))].map(id=>U[id]).filter(Boolean).sort((a,b)=>posU[a.id]-posU[b.id]);
     const busca=filtro.busca.trim().toLowerCase();
     const lista=linhas.filter(l=>(!filtro.reta||String(l.caminho||U[l.unidade_id]?.caminho||'').startsWith(U[filtro.reta]?.caminho||'§'))
       &&(!busca||l.nome.toLowerCase().includes(busca))
       &&(!filtro.sit||(filtro.sit==='fora'&&gradePorPessoa[l.pessoa_id]?.fora>0)||(filtro.sit==='mk'&&mkDe(l.banca,l.mu)<0)
-         ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='convidados'&&l.status==='convidado')));
+         ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='stop'&&stops.some(x=>x.pessoa_id===l.pessoa_id))||(filtro.sit==='convidados'&&l.status==='convidado')));
     const chave={nome:l=>l.nome.toLowerCase(),torneios:l=>l.torneios??-1,lucro:l=>l.lucro??-1e9,banca:l=>l.banca??-1e9,mk:l=>mkDe(l.banca,l.mu)??-1e9,
       grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||''}[ord.k]||(l=>l.nome);
     lista.sort((a,b)=>{ const x=chave(a), y=chave(b); return (x<y?-1:x>y?1:0)*ord.dir; });
     const temDin=linhas.some(l=>l.banca!=null), temPerf=linhas.some(l=>l.torneios!=null);
-    const col=(k,r)=><th key={k} style={thS}><button onClick={()=>setOrd(o=>({k,dir:o.k===k?-o.dir:(k==='nome'?1:-1)}))} style={{border:'none',background:'transparent',padding:0,font:'inherit',color:ord.k===k?P:C.inkSoft,cursor:'pointer',fontWeight:700,textTransform:'uppercase',fontSize:11,letterSpacing:'.04em'}}>{r}{ord.k===k?(ord.dir>0?' ↑':' ↓'):''}</button></th>;
+    // nome e ⋯ presos nas pontas: a tabela rola de lado sem esconder de quem é a linha (A-017)
+    const fixaEsq={position:'sticky',left:0,background:C.surface,zIndex:1,boxShadow:`1px 0 0 ${C.border}`}, fixaDir={position:'sticky',right:0,background:C.surface,zIndex:1,boxShadow:`-1px 0 0 ${C.border}`};
+    const acoesJog=l=>{ const p=d.pessoas.find(x=>x.id===l.pessoa_id)||{id:l.pessoa_id,nome:l.nome}; return [
+      ...(verPainel(l)?[['Ver painel do aluno',()=>onVerJogador(l.nome,l)]]:[]),
+      ...(pode('promover',l.unidade_id)&&l.status==='ativo'?[['Mover de reta (promover)',()=>moverJogador(p,l.unidade_id)]]:[]),
+      ...(pode('aprovar_saques',l.unidade_id)&&l.status==='ativo'?[['Capital mandado (MU)',()=>capital(p)]]:[]),
+      ...(l.status==='convidado'&&pode('gerir_pessoas',l.unidade_id)?[['Link pessoal',()=>linkPessoal(p,l.unidade_id)]]:[]),
+      // o nome de quem já tem conta é dele (só o aluno mexe na conta dele): o time renomeia só convidado
+      ...((pode('gerir_pessoas',l.unidade_id)||souAdmin)&&!p.user_id?[['Renomear',()=>renomear(p)]]:[]),
+      ...(pode('gerir_pessoas',l.unidade_id)&&p.user_id!==uid?[['Registrar saída',()=>saida(p),true]]:[]),
+    ]; };
+    const col=(k,r,extra)=><th key={k} style={{...thS,...(extra||{})}}><button onClick={()=>setOrd(o=>({k,dir:o.k===k?-o.dir:(k==='nome'?1:-1)}))} style={{border:'none',background:'transparent',padding:0,font:'inherit',color:ord.k===k?P:C.inkSoft,cursor:'pointer',fontWeight:700,textTransform:'uppercase',fontSize:11,letterSpacing:'.04em'}}>{r}{ord.k===k?(ord.dir>0?' ↑':' ↓'):''}</button></th>;
     return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:14}}>
       {header(<>Jogadores <span style={{fontSize:15,color:C.inkSoft,fontWeight:500}}>{linhas.filter(l=>l.status==='ativo').length} ativos</span></>,<>
         <input aria-label="Buscar jogador" data-busca value={filtro.busca} placeholder="Buscar jogador" onChange={e=>setFiltro(f=>({...f,busca:e.target.value}))} style={{...inputStyle,width:220,padding:'10px 12px',fontSize:14}}/>
@@ -3292,43 +3445,55 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <Chip on={!filtro.reta} onClick={()=>setFiltro(f=>({...f,reta:null}))}>Todas as retas</Chip>
         {retasComJogador.map(u=><Chip key={u.id} data-filtro-reta={u.nome} on={filtro.reta===u.id} onClick={()=>setFiltro(f=>({...f,reta:f.reta===u.id?null:u.id}))}>{u.nome}</Chip>)}
         <span style={{width:1,height:22,background:C.border,margin:'0 4px'}}/>
-        {[['fora','Fora da grade'],...(temDin?[['mk','Em MK']]:[]),['parados','Sem lançar'],['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
+        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[])]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
         {periodoChips}
       </div>
-      <Card style={{padding:'6px 10px'}}>
+      <Card style={{padding:celular?'8px':'6px 10px'}}>
         {resumo==null&&<div style={{padding:30,display:'grid',placeItems:'center'}}><div className="spin"/></div>}
         {resumo!=null&&!lista.length&&<Empty>{linhas.length?'Ninguém com esse filtro.':'Nenhum jogador no time ainda. Use + Convidar.'}</Empty>}
-        {lista.length>0&&<div style={{overflowX:'auto'}}><table data-jogadores style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{col('nome','Jogador')}{temPerf&&col('torneios','Torneios')}{temPerf&&col('lucro','Resultado')}
-            {temDin&&col('banca','Banca')}{temDin&&col('mk','Make-up')}{col('grade','Grade 7 dias')}{col('ultimo','Último lançamento')}<th style={thS}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
-          <tbody>{lista.map(l=>{ const p=d.pessoas.find(x=>x.id===l.pessoa_id)||{id:l.pessoa_id,nome:l.nome}; const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado';
-            const acoes=[
-              ...(verPainel(l)?[['Ver painel do aluno',()=>onVerJogador(l.nome,l)]]:[]),
-              ...(pode('promover',l.unidade_id)&&l.status==='ativo'?[['Mover de reta (promover)',()=>moverJogador(p,l.unidade_id)]]:[]),
-              ...(pode('aprovar_saques',l.unidade_id)&&l.status==='ativo'?[['Capital mandado (MU)',()=>capital(p)]]:[]),
-              ...(l.status==='convidado'&&pode('gerir_pessoas',l.unidade_id)?[['Link pessoal',()=>linkPessoal(p,l.unidade_id)]]:[]),
-              ...((pode('gerir_pessoas',l.unidade_id)||souAdmin)?[['Renomear',()=>renomear(p)]]:[]),
-              ...(pode('gerir_pessoas',l.unidade_id)&&p.user_id!==uid?[['Registrar saída',()=>saida(p),true]]:[]),
-            ];
+        {lista.length>0&&celular&&<div data-jogadores-cartoes style={{display:'flex',flexDirection:'column',gap:8}}>
+          {lista.map(l=>{ const g=gradePorPessoa[l.pessoa_id], dd=diasDesde(l.ultimo_lancamento), conv=l.status==='convidado', ac=acoesJog(l);
+            return <div key={l.pessoa_id} data-jogador={l.nome} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:14,padding:'11px 12px'}}>
+              <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
+                <div style={{flex:1,minWidth:0}}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:15,cursor:'pointer',textAlign:'left'}}>{l.nome}</button>:<b style={{fontSize:15}}>{l.nome}</b>}
+                  {conv&&<> <Tag tom="plum">convite enviado</Tag></>}<div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></div>
+                {ac.length>0&&<button aria-label={`Ações de ${l.nome}`} data-acoes={l.nome} onClick={()=>setMenuDe(l.pessoa_id)} style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:800,cursor:'pointer',flexShrink:0}}>⋯</button>}
+              </div>
+              {!conv&&<div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'6px 10px',marginTop:8,fontSize:12.5}}>
+                {temPerf&&<div><span style={{color:C.inkSoft}}>Torneios </span><b>{l.torneios??'—'}</b>{l.abi!=null&&l.torneios?<span style={{color:C.inkSoft}}> · ABI {fmt(l.abi)}</span>:null}</div>}
+                {temPerf&&<div><span style={{color:C.inkSoft}}>Resultado </span><b style={{color:l.lucro>0?C.greenMid:l.lucro<0?C.red:C.ink}}>{l.lucro==null||!l.torneios?'—':fmtSinal(l.lucro)}</b></div>}
+                {temDin&&<div><span style={{color:C.inkSoft}}>Banca </span><b>{l.banca==null?'—':fmt(l.banca)}</b>{l.mu!=null&&<span style={{color:C.inkSoft}}> · MU {fmt(l.mu)}</span>}</div>}
+                {temDin&&<div><span style={{color:C.inkSoft}}>MK / Profit </span><MkSelo v={mkDe(l.banca,l.mu)}/></div>}
+                {temPerf&&<div><span style={{color:C.inkSoft}}>Grade 7 dias </span>{!g?'—':g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</div>}
+                {temPerf&&<div><span style={{color:C.inkSoft}}>Último </span><b>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):'nunca lançou'}</b>{dd!=null&&dd>7&&<span data-parado style={{color:C.red,fontWeight:700}}> · parado há {dd} dias</span>}</div>}
+              </div>}
+            </div>; })}
+        </div>}
+        {lista.length>0&&!celular&&<div style={{overflowX:'auto'}}><table data-jogadores style={{width:'100%',borderCollapse:'separate',borderSpacing:0}}>
+          <thead><tr>{col('nome','Jogador',fixaEsq)}{temPerf&&col('torneios','Torneios')}{temPerf&&col('lucro','Resultado')}
+            {temDin&&col('banca','Banca')}{temDin&&col('mk','MK / Profit')}{temPerf&&col('grade','Grade 7 dias')}{temPerf&&col('ultimo','Último lançamento')}<th style={{...thS,...fixaDir}}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
+          <tbody>{lista.map(l=>{ const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado'; const ac=acoesJog(l);
             return <tr key={l.pessoa_id} data-jogador={l.nome}>
-              <td style={tdS}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
-                {l.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}<div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></td>
+              <td style={{...tdS,...fixaEsq}}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
+                {conv&&<> <Tag tom="plum">convite enviado</Tag></>}<div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></td>
               {temPerf&&<td style={tdS}>{conv?'—':(l.torneios??'—')}{!conv&&l.abi!=null&&l.torneios?<div style={{fontSize:12,color:C.inkSoft}}>ABI {fmt(l.abi)}</div>:null}</td>}
               {temPerf&&<td style={{...tdS,color:l.lucro>0?C.greenMid:l.lucro<0?C.red:C.ink}}>{conv||l.lucro==null||!l.torneios?'—':fmtSinal(l.lucro)}
                 {!conv&&l.roi!=null&&l.torneios?<div style={{fontSize:12,color:l.roi<0?C.red:C.inkSoft}}>ROI {pctFmt(l.roi)}</div>:null}</td>}
               {temDin&&<td style={tdS}>{conv||l.banca==null?'—':fmt(l.banca)}{!conv&&l.mu!=null&&<div style={{fontSize:12,color:C.inkSoft}}>MU {fmt(l.mu)}</div>}</td>}
               {temDin&&<td style={tdS}>{conv?<span style={{color:C.inkSoft}}>—</span>:<MkSelo v={mkDe(l.banca,l.mu)}/>}</td>}
-              <td style={tdS}>{!g?<span style={{color:C.inkSoft}}>—</span>:g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</td>
-              <td style={tdS}>{l.ultimo_lancamento?dLabel(l.ultimo_lancamento):(conv?'—':'nunca lançou')}{dd!=null&&dd>7&&<div data-parado style={{fontSize:12,color:C.red,fontWeight:700}}>parado há {dd} dias</div>}</td>
-              <td style={{...tdS,position:'relative'}}>{acoes.length>0&&<button aria-label={`Ações de ${l.nome}`} aria-expanded={menuDe===l.pessoa_id} data-acoes={l.nome} onClick={()=>setMenuDe(m=>m===l.pessoa_id?null:l.pessoa_id)}
-                  style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${menuDe===l.pessoa_id?P:C.border}`,background:menuDe===l.pessoa_id?C.plumSoft:C.surface,color:menuDe===l.pessoa_id?P:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>}
-                {menuDe===l.pessoa_id&&<div role="menu" style={{position:'absolute',right:8,top:48,zIndex:5,width:230,background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,boxShadow:'0 16px 40px -18px rgba(25,35,29,.45)',padding:6,whiteSpace:'normal'}}>
-                  {acoes.map(([r,fn,perigo])=><button key={r} role="menuitem" onClick={()=>{ setMenuDe(null); fn(); }} style={{display:'block',width:'100%',textAlign:'left',padding:'10px 12px',borderRadius:10,border:'none',background:'transparent',color:perigo?C.red:C.ink,fontWeight:600,fontSize:13.5,cursor:'pointer'}}>{r}</button>)}
-                </div>}</td>
+              {temPerf&&<td style={tdS}>{!g?<span style={{color:C.inkSoft}}>—</span>:g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</td>}
+              {temPerf&&<td style={tdS}>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):(conv?'—':'nunca lançou')}{dd!=null&&dd>7&&<div data-parado style={{fontSize:12,color:C.red,fontWeight:700}}>parado há {dd} dias</div>}</td>}
+              <td style={{...tdS,...fixaDir}}>{ac.length>0&&<button aria-label={`Ações de ${l.nome}`} data-acoes={l.nome} onClick={()=>setMenuDe(l.pessoa_id)}
+                  style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>}</td>
             </tr>; })}</tbody></table></div>}
       </Card>
-      <div style={{fontSize:12,color:C.inkSoft,lineHeight:1.5}}>Make-up = banca − MU: <b>MK</b> com o valor quando a banca está abaixo do capital do time; positivo é profit. Resultado e ROI são do período; banca e make-up são de agora.</div>
-      {modais}
+      {(()=>{ const l=menuDe&&lista.find(x=>x.pessoa_id===menuDe); if(!l) return null; const ac=acoesJog(l);
+        return <Janela onClose={()=>setMenuDe(null)} rotulo={`Ações de ${l.nome}`} attrs={{'data-acoes-modal':true,role:'menu'}}>
+          {topoModal(l.nome,()=>setMenuDe(null))}
+          {ac.map(([r,fn,perigo])=><button key={r} role="menuitem" onClick={()=>{ setMenuDe(null); fn(); }}
+            style={{textAlign:'left',padding:'13px 14px',borderRadius:13,border:`1.5px solid ${perigo?C.redSoft:C.border}`,background:C.surface,color:perigo?C.red:C.ink,fontWeight:700,fontSize:14.5,cursor:'pointer'}}>{r}</button>)}
+        </Janela>; })()}
+      <Portal>{modais}</Portal>
     </div>;
   }
 
@@ -3373,21 +3538,23 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
             <div style={{marginTop:12}}>{g?<GradeTabela celulas={g.celulas||[]}/>:<Empty>Sem grade. Os torneios desta reta são conferidos só pelo teto de ABI das Regras do time.</Empty>}</div>
             {g&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(g.vigente_desde)}. Escrita como na planilha; o app lê cada célula e confere cada torneio.</div>}
           </Card>
-          <Card style={{padding:20}}>
+          {podeVerDesempenho&&<Card style={{padding:20}}>
             <h3 style={tituloS}>Conferência dos últimos 7 dias · {sel.nome}</h3>
-            {!podeVerDesempenho?<div style={{fontSize:13.5,color:C.inkSoft}}>Seu papel não vê os torneios dos alunos.</div>
-              :!conf.length?<div data-conferencia-vazia style={{fontSize:13.5,color:C.inkSoft}}>Nenhum torneio fora ou em atenção nos últimos 7 dias.</div>
+            {!conf.length?<div data-conferencia-vazia style={{fontSize:13.5,color:C.inkSoft}}>Nenhum torneio fora ou em atenção nos últimos 7 dias.</div>
+              :celular?<div data-conferencia style={{display:'flex',flexDirection:'column',gap:8}}>{conf.slice(0,60).map(({t,sg,pessoa},i)=><div key={t.id||i} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 11px',fontSize:12.5,lineHeight:1.5}}>
+                <div style={{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}}><b>{nomeDe(pessoa)}</b><span style={{color:C.inkSoft}}>{dataBR(t.entry_date)}</span><Tag tom={sg.status==='fora'?'bad':'warn'}>{sg.status==='fora'?'fora':'atenção'}</Tag></div>
+                <div>{t.tournament_name||'Torneio'} · {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}</div><div style={{color:C.inkSoft}}>{sg.motivo}{sg.simulada?' · grade simulada':''}</div></div>)}</div>
               :<div style={{overflowX:'auto'}}><table data-conferencia style={{width:'100%',borderCollapse:'collapse'}}>
                 <thead><tr>{['Aluno','Dia','Torneio','Buy-in','Status','Motivo'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
                 <tbody>{conf.slice(0,60).map(({t,sg,pessoa},i)=><tr key={t.id||i}>
-                  <td style={{...tdS,fontWeight:700}}>{nomeDe(pessoa)}</td><td style={tdS}>{dLabel(t.entry_date)}</td>
+                  <td style={{...tdS,fontWeight:700}}>{nomeDe(pessoa)}</td><td style={tdS}>{dataBR(t.entry_date)}</td>
                   <td style={{...tdS,maxWidth:240,overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'}</td><td style={tdS}>{fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}</td>
                   <td style={tdS}><Tag tom={sg.status==='fora'?'bad':'warn'}>{sg.status==='fora'?'fora':'atenção'}</Tag></td>
                   <td style={{...tdS,whiteSpace:'normal',minWidth:220}}>{sg.motivo}{sg.simulada?' · grade simulada':''}</td></tr>)}</tbody></table></div>}
-          </Card>
+          </Card>}
         </div>}
       </div>}
-      {modais}
+      <Portal>{modais}</Portal>
     </div>;
   }
 
@@ -3397,7 +3564,11 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const soma=k=>din.reduce((a,l)=>a+Number(l[k]||0),0);
     const aReceber=paraDecidir.filter(s=>s.status==='aprovado').reduce((a,s)=>a+Number(s.total_time||0),0);
     const historico=d.saques.filter(s=>['pago','recusado'].includes(s.status)&&pode('ver_financeiro',s.unidade_id)).slice(0,10);
-    const itens=paraDecidir.length+reloadsParaDecidir.length+paraConferir.length;
+    const itens=paraDecidir.length+reloadsParaDecidir.length+paraConferir.length+divergentes.length;
+    // o que está aberto mas não é deste papel decidir (ex.: professor vê os saques, quem aprova é o financeiro) (A-042)
+    const deOutros=d.saques.filter(x=>['solicitado','aprovado'].includes(x.status)&&!paraDecidir.includes(x)).length
+      +d.reloads.filter(x=>['solicitado','aprovado'].includes(x.status)&&!reloadsParaDecidir.includes(x)).length
+      +d.aberturas.filter(x=>x.status==='enviada'&&!paraConferir.includes(x)).length;
     return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
       {header('Financeiro')}
       {avisoBox}
@@ -3409,10 +3580,14 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       </div>}
       <Card style={{padding:20}}>
         <h3 style={tituloS}>Para resolver {itens>0&&<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{itens}</span>}</h3>
-        {itens===0&&<div style={{fontSize:14,color:C.inkSoft}}>Nada para resolver agora.</div>}
+        {itens===0&&<div data-nada-resolver style={{fontSize:14,color:C.inkSoft}}>{deOutros?`Nada para você resolver. ${deOutros} ${deOutros===1?'item aberto está':'itens abertos estão'} com quem aprova os saques.`:'Nada para resolver agora.'}</div>}
         {paraDecidir.map(s=><div key={s.id} data-saque={nomeDe(s.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="plum">saque</Tag><b>{nomeDe(s.pessoa_id)}</b><span style={{color:C.inkSoft}}>· {dataBR(s.solicitado_em)} ·</span><span style={{color:C.gold,fontWeight:700}}>{SAQUE_ROTULO[s.status]}</span></div>
-          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>Banca informada {fmt(s.banca)}{s.banca_sistema!=null?<> · no sistema {fmt(s.banca_sistema)}</>:null} · MU antes {fmt(s.mu_antes)} · devolução {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → jogador {fmt(s.parte_jogador)} · <b style={{color:C.ink}}>time recebe {fmt(s.total_time)}</b>{s.observacao?` · "${s.observacao}"`:''}</div>
+          <div data-saque-conta style={{color:C.inkSoft,marginTop:4,lineHeight:1.6}}>
+            <div><b style={{color:C.ink}}>Banca:</b> informada {fmt(s.banca)}{s.banca_sistema!=null?<> · no sistema {fmt(s.banca_sistema)}</>:null} · MU antes {fmt(s.mu_antes)}</div>
+            <div><b style={{color:C.ink}}>Saque:</b> {Number(s.devolucao)>0?<>devolve {fmt(s.devolucao)} de MU + </>:null}cashout {fmt(s.cashout)}</div>
+            <div><b style={{color:C.ink}}>Divisão do cashout:</b> jogador {fmt(s.parte_jogador)}{Number(s.cashout)>0?` (${pctFmt(Number(s.parte_jogador)/Number(s.cashout)*100)})`:''} · time {fmt(s.parte_time)}{Number(s.cashout)>0?` (${pctFmt(Number(s.parte_time)/Number(s.cashout)*100)})`:''} · <b style={{color:C.ink}}>o time recebe {fmt(s.total_time)}</b></div>
+            {s.observacao?<div>"{s.observacao}"</div>:null}</div>
           {s.banca_sistema!=null&&Math.abs(Number(s.banca)-Number(s.banca_sistema))>1&&<div data-banca-diferente style={{color:C.red,fontWeight:700,fontSize:13,marginTop:4}}>
             A banca informada está {fmt(Math.abs(Number(s.banca)-Number(s.banca_sistema)))} {Number(s.banca)>Number(s.banca_sistema)?'acima':'abaixo'} da do sistema: confira os lançamentos antes de aprovar.</div>}
           {Array.isArray(s.carteiras)&&s.carteiras.length>0&&<div data-saque-salas style={{marginTop:6,fontSize:12.5,lineHeight:1.6}}>
@@ -3434,7 +3609,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           </div></div>)}
         {paraConferir.map(a=>{ const pl=a.planilha||{}; return <div key={a.id} data-conferir={nomeDe(a.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="ok">planilha</Tag><b>{nomeDe(a.pessoa_id)}</b><span style={{color:C.inkSoft}}>· enviada {dataBR(a.enviado_em)}{pl.atualizado_em?` · planilha de ${dataBR(pl.atualizado_em)}`:''}</span></div>
-          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MakeUp <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MU (capital do time; na planilha, "MakeUp") <b style={{color:C.ink}}>{fmt(a.mu)}</b> · Cashout (lucro já sacado) <b style={{color:C.ink}}>{fmt(a.cashout)}</b> · banca {fmt(pl.banca)} · lifetime {fmt(pl.lifetime)}{pl.contrato_texto?` · contrato "${pl.contrato_texto}"`:''}</div>
           {(pl.avisos||[]).map((t,i)=><div key={i} style={{color:C.red,fontSize:12.5,fontWeight:600}}>{t}</div>)}
           {(()=>{ const padrao=/^\d{4}-\d{2}-\d{2}$/.test(String(pl.atualizado_em||''))?pl.atualizado_em:String(a.enviado_em||'').slice(0,10); const v=cortes[a.id]||padrao;
             // entrada no time: o 1º vínculo. Saldos de antes dela antecipam a entrada, no máximo até a data da planilha (o servidor confere)
@@ -3443,21 +3618,39 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
             return <div style={{marginTop:8}}><div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <label style={{fontSize:13,color:C.ink,fontWeight:600}}>Saldos valem até</label>
               <input type="date" data-corte={nomeDe(a.pessoa_id)} value={v} min={minimo||undefined} max={todayISO()} onChange={e=>setCortes(c=>({...c,[a.id]:e.target.value}))} style={{...inputStyle,width:'auto',padding:'7px 10px'}}/>
-              <span style={{fontSize:12,color:C.inkSoft}}>jogos e movimentos até esse dia já estão nos saldos da planilha; contam só os de depois</span></div>
+              <span style={{fontSize:12,color:C.inkSoft}}>Só contam jogos e movimentos depois desta data.</span></div>
               {vespera&&v&&v<vespera&&<div data-antecipa={nomeDe(a.pessoa_id)} style={{fontSize:12.5,color:C.ink,marginTop:6,lineHeight:1.5}}>
                 {nomeDe(a.pessoa_id)} entrou no time em {dataBR(entrada)}. Com essa data, o que ele jogou a partir de {dataBR(addDaysISO(v,1))} passa a ser do time (a gestão vê e conta na banca). O que é de antes continua só dele.</div>}
             </div>; })()}
           <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
             <button style={btnP} onClick={()=>rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:a.mu,p_cashout:a.cashout,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida.`)}>Conferir como está</button>
-            <button style={btnS} onClick={()=>setPerg({label:`MakeUp de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU (capital do time com o jogador).',kind:'money',valor:a.mu,
+            <button style={btnS} onClick={()=>setPerg({label:`MU de ${nomeDe(a.pessoa_id)}`,hint:'Valor certo do MU: o capital do time com o jogador (na planilha aparece como MakeUp).',kind:'money',valor:a.mu,
               onSave:mu=>setPerg({label:`Cashout de ${nomeDe(a.pessoa_id)}`,hint:'Lucro que ele já sacou no time (conta pra faixa do contrato).',kind:'money',valor:a.cashout,
-                onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir e conferir</button>
+                onSave:async co=>{ setPerg(null); await rodar('conferir_abertura',{p_pessoa:a.pessoa_id,p_mu:mu,p_cashout:co,p_corte:corteDe(a)},`Planilha de ${nomeDe(a.pessoa_id)} conferida com os valores corrigidos.`); }})})}>Corrigir MU e cashout</button>
           </div></div>; })}
+        {divergentes.map(c=><div key={c.id} data-divergente={nomeDe(c.pessoa_id)} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><Tag tom="bad">conferência</Tag><b>{nomeDe(c.pessoa_id)}</b><span style={{color:C.inkSoft}}>· {dataBR(c.criado_em)} · saldo diferente do sistema</span></div>
+          <div style={{color:C.inkSoft,marginTop:4,lineHeight:1.6}}>{(Array.isArray(c.salas)?c.salas:[]).filter(x=>Math.abs(Number(x.diferenca)||0)>=0.01).map(x=><div key={x.chave||x.sala}><b style={{color:C.ink}}>{x.sala}</b>: informou {fmt(x.informado)} · sistema {fmt(x.sistema)} · <b style={{color:C.red}}>{fmt(Math.abs(Number(x.diferenca)))} {Number(x.diferenca)>0?'a mais':'a menos'}</b></div>)}
+            <div>Total: {fmtSinal(Number(c.diferenca))}. Confira com o jogador os torneios e movimentos dessas salas.</div></div>
+          <div style={{display:'flex',gap:8,marginTop:8}}><button style={btnS} onClick={()=>verSalas({id:c.pessoa_id,nome:nomeDe(c.pessoa_id)})}>Ver salas</button></div>
+        </div>)}
       </Card>
       {din.length>0&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Dinheiro por jogador</h3>
-        <div style={{overflowX:'auto'}}><table data-dinheiro style={{width:'100%',borderCollapse:'collapse'}}>
-          <thead><tr>{['Jogador','Reta','Banca','MU','Make-up','Lifetime','Salas'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
+        {celular&&<div data-dinheiro-cartoes style={{display:'flex',flexDirection:'column',gap:8}}>
+          {[...din].sort((a,b)=>(mkDe(a.banca,a.mu)??0)-(mkDe(b.banca,b.mu)??0)).map(l=>{ const c=d.conferencias.find(x=>x.pessoa_id===l.pessoa_id), mk=mkDe(l.banca,l.mu);
+            return <div key={l.pessoa_id} data-dinheiro-de={l.nome} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:14,padding:'11px 12px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}><div style={{flex:1,minWidth:0}}><b>{l.nome}</b><div style={{fontSize:12,color:C.inkSoft}}>{U[l.unidade_id]?.nome||l.unidade}</div></div>
+                <button style={{...btnS,padding:'6px 10px',fontSize:12.5}} onClick={()=>verSalas({id:l.pessoa_id,nome:l.nome})}>Salas</button></div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:'6px 10px',marginTop:8,fontSize:12.5}}>
+                <div><span style={{color:C.inkSoft}}>Banca </span><b>{fmt(l.banca)}</b></div><div><span style={{color:C.inkSoft}}>MU </span><b>{l.mu==null?'—':fmt(l.mu)}</b></div>
+                <div><span style={{color:C.inkSoft}}>MK / Profit </span><MkSelo v={mk}/></div>
+                <div data-lifetime-de={l.nome}><span style={{color:C.inkSoft}}>Lifetime </span><b>{l.lucro_sacado==null?'—':mk==null?fmt(l.lucro_sacado):fmtSinal(cent(num(l.lucro_sacado)+mk))}</b></div>
+                <div style={{gridColumn:'1/-1',color:c?(c.diverge?C.red:C.greenMid):C.inkSoft,fontWeight:c?700:400}}>{c?`${c.diverge?`conferência diverge ${fmtSinal(Number(c.diferenca))}`:'conferência bateu'} · ${dataBR(c.criado_em)}`:'sem conferência de saldos'}</div>
+              </div></div>; })}
+        </div>}
+        {!celular&&<div style={{overflowX:'auto'}}><table data-dinheiro style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>{['Jogador','Reta','Banca','MU','MK / Profit','Lifetime','Salas'].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
           <tbody>{[...din].sort((a,b)=>(mkDe(a.banca,a.mu)??0)-(mkDe(b.banca,b.mu)??0)).map(l=><tr key={l.pessoa_id} data-dinheiro-de={l.nome}>
             <td style={{...tdS,fontWeight:700}}>{l.nome}</td><td style={tdS}>{U[l.unidade_id]?.nome||l.unidade}</td><td style={tdS}>{fmt(l.banca)}</td><td style={tdS}>{l.mu==null?'—':fmt(l.mu)}</td>
             <td style={tdS}><MkSelo v={mkDe(l.banca,l.mu)}/></td>
@@ -3465,8 +3658,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               <div style={{fontSize:12,color:C.inkSoft}}>sacado {fmt(l.lucro_sacado)}</div></>}</td>
             <td style={tdS} data-salas-de={l.nome}>{(()=>{ const c=d.conferencias.find(x=>x.pessoa_id===l.pessoa_id);
               return <div style={{display:'flex',alignItems:'center',gap:8}}>{c?<span style={{fontSize:12.5,fontWeight:700,color:c.diverge?C.red:C.greenMid}}>{c.diverge?`diverge ${fmtSinal(Number(c.diferenca))}`:'bateu'} · {dataBR(c.criado_em)}</span>:<span style={{fontSize:12.5,color:C.inkSoft}}>sem conferência</span>}
-                <button style={{...btnS,padding:'5px 9px',fontSize:12}} onClick={()=>verSalas({id:l.pessoa_id,nome:l.nome})}>Ver</button></div>; })()}</td></tr>)}</tbody></table></div>
-        <div style={{fontSize:12,color:C.inkSoft,marginTop:4}}>Lifetime = o que já sacou + o profit de agora (como na planilha).</div>
+                <button style={{...btnS,padding:'5px 9px',fontSize:12}} onClick={()=>verSalas({id:l.pessoa_id,nome:l.nome})}>Ver</button></div>; })()}</td></tr>)}</tbody></table></div>}
+        <div style={{fontSize:12,color:C.inkSoft,marginTop:4,lineHeight:1.5}}>MU = capital do time com o jogador. MK = quanto falta pra banca voltar ao MU; Profit = o que passou dele. Lifetime = o que já sacou + o profit de agora (como na planilha).</div>
         <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>Contrato do time: {faixasTexto(contratoRaiz?.faixas)}{souAdmin?' · muda em Regras do time':''}</div>
       </Card>}
       {historico.length>0&&<Card style={{padding:20}}>
@@ -3488,7 +3681,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               texto:r.diferenca!=null&&Number(r.diferenca)!==0?`Recebimento confirmado com diferença de ${fmt(r.diferenca)}.`:'Recebimento do acerto confirmado.'}); }})}>Confirmar recebimento</button></div>}
         </div>)}
       </Card>}
-      {modais}
+      <Portal>{modais}</Portal>
     </div>;
   }
 
@@ -3516,7 +3709,12 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         </Card>
         {souAdmin&&<Card style={{padding:20,flex:'2 1 480px',minWidth:0}}>
           <h3 style={tituloS}>Pessoas da gestão</h3>
-          <div style={{overflowX:'auto'}}><table data-gestao style={{width:'100%',borderCollapse:'collapse'}}>
+          {celular&&<div data-gestao style={{display:'flex',flexDirection:'column',gap:8}}>{gestao.map(p=><div key={p.id} data-gestor={p.nome} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:14,padding:'11px 12px',display:'flex',alignItems:'flex-start',gap:8}}>
+            <div style={{flex:1,minWidth:0,fontSize:13,lineHeight:1.5}}><div><b style={{fontSize:14.5}}>{p.nome}</b>{p.user_id===uid&&<span style={{color:C.inkSoft}}> (você)</span>}{p.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}</div>
+              <div><Tag tom={p.papel==='admin'?'plum':p.papel==='financeiro'?'warn':'ok'}>{PAPEL_ROT[p.papel]||'—'}</Tag> <span style={{color:C.inkSoft}}>cuida de {p.unidades.map(id=>U[id]?(U[id].mae_id?U[id].nome:'time inteiro'):null).filter(Boolean).join(', ')}</span></div>
+              <div style={{color:C.inkSoft}}>{p.joga?`também joga na ${U[p.joga]?.nome}`:'não joga'}</div></div>
+            <button data-editar-gestor={p.nome} style={btnS} onClick={()=>setPessoaEd(p)}>Editar</button></div>)}</div>}
+          {!celular&&<div style={{overflowX:'auto'}}><table data-gestao style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr>{['Nome','Papel','Cuida de','Também joga',''].map((h,i)=><th key={i} style={thS}>{h}</th>)}</tr></thead>
             <tbody>{gestao.map(p=><tr key={p.id} data-gestor={p.nome}>
               <td style={{...tdS,fontWeight:700}}>{p.nome}{p.user_id===uid&&<span style={{color:C.inkSoft,fontWeight:500}}> (você)</span>}{p.status==='convidado'&&<> <Tag tom="plum">convite enviado</Tag></>}</td>
@@ -3524,7 +3722,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               <td style={{...tdS,whiteSpace:'normal'}}>{p.unidades.map(id=>U[id]?(U[id].mae_id?U[id].nome:'time inteiro'):null).filter(Boolean).join(', ')}</td>
               <td style={tdS}>{p.joga?U[p.joga]?.nome:<span style={{color:C.inkSoft}}>não</span>}</td>
               <td style={{...tdS,display:'flex',gap:6}}>
-                <button data-editar-gestor={p.nome} style={btnS} onClick={()=>setPessoaEd(p)}>Editar</button></td></tr>)}</tbody></table></div>
+                <button data-editar-gestor={p.nome} style={btnS} onClick={()=>setPessoaEd(p)}>Editar</button></td></tr>)}</tbody></table></div>}
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:10,marginTop:12}}>
             {['professor','financeiro','admin'].map(k=><div key={k} style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',fontSize:12.5,lineHeight:1.5}}><b>{PAPEL_ROT[k]}</b><br/>{PAPEL_DICA[k]}.</div>)}
           </div>
@@ -3569,7 +3767,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
             <td style={tdS}>{pode('gerir_pessoas',c.unidade_id)&&<button style={{...btnS,color:C.red}} onClick={()=>rodar('revogar_convite',{p_id:c.id},'Convite cancelado.')}>Cancelar</button>}</td></tr>)}</tbody></table></div>}
         <div style={{fontSize:12,color:C.inkSoft,marginTop:8}}>O link só aparece na hora de gerar. Perdeu? Cancele e gere outro.</div>
       </Card>}
-      {modais}
+      <Portal>{modais}</Portal>
     </div>;
   }
 
@@ -3605,31 +3803,41 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         const c=contratoEf(selU.id), cProprio=c&&c.unidade_id===selU.id;
         return <Card style={{padding:20}} data-regras-reta>
           <h3 style={tituloS}>Regras por reta</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Cada unidade herda da de cima; sem regra em nenhuma, vale o padrão do time (Regras de jogo). Mude só onde a reta é diferente.</div>
-          <select data-regra-unidade value={selU.id} onChange={e=>setRegraSel(e.target.value)} style={{...inputStyle,width:'auto',marginBottom:6}}>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10,lineHeight:1.5}}>Escolha "Time inteiro" pro padrão do time. Cada reta herda da de cima; mude só onde a reta é diferente.</div>
+          <div style={{position:'relative',display:'inline-block',marginBottom:6}}>
+          <select data-regra-unidade value={selU.id} onChange={e=>setRegraSel(e.target.value)} style={{...inputStyle,width:'auto',paddingRight:36}}>
             {unis.map(u=><option key={u.id} value={u.id}>{u.mae_id?caminhoNome(u):'Time inteiro'}</option>)}</select>
+          <span aria-hidden="true" style={{position:'absolute',right:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:C.inkSoft,fontSize:12}}>▼</span></div>
           {REGRAS_RETA.map(rr=>{ const r=regraComOrigem(selU.id,rr.k), proprio=!!(r&&r.unidade_id===selU.id), v=r?r.valor:rr.padrao(config||{});
             const origem=r?(proprio?(ehRaiz?'do time':'desta unidade'):`herdado de ${U[r.unidade_id]?.nome}`):'padrão do time';
-            const editavel=podeSel&&(!ehRaiz||['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k));
-            return <div key={rr.k} data-regra={rr.k} style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-              <span style={{flex:1,minWidth:170,color:C.inkSoft}}>{rr.rot}</span><b data-regra-valor>{rr.txt(v)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {origem}</span>
-              {editavel&&<button style={btnS} onClick={()=>mudar(rr,v)}>Mudar</button>}
+            // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
+            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k)&&!proprio;
+            const editavel=podeSel&&(!doPadrao||!!onPadrao);
+            return <div key={rr.k} data-regra={rr.k} style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+              <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>{rr.rot}</span>
+              <span style={{minWidth:0}}><b data-regra-valor>{rr.txt(v)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}> · {origem}</span></span>
+              <span style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
+              {editavel&&<button style={btnS} onClick={()=>doPadrao?onPadrao(rr.k):mudar(rr,v)}>Mudar</button>}
               {editavel&&proprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:rr.k},`${rr.rot}: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+              </span>
             </div>; })}
-          {!ehRaiz&&<div data-regra="contrato" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-            <span style={{flex:1,minWidth:170,color:C.inkSoft}}>Contrato</span><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b>
-            <span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {cProprio?'desta unidade':c&&c.unidade_id!==raiz?.id?`herdado de ${U[c.unidade_id]?.nome}`:'do time'}</span>
+          {!ehRaiz&&<div data-regra="contrato" style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+            <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>Contrato</span>
+            <span style={{minWidth:0}}><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}> · {cProprio?'desta unidade':c&&c.unidade_id!==raiz?.id?`herdado de ${U[c.unidade_id]?.nome}`:'do time'}</span></span>
+            <span style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
             {podeSel&&<button style={btnS} onClick={()=>setContratoAberto(selU.id)}>Mudar</button>}
             {podeSel&&cProprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:'contrato'},`Contrato: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+            </span>
           </div>}
         </Card>; })()}
       <div style={{fontSize:12.5,color:C.inkSoft}}>A grade de cada reta fica na aba <button onClick={()=>onIr('g_grades')} style={{border:'none',background:'transparent',color:P,fontWeight:700,padding:0,cursor:'pointer',font:'inherit'}}>Grades</button>.</div>
-      {modais}
+      <Portal>{modais}</Portal>
     </div>;
   }
   return null;
 }
 function ReloadModal({salas,onClose,onPedir}){
+  useEsc(onClose);
   const [f,setF]=useState({valor:'',sala:'',motivo:''});
   const ok=parseValor(f.valor)>0&&String(f.sala).trim().length>0;
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
@@ -3648,6 +3856,7 @@ function ReloadModal({salas,onClose,onPedir}){
   </div>;
 }
 function PlanilhaModal({p,onClose,onEnviar}){
+  useEsc(onClose);
   const [busy,setBusy]=useState(false);
   const linha=(rot,val,forte)=><div style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderBottom:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rot}</span><b style={{color:forte?C.ink:C.inkSoft}}>{val}</b></div>;
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
@@ -3660,7 +3869,7 @@ function PlanilhaModal({p,onClose,onEnviar}){
       <div>
         {(p.saldos||[]).filter(s=>s.saldo).map(s=><React.Fragment key={s.sala}>{linha(s.sala,fmt(s.saldo))}</React.Fragment>)}
         {linha('Banca (soma das salas)',fmt(p.banca),true)}
-        {linha('MakeUp (capital do time)',fmt(p.makeup),true)}
+        {linha('MU: capital do time (na planilha, "MakeUp")',fmt(p.makeup),true)}
         {linha('Lucro na banca',fmt(p.lucro))}
         {linha('Cashout (lucro já sacado)',fmt(p.cashout),true)}
         {linha('Lifetime',fmt(p.lifetime))}
@@ -3679,15 +3888,24 @@ const GRADE_MODELO_LINHAS=['Semanal','Reentry semanal','Turbo/Fast','Reentry tur
 const gradeModelo=()=>[...['GGpoker','PokerStars','ACR'].flatMap(site=>GRADE_MODELO_LINHAS.map(tipo=>({site,tipo,regular:'',prog_ko:'',hyper:''}))),
   {site:'PokerStars',tipo:'SNG',regular:'',prog_ko:'',hyper:''}];
 function GradeTabela({celulas}){
+  const celular=useCelular();
   const th={textAlign:'left',padding:'6px 6px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`};
+  const cols=[['regular','Regular'],['prog_ko','Prog KO'],['hyper','Hyper']];
+  // no celular, uma linha da grade vira um cartão (as 5 colunas não cabem: o Hyper ficava cortado)
+  if(celular) return <div data-grade style={{display:'flex',flexDirection:'column',gap:8}}>
+    {celulas.map((g,i)=><div key={i} data-grade-cartao style={{background:C.warm,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 11px',fontSize:12.5,lineHeight:1.5}}>
+      <div><b>{nomeSala(g.site)}</b> · {g.tipo}</div>
+      {cols.map(([k,r])=><div key={k}><span style={{color:C.inkSoft}}>{r}: </span>{g[k]?fmtGradeTexto(g[k]):'—'}</div>)}</div>)}
+  </div>;
   return <div style={{overflowX:'auto'}}><table data-grade style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
-    <thead><tr>{['Sala','Tipo','Regular','Prog KO','Hyper'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
-    <tbody>{celulas.map((g,i)=><tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
-      <td style={{padding:'6px',fontWeight:700}}>{i===0||celulas[i-1].site!==g.site?g.site:''}</td><td style={{padding:'6px'}}>{g.tipo}</td>
-      {['regular','prog_ko','hyper'].map(k=><td key={k} style={{padding:'6px',whiteSpace:'pre-line'}}>{g[k]||'—'}</td>)}</tr>)}</tbody>
+    <thead><tr>{['Sala','Tipo',...cols.map(c=>c[1])].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+    <tbody>{celulas.map((g,i)=><tr key={i} style={{borderBottom:`1px solid ${C.border}`,verticalAlign:'top'}}>
+      <td style={{padding:'6px',fontWeight:700,whiteSpace:'nowrap'}}>{i===0||salaChave(celulas[i-1].site)!==salaChave(g.site)?nomeSala(g.site):''}</td><td style={{padding:'6px'}}>{g.tipo}</td>
+      {cols.map(([k])=><td key={k} style={{padding:'6px',whiteSpace:'pre-line',minWidth:120}}>{g[k]?fmtGradeTexto(g[k]):'—'}</td>)}</tr>)}</tbody>
   </table></div>;
 }
 function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onSalvar,onApagar,onRegra,onClose}){
+  useEsc(onClose);
   const [linhas,setLinhas]=useState(()=>((efetiva&&efetiva.celulas)||[]).map(x=>({...x})));
   const [desde,setDesde]=useState(todayISO());
   const [simulada,setSimulada]=useState(efetiva?!!efetiva.simulada:false);
@@ -3698,7 +3916,7 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
   const btn={padding:'7px 11px',borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:12.5,cursor:'pointer'};
   const prontas=linhas.filter(x=>String(x.site||'').trim()&&String(x.tipo||'').trim());
   return <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50}}>
-    <div onClick={e=>e.stopPropagation()} data-grade-editor className="ftfade" style={{background:C.surface,width:'100%',maxWidth:980,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 18px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
+    <div onClick={e=>e.stopPropagation()} data-grade-editor className="ftfade" style={{background:C.surface,width:'100%',maxWidth:1100,height:'96vh',maxHeight:'96vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 18px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
         <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0}}>Grade · {u.nome}</h3>
         <button onClick={onClose} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
@@ -3718,7 +3936,10 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
         <thead><tr>{['Sala','Linha','Regular','Prog KO','Hyper',''].map((h,i)=><th key={i} style={{textAlign:'left',padding:'6px 4px',color:C.inkSoft,fontSize:11,textTransform:'uppercase',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
         <tbody>{linhas.map((g,i)=><tr key={i} data-grade-linha={i} style={{borderBottom:`1px solid ${C.border}`,verticalAlign:'top'}}>
           {['site','tipo','regular','prog_ko','hyper'].map(k=><td key={k} style={{padding:'5px 4px',minWidth:k==='site'?90:k==='tipo'?110:150}}>
-            {podeEditar?<input data-celula={k} value={g[k]||''} onChange={e=>muda(i,k,e.target.value)} style={inp}/>:<div style={{padding:'7px 2px'}}>{g[k]||'—'}</div>}
+            {podeEditar?(['regular','prog_ko','hyper'].includes(k)
+                ?<textarea data-celula={k} rows={Math.max(2,Math.ceil(String(g[k]||'').length/24))} value={g[k]||''} onChange={e=>muda(i,k,e.target.value)} style={{...inp,resize:'vertical',lineHeight:1.35,fontFamily:'inherit'}}/>
+                :<input data-celula={k} value={g[k]||''} onChange={e=>muda(i,k,e.target.value)} style={inp}/>)
+              :<div style={{padding:'7px 2px',whiteSpace:'pre-line'}}>{g[k]?(k==='site'?nomeSala(g[k]):fmtGradeTexto(g[k])):'—'}</div>}
             {['regular','prog_ko','hyper'].includes(k)&&String(g[k]||'').trim()&&<div data-entendi style={{fontSize:11,color:C.inkSoft,marginTop:3,lineHeight:1.35}}>{resumoCelulaGrade(g[k])}</div>}
           </td>)}
           <td style={{padding:'5px 4px'}}>{podeEditar&&<button aria-label="Tirar linha" onClick={()=>setLinhas(l=>l.filter((_,j)=>j!==i))} style={{border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',padding:6}}><IcoX s={15}/></button>}</td>
@@ -3750,6 +3971,7 @@ function GradeModal({u,efetiva,origem,historico,planilhas,regraMk,podeEditar,onS
   </div>;
 }
 function SaqueModal({pessoa,salas,onClose,onPedir}){
+  useEsc(onClose);
   // cada sala: o saldo de agora (o que o jogador vê no site) e quanto sai dela; o servidor confere tudo de novo
   const base=(salas||[]).filter(s=>s.chave);
   const [ls,setLs]=useState(()=>base.length?base.map(s=>({sala:s.sala,sistema:num(s.saldo),saldo:'',valor:''})):[{sala:'',sistema:null,saldo:'',valor:''}]);
@@ -3778,9 +4000,16 @@ function SaqueModal({pessoa,salas,onClose,onPedir}){
     <div onClick={e=>e.stopPropagation()} data-saque-modal className="ftfade" style={caixaModal}>
       {topoModal('Pedir saque',onClose)}
       {sug&&sug.em_mk&&<div data-saque-sugestao="mk" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>Em MK: a banca no sistema ({fmt(sug.banca)}) está abaixo do MU ({fmt(sug.mu)}). Saque de lucro só depois de sair do MK.</div>}
+      {/* nada a sacar por causa da reserva: a janela diz por quê (A-056) */}
+      {sug&&!sug.em_mk&&!(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao="nada" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
+        Nada a sacar agora{Number(sug.reserva_por_sala)>0?`: cada sala precisa manter ${fmt(sug.reserva_por_sala)} e nenhuma tem mais que isso`:': a banca não passa do MU'}.
+        {sug.por_sala&&(sug.de_onde||[]).length>0?<> Hoje: {(sug.de_onde||[]).map(x=>`${x.sala} ${fmt(x.saldo)}`).join(' · ')}.</>:null}</div>}
       {sug&&!sug.em_mk&&(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao style={{background:C.bg,borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
-        Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b>{Number(sug.reserva_total)>0?<>, deixando {fmt(sug.reserva_por_sala)} em {Number(sug.salas)>1?`cada uma das ${sug.salas} salas`:'cada sala'} (banca depois {fmt(sug.banca_depois)})</>:null}.
-        {sug.por_sala&&(sug.de_onde||[]).some(x=>Number(x.sacar)>0)?<> Sai de: {(sug.de_onde||[]).filter(x=>Number(x.sacar)>0).map(x=>`${x.sala} ${fmt(x.sacar)}`).join(', ')}.</>:null}
+        Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b> (banca depois {fmt(sug.banca_depois)}).
+        {/* o texto é montado por sala: quem já está abaixo da reserva não "fica com a reserva" (A-057) */}
+        {sug.por_sala&&(sug.de_onde||[]).length>0?<div data-saque-por-sala style={{marginTop:4}}>{(sug.de_onde||[]).map(x=>{ const sai=Number(x.sacar)||0, fica=cent(num(x.saldo)-sai), r=Number(sug.reserva_por_sala)||0;
+            return <div key={x.sala}><b>{x.sala}</b>: {sai>0?`sai ${fmt(sai)}, fica ${fmt(fica)}`:r>0&&num(x.saldo)<=r?`fica ${fmt(x.saldo)} (já está na reserva de ${fmt(r)}: não sai nada)`:`fica ${fmt(x.saldo)}`}</div>; })}</div>
+          :Number(sug.reserva_total)>0?<> Deixa {fmt(sug.reserva_total)} de reserva nas salas.</>:null}
         <div style={{marginTop:6}}><button style={btnS} onClick={usarSugestao}>Usar sugestão</button></div></div>}
       <div style={{fontSize:12.5,color:C.inkSoft}}>Em cada sala: quanto tem agora (como aparece no site) e quanto sai dela.</div>
       {ls.map((l,i)=>{ const dif=l.sistema!=null&&String(l.saldo).trim()!==''?cent(parseValor(l.saldo)-l.sistema):null;
@@ -3814,6 +4043,8 @@ function SaqueModal({pessoa,salas,onClose,onPedir}){
   </div>;
 }
 
+// telas que têm endereço próprio (#tela). O resto do hash (ex.: o retorno do login por e-mail) não é tela.
+const TELAS=new Set(['painel','torneios','diario','semanal','mensal','stats','saques','banca','config','time','g_visao','g_jogadores','g_grades','g_financeiro','g_equipe','g_regras']);
 function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
@@ -3844,7 +4075,7 @@ function Dashboard({session,profile}){
   const [saidaVista,setSaidaVista]=useState(()=>{ try{ return localStorage.getItem('gb_saida_vista')||''; }catch(e){ return ''; } });
   const [avisoPedido,setAvisoPedido]=useState(null);  // {erro,texto} do último pedido pelo código
   const [codTime,setCodTime]=useState('');
-  const [viewSel,setView]=useState('painel');
+  const [viewSel,setView]=useState(()=>{ try{ const v=decodeURIComponent(String(window.location.hash||'').slice(1)); if(TELAS.has(v)) return v; }catch(e){} return 'painel'; });
   const view=viewSel;
   const [modal,setModal]=useState(null);       // string type | {type, initial}
   const [menuOpen,setMenuOpen]=useState(false); // gaveta "Mais" do nav mobile
@@ -3872,6 +4103,9 @@ function Dashboard({session,profile}){
   const gestaoAtiva=modoTime&&!!timeGente.temGestao&&!alunoAberto&&(modoSel!=='jogo'||!timeGente.joga);
   const podeTrocarModo=modoTime&&!!timeGente.temGestao&&!!timeGente.joga&&!alunoAberto;
   const somenteLeitura=modoTime&&!!alunoAberto;
+  const toque=typeof window!=='undefined'&&window.matchMedia?window.matchMedia('(pointer: coarse)').matches:false;   // celular: "toque"; computador: "clique"/"mouse"
+  // trocou de tela (ou de aluno): nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
+  useEffect(()=>{ setAlertDetail(null); setModal(null); setEditing(null); setQuickEdit(null); setMenuOpen(false); setCfgConfirm(null); },[viewSel,alunoAberto]);
   const trocarModo=m=>{ setModoSel(m); try{ localStorage.setItem('gb_modo',m); }catch(e){} setView(m==='gestao'?'g_visao':'painel'); };
   const [alunoResumo,setAlunoResumo]=useState(null);   // linha do aluno na lista (banca e MU do servidor)
   const abrirAluno=(n,linha)=>{ setAlunoAberto(n); setAlunoResumo(linha||null); setView('painel'); };
@@ -3903,10 +4137,22 @@ function Dashboard({session,profile}){
   useEffect(()=>{ if(!modoTime||!jogadorSel){ setSitSel(null); return; }
     const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); if(!pp){ setSitSel(null); return; }
     setSitSel(s=>s&&s._pessoa===pp.id?s:null);
-    let vivo=true; const t=setTimeout(()=>{ sb.rpc('situacao_jogador',{p_pessoa:pp.id}).then(({data,error})=>{ if(!vivo) return;
+    let vivo=true; const t=setTimeout(()=>{ sb.rpc('situacao_jogador',{p_pessoa:pp.id,p_inicio_semana:weekStart(weekEnding(todayISO()))}).then(({data,error})=>{ if(!vivo) return;
       if(!error&&data) setSitSel({...data,_pessoa:pp.id}); else setSitSel(s=>s&&s._pessoa===pp.id?s:null); }).catch(()=>{}); },250);
     return ()=>{ vivo=false; clearTimeout(t); }; },[modoTime,jogadorSel,timeGente,toursRaw,ledgerRaw,walletsRaw]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
+  // Esc fecha a janela de cima (confirmação, fora da grade, "Mais")
+  useEsc(()=>{ if(cfgConfirm) return setCfgConfirm(null); if(alertDetail) return setAlertDetail(null); if(menuOpen) setMenuOpen(false); },!!(cfgConfirm||alertDetail||menuOpen));
+  // cada tela tem endereço (#banca, #g_jogadores...): o voltar do navegador volta de tela, e a tela nova abre no topo (A-024)
+  const viewRef=React.useRef(viewSel); viewRef.current=viewSel;
+  const alunoRef=React.useRef(alunoAberto); alunoRef.current=alunoAberto;
+  const primeiraTela=React.useRef(true);
+  useEffect(()=>{ try{ const h='#'+viewSel; if(window.location.hash!==h){ if(primeiraTela.current) window.history.replaceState(null,'',h); else window.history.pushState(null,'',h); } }catch(e){}
+    primeiraTela.current=false; try{ window.scrollTo(0,0); }catch(e){} },[viewSel]);
+  useEffect(()=>{ const f=()=>{ const v=decodeURIComponent(String(window.location.hash||'').slice(1)); if(!TELAS.has(v)||v===viewRef.current) return;
+      if(alunoRef.current&&v.startsWith('g_')){ setAlunoAberto(null); setAlunoResumo(null); }
+      setView(v); };
+    window.addEventListener('popstate',f); return ()=>window.removeEventListener('popstate',f); },[]);
   const [imp,setImp]=useState({busy:false,prog:'',res:null}); // estado do import de HH
   const [hhDono,setHhDono]=useState(null);   // import de mãos parado: os torneios já estão lançados no nome do outro jogador
   const [tsImp,setTsImp]=useState({busy:false,prog:'',preview:null,res:null}); // import de resumos de torneio
@@ -3976,10 +4222,12 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq,gr,rg]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
-        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome'),
-        lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago').order('id')),
-        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde')]);
+      const [pe,vi,ac,un,sq,gr,rg,apo,rel]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'),
+        lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')),
+        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'),
+        lerTudo(()=>sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')),
+        lerTudo(()=>sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id'))]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
       GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe,regras:rg.error?[]:(rg.data||[])};
@@ -3989,7 +4237,7 @@ function Dashboard({session,profile}){
       const raiz=(un.data||[]).find(u=>!u.mae_id);
       const podeConfigurar=!!(eu&&raiz&&(ac.data||[]).some(a=>a.pessoa_id===eu.id&&a.unidade_id===raiz.id&&(a.capacidades||[]).some(c=>c==='administrar'||c==='configurar_regras')));
       const nomePorId=Object.fromEntries((pe.data||[]).map(x=>[x.id,x.nome]));
-      const saquesPagos=(sq.data||[]).map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
+      const saquesPagos=(sq.data||[]).filter(x=>x.status==='pago').map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
         week_ending_date:weekEnding(String(x.pago_em||'').slice(0,10)),wallet:null,observacoes:'saque do time'}));
       const meusAc=eu?(ac.data||[]).filter(a=>a.pessoa_id===eu.id):[];
       const caps=[...new Set(meusAc.flatMap(a=>a.capacidades||[]))];
@@ -3997,7 +4245,8 @@ function Dashboard({session,profile}){
       const souAdmin=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id&&(a.capacidades||[]).includes('administrar')));
       const naRaiz=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id));
       setTimeGente({jogadores,eu,podeConfigurar,saquesPagos,caps,temGestao:meusAc.length>0,joga,souAdmin,naRaiz,carregado:true,
-        pessoas:pessoas.map(x=>({id:x.id,nome:x.nome}))});
+        pessoas:pessoas.map(x=>({id:x.id,nome:x.nome})),
+        dinheiro:{saques:sq.error?[]:(sq.data||[]),aportes:apo.error?[]:(apo.data||[]),reloads:rel.error?[]:(rel.data||[])}});
     }catch(e){ console.error(e); }
   };
   const loadAll=async()=>{
@@ -4282,7 +4531,7 @@ function Dashboard({session,profile}){
     const vistos=new Set(); lidos=lidos.filter(r=>{ const k=r.tid; if(vistos.has(k)) return false; vistos.add(k); return true; });
     const semData=lidos.filter(r=>!r.date);   // freeroll (buy-in 0) é torneio de verdade e entra
     lidos=lidos.filter(r=>r.date).sort((a,b)=>a.date===b.date?(a.tid<b.tid?-1:1):(a.date<b.date?-1:1));
-    if(semData.length) issues.push(`${semData.length} resumo(s) sem data legível — deixei de fora.`);
+    if(semData.length) issues.push(`${pl(semData.length,'resumo','resumos')} sem data legível: deixei de fora.`);
 
     // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
     // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
@@ -4349,7 +4598,7 @@ function Dashboard({session,profile}){
           else { inseridos+=(r1.data||[]).length; setTours(t=>[...(r1.data||[]),...t]); }
         }
         // 23505 = o índice único do id do torneio barrou: já tinha sido importado em outro lugar
-        if(barrados) erros.push(`${barrados} torneio(s) já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.`);
+        if(barrados) erros.push(`${pl(barrados,'torneio já tinha','torneios já tinham')} sido importado${barrados===1?'':'s'} em outro aparelho: saia e entre de novo pra ver a lista atualizada.`);
       }
     }
     for(const x of pv.completa){
@@ -4532,6 +4781,7 @@ function Dashboard({session,profile}){
   const sites=Array.isArray(sitesReta)&&sitesReta.length?sitesReta:sitesTime;
   const modalidades=Array.isArray(modsReta)&&modsReta.length?modsReta:modalidadesTime;
   const CURWK=weekEnding(todayISO());
+  const temWpt=!modoTime||sites.some(x=>/wpt/i.test(String(x)));   // no time, WPT só aparece se for sala permitida
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
      (atualiza sozinha a cada torneio lançado; saque de jogador entra pela aba Saques) */
@@ -4549,6 +4799,13 @@ function Dashboard({session,profile}){
   const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
   const bancaAtual = modoTime && sitSel && sitSel.banca!=null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
   const muTela = sitSel && sitSel.mu!=null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // banca no começo da semana (base do stop semanal): no time vem do servidor; no pool e na conta individual, a soma
+  // do que aconteceu antes da semana
+  const iniSemana=weekStart(CURWK);
+  const bancaSemana = modoTime ? (sitSel&&sitSel.banca_inicio_semana!=null ? cent(sitSel.banca_inicio_semana) : bancaAtual)
+    : cent(num(config.banca_inicial)+daily.filter(e=>e.entry_date<iniSemana).reduce((s,e)=>s+resultadoDia(e),0)
+      +ledger.filter(l=>l.entry_date<iniSemana).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0)
+      -wds.filter(w=>String(w.week_ending_date||'')<iniSemana).reduce((s,w)=>s+num(w.valor_sacado),0));
   // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
   const salasTravadas = modoTime && !!sitSel && (sitSel.abertura==='confirmada' || (partesBanca&&(Number(partesBanca.aportes)!==0||Number(partesBanca.saques)!==0)));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
@@ -4597,18 +4854,54 @@ function Dashboard({session,profile}){
   /* alertas */
   const alerts=[];
   if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({key:'makeup:'+p,tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
-  if(bancaAtual<piso) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
+  // no time, piso só vale quando o time definiu um e a banca já tem os saldos de entrada (planilha conferida) (A-051)
+  if(bancaAtual<piso&&!(modoTime&&(!(piso>0)||(sitSel&&sitSel.abertura!=='confirmada')))) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && statusGrade(t,config).status==='fora');
-  if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
-  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=stopDe(config,p).semana*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
-  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=stopDe(config,e.player).dia*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${pl(foraGradeTours.length,'torneio','torneios')} fora da grade nesta semana. ${toque?'Toque':'Clique'} para ver ${foraGradeTours.length===1?'qual':'quais'}.`,items:foraGradeTours});
+  // histórico do dinheiro do time na Banca (A-018, A-062, A-069): capital, reload enviado e saque pago, só leitura
+  const historicoTime=(()=>{ if(!modoTime) return []; const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); const dt=timeGente.dinheiro; if(!pp||!dt) return [];
+    const rlPorAporte=Object.fromEntries((dt.reloads||[]).filter(r=>r.aporte_id).map(r=>[r.aporte_id,r]));
+    return [...(dt.aportes||[]).filter(a=>a.pessoa_id===pp.id).map(a=>({k:'a'+a.id,data:String(a.data||a.criado_em||'').slice(0,10),
+        tipo:rlPorAporte[a.id]?'Reload':num(a.valor)>=0?'Capital do time':'Capital recolhido pelo time',sala:a.sala,valor:num(a.valor)})),
+      ...(dt.saques||[]).filter(q=>q.pessoa_id===pp.id&&q.status==='pago').map(q=>({k:'s'+q.id,data:String(q.pago_em||q.solicitado_em||'').slice(0,10),tipo:'Saque',
+        texto:`${num(q.devolucao)>0?`devolveu ${fmt(q.devolucao)} de MU + `:''}cashout ${fmt(q.cashout)} · ${somenteLeitura?'jogador':'você'} ficou com ${fmt(q.parte_jogador)}`,valor:-(num(q.devolucao)+num(q.cashout))}))]
+      .sort((x,y)=>String(y.data).localeCompare(String(x.data))); })();
+  // o que está em aberto, no Início (A-014, A-051, A-052, A-053, A-055): saque e reload pedidos, planilha, dias sem lançar
+  const faixasInicio=(()=>{ if(!solo) return []; const f=[], quem=somenteLeitura?alunoAberto:null;
+    const sq=modoTime&&sitSel?sitSel.saque_aberto:null, rl=modoTime&&sitSel?sitSel.reload_aberto:null, ab=modoTime&&sitSel?sitSel.abertura:null;
+    if(sq) f.push(sq.status==='aprovado'
+      ?{k:'saque',tom:'warn',titulo:'Saque aprovado',texto:quem?`o time espera ${fmt(sq.total_time)} de ${quem}`:`mande ${fmt(sq.total_time)} pro time; depois o time confirma que recebeu`}
+      :{k:'saque',tom:'warn',titulo:'Saque aguardando aprovação',texto:`pedido em ${dataBR(sq.solicitado_em)} · o time recebe ${fmt(sq.total_time)}${Number(sq.parte_jogador)>0?` · ${quem?quem+' fica':'você fica'} com ${fmt(sq.parte_jogador)}`:''}`});
+    if(rl) f.push({k:'reload',tom:'warn',titulo:rl.status==='aprovado'?'Reload aprovado':'Reload aguardando aprovação',
+      texto:`${fmt(rl.valor)}${rl.sala?` na ${rl.sala}`:''} · ${rl.status==='aprovado'?'o time vai mandar o dinheiro':`pedido em ${dataBR(rl.solicitado_em)}`}`});
+    if(ab==='sem') f.push({k:'planilha',tom:'bad',titulo:quem?'Sem planilha de abertura':'Mande a planilha de abertura',
+      texto:quem?'a banca ainda não tem os saldos de entrada':'com ela o time registra seus saldos de entrada, o MU e o que você já sacou',acao:quem?null:['Mandar agora',()=>setView('banca')]});
+    if(ab==='enviada') f.push({k:'planilha',tom:'warn',titulo:'Planilha aguardando o time conferir',
+      texto:`enviada em ${dataBR(sitSel.abertura_enviada_em)}${sitSel.abertura_banca!=null?` · banca na planilha ${fmt(sitSel.abertura_banca)}`:''}`});
+    const ultimo=tours.reduce((m,t)=>t.entry_date>m?t.entry_date:m,''), dd=ultimo?diasDesde(ultimo):null;
+    if(dd!=null&&dd>=3) f.push({k:'parado',tom:dd>7?'bad':'warn',titulo:quem?`Último torneio lançado: ${dataBR(ultimo)}`:`Seu último torneio lançado é de ${dataBR(ultimo)}`,
+      texto:`${dd} dias atrás${quem?'':'. Se jogou depois disso, lance os jogos'}`});
+    return f; })();
+  // stop já batido pelo jogador na tela (hoje ou na semana): o formulário de torneio avisa antes de lançar mais
+  const stopBatido=(()=>{ if(!solo||somenteLeitura||!players[0]) return null; const p=players[0], st=stopDe(config,p), hoje=todayISO();
+    const resHoje=daily.filter(e=>e.player===p&&e.entry_date===hoje).reduce((a,e)=>a+resultadoDia(e),0), slDia=st.dia*abiDoStop(config,p,tours,hoje).valor;
+    if(slDia>0&&resHoje<=-slDia) return `Você já bateu o stop loss de hoje (${fmtSinal(resHoje)}, limite ${fmt(slDia)}). A regra é parar por hoje.`;
+    const resSem=curWeek[p]?curWeek[p].resultado:0, slSem=st.semana*bancaSemana;
+    if(slSem>0&&resSem<=-slSem) return `Você já bateu o stop loss da semana (${fmtSinal(resSem)}, limite ${fmt(slSem)}). A regra é parar até a semana que vem.`;
+    return null; })();
+  // quem bateu: "Você" na própria conta; o nome no pool e no painel aberto pela gestão
+  const quemBateu=p=>solo&&!somenteLeitura?'Você':p;
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=stopDe(config,p).semana*bancaSemana; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${quemBateu(p)} atingiu o stop loss semanal (${fmtSinal(r)}, limite ${fmt(lim)}: ${pctFmt(stopDe(config,p).semana*100)} da banca do começo da semana).`}); });
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=stopDe(config,e.player).dia*abiDoStop(config,e.player,tours,e.entry_date).valor; if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${quemBateu(e.player)} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmtSinal(resultadoDia(e))}, limite ${fmt(sl)}).`}); });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
   // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
+  // pela data do torneio (não a do cadastro): é o que a gestão vê como "último lançamento" (A-053)
   if(tours.length>0){
-    const ultimo=tours.reduce((m,t)=>{ const d=String(t.created_at||t.entry_date||'').slice(0,10); return d>m?d:m; },'');
-    if(ultimo){ const dias=Math.round((Date.parse(todayISO())-Date.parse(ultimo))/86400000);
-      if(dias>=2) alerts.push({key:'parado',tone:C.gold,text:`Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
+    const ultimo=tours.reduce((m,t)=>t.entry_date>m?t.entry_date:m,'');
+    if(ultimo){ const dias=diasDesde(ultimo);
+      if(dias>=3) alerts.push({key:'parado',tone:C.gold,text:somenteLeitura?`O último torneio lançado de ${alunoAberto} é de ${dataBR(ultimo)} (${dias} dias).`
+        :`Seu último torneio lançado é de ${dataBR(ultimo)} (${dias} dias). Se jogou depois disso, lance os jogos pra manter a banca e as estatísticas em dia.`}); }
   }
 
   // resultado faltando: dia com mãos importadas e NENHUM torneio lançado pro jogador (depois do 1º torneio dele). Mão de
@@ -4624,8 +4917,13 @@ function Dashboard({session,profile}){
   // sininho: alertas do painel (enquanto a situação durar e ninguém apagar) + avisos do aparelho + avisos do time
   const alertasPainel=alerts.map(a=>({key:a.key||a.text,painel:true,tipo:'painel',titulo:a.tone===C.red?'Atenção na banca':'Aviso',texto:a.text,tone:a.tone,items:a.items}))
     .filter(a=>!avApagados.includes(a.key)).map(a=>({...a,id:'p-'+a.key,lido_em:avLidos.includes(a.key)?'lido':null}));
-  const todosAvisos=[...alertasPainel,...avLocais,...avisos.map(x=>({...x,servidor:true}))]
-    .sort((x,y)=>String(y.criado_em||'9').localeCompare(String(x.criado_em||'9')));
+  const todosAvisos=(()=>{ const l=[...alertasPainel,...avLocais,...avisos.map(x=>({...x,servidor:true}))]
+      .sort((x,y)=>String(y.criado_em||'9').localeCompare(String(x.criado_em||'9')));
+    const vistos={}, out=[];
+    l.forEach(a=>{ const k=a.servidor?`${a.tipo}|${a.ref_id||''}|${a.titulo}|${a.texto||''}`:'id|'+a.id;
+      if(vistos[k]){ vistos[k].vezes=(vistos[k].vezes||1)+1; if(!a.lido_em) vistos[k].lido_em=null; vistos[k].ids=[...(vistos[k].ids||[vistos[k].id]),a.id]; return; }
+      vistos[k]={...a}; out.push(vistos[k]); });
+    return out; })();
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
@@ -4659,7 +4957,7 @@ function Dashboard({session,profile}){
   const FIELDS={
     tour:[
       {k:'entry_date',label:'Data',type:'date',def:todayISO()},
-      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'player',label:'Jogador',type:'select',opts:players,def:players[0],oculto:players.length===1},
       {k:'tournament_name',label:'Torneio',type:'text',full:true},
       {k:'site',label:'Site',type:'select',opts:sites},
       {k:'modality',label:'Modalidade',type:'select',opts:modalidades},
@@ -4682,7 +4980,7 @@ function Dashboard({session,profile}){
     ],
     wd:[
       {k:'week_ending_date',label:'Semana (domingo de fechamento)',type:'date',def:CURWK,full:true},
-      {k:'player',label:'Jogador',type:'select',opts:players},
+      {k:'player',label:'Jogador',type:'select',opts:players,def:players[0],oculto:players.length===1},
       {k:'wallet',label:'Saiu de qual carteira',type:'select',opts:['Não informar',...WALLETS]},
       {k:'valor_sacado',label:'Valor sacado (US$)',type:'money',def:'0'},
       {k:'observacoes',label:'Observações',type:'textarea',full:true},
@@ -4701,6 +4999,9 @@ function Dashboard({session,profile}){
   const MODAL_TABLE={tour:'tournaments',bank:'bankroll_ledger',wd:'withdrawals'};
   const MODAL_STATE={tour:[tours,setTours],bank:[ledger,setLedger],wd:[wds,setWds]};
 
+  // padrão do time editado no bloco de regras ("Time inteiro"): cada regra da reta aponta pra sua coluna da configuração
+  const PADRAO_TIME={abi_max:{label:'ABI máximo (reta sem grade)',kind:'money',key:'abi_max_player1'},stop_dia_buyins:{label:'Stop loss diário (buy-ins)',kind:'money',key:'stoploss_daily_buyins'},
+    stop_semana_pct:{label:'Stop loss semanal',kind:'percent',key:'stoploss_weekly_pct'},sites:{label:'Sites permitidos',kind:'list',key:'sites_permitidos'},modalidades:{label:'Modalidades permitidas',kind:'list',key:'modalidades_permitidas'}};
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
   let MAIN_TABS=['painel','torneios','diario','stats'];
   let nav=[
@@ -4733,7 +5034,7 @@ function Dashboard({session,profile}){
       nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},
         ...(semDinheiro?[]:[{id:'banca',label:'Banca',Icon:IcoStack}]),
         ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Ajustes',Icon:IcoGear}])];
-      MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','stats','time'];
+      MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','banca','time'];
     }
   }
   const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
@@ -4858,13 +5159,14 @@ function Dashboard({session,profile}){
               if(avisos.some(x=>!x.lido_em)){ setAvisos(a=>a.map(x=>x.lido_em?x:{...x,lido_em:new Date().toISOString()})); try{ await sb.rpc('marcar_avisos_lidos'); }catch(e){} } }}
             onApagar={async av=>{ if(av.painel){ setAvApagados(l=>[...l,av.key]); return; }
               if(av.local){ setAvLocais(l=>l.filter(x=>x.id!==av.id)); return; }
-              setAvisos(a=>a.filter(x=>x.id!==av.id)); try{ await sb.rpc('apagar_aviso',{p_id:av.id}); }catch(e){} }}
+              const ids=av.ids||[av.id]; setAvisos(a=>a.filter(x=>!ids.includes(x.id))); try{ for(const id of ids) await sb.rpc('apagar_aviso',{p_id:id}); }catch(e){} }}
             onLimpar={async()=>{ setAvApagados(l=>[...l,...alertasPainel.map(x=>x.key)]); setAvLocais([]);
               if(avisos.length){ setAvisos([]); try{ await sb.rpc('apagar_avisos'); }catch(e){} } }}
-            onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel){
-              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
-              else setView('time'); } }}/>
-          <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
+            onIr={av=>{ if(av.items&&av.items.length) return setAlertDetail({items:av.items});
+              if(av.painel){ const k=String(av.key||''); return setView(k.startsWith('parado')||k.startsWith('semres')?'torneios':k.startsWith('piso')?'banca':'painel'); }
+              if(av.local) return;
+              if(gestaoAtiva) return setView({saque:'g_financeiro',reload:'g_financeiro',planilha:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',capital:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
+              setView({grade:'time',planilha:'time',entrada:'time'}[av.tipo]||(modoTime?'banca':'painel')); }}/>
         </div>
       </div>
       {podeTrocarModo&&<div className="mobile-only" style={{marginBottom:14}}><ModoSwitch modo={gestaoAtiva?'gestao':'jogo'} onTrocar={trocarModo} compacto/></div>}
@@ -4883,7 +5185,8 @@ function Dashboard({session,profile}){
       </div>}
       {modoTime&&!timeGente.carregado&&<div style={{display:'grid',placeItems:'center',padding:60}}><div className="spin"/></div>}
       {/* gestor olhando o painel de um aluno: faixa fixa com o nome e o caminho de volta */}
-      {somenteLeitura&&<div data-aluno-aberto style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16}}>
+      {somenteLeitura&&<div data-aluno-aberto style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:C.plumSoft,borderRadius:14,padding:'10px 14px',marginBottom:16,
+        position:'sticky',top:8,zIndex:20,boxShadow:'0 10px 24px -18px rgba(25,35,29,.5)',border:`1px solid ${C.border}`}}>
         <span style={{fontSize:14,color:P,flex:1,minWidth:180}}>Painel de <b>{alunoAberto}</b> · só leitura: você vê tudo, só {alunoAberto} lança e muda</span>
         <button onClick={fecharAluno} style={{padding:'8px 14px',borderRadius:11,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:13,cursor:'pointer'}}>Voltar para a gestão</button>
       </div>}
@@ -4924,7 +5227,7 @@ function Dashboard({session,profile}){
           {partesBanca?<div data-partes-banca style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Salas {fmt(partesBanca.salas)}</span><span>Jogos {fmtSinal(partesBanca.resultados)}</span>
             {Number(partesBanca.movimentos)!==0&&<span>Movimentos {fmtSinal(partesBanca.movimentos)}</span>}
-            {Number(partesBanca.aportes)!==0&&<span>Capital do time {fmtSinal(partesBanca.aportes)}</span>}
+            {Number(partesBanca.aportes)!==0&&<span>Reload e capital do time {fmtSinal(partesBanca.aportes)}</span>}
             {Number(partesBanca.saques)>0&&<span>Saques −{fmt(partesBanca.saques)}</span>}
             {partesBanca.corte&&<span style={{opacity:.85}}>conta o que veio depois de {dataBR(partesBanca.corte)}</span>}
           </div>:!somenteLeitura&&<div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
@@ -4938,34 +5241,46 @@ function Dashboard({session,profile}){
             <span>Piso mínimo {fmt(piso)}</span>
             <span>{bancaAtual>=piso?`${fmt(bancaAtual-piso)} acima do piso`:'abaixo do piso!'}</span>
           </div></>}
-          {modoTime&&muTela!=null&&(()=>{ const mk=mkDe(bancaAtual,muTela); return <div data-painel-mk style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600,display:'flex',gap:'4px 14px',flexWrap:'wrap'}}>
+          {modoTime&&muTela!=null&&(()=>{ const mk=mkDe(bancaAtual,muTela), ab=sitSel?sitSel.abertura:null;
+            // sem a planilha conferida, a banca ainda não tem os saldos de entrada: MK aqui seria um número falso
+            if(ab==='sem'||ab==='enviada') return <div data-painel-mk="sem-foto" style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600}}>
+              {ab==='sem'?'Sem planilha de abertura: a banca ainda não tem os saldos de entrada, então MU e MK ainda não valem.':'Planilha aguardando o time conferir: MU e MK passam a valer depois da conferência.'}</div>;
+            const pedido=sitSel&&sitSel.saque_aberto;
+            return <div data-painel-mk style={{marginTop:12,background:'rgba(255,255,255,.14)',borderRadius:12,padding:'9px 12px',fontSize:13.5,fontWeight:600,display:'flex',gap:'4px 14px',flexWrap:'wrap'}}>
             <span>MU {fmt(muTela)}</span><span>{mk<0?`MK ${fmtSinal(mk)}`:`Profit ${fmtSinal(mk)}`}</span>
-            <span style={{opacity:.85}}>{mk<0?'saque só depois de sair do MK':'fora de MK: dá pra pedir saque'}</span></div>; })()}
+            <span style={{opacity:.85}}>{pedido?'saque em andamento':mk<0?'saque só depois de sair do MK':'fora de MK: pode pedir saque'}</span></div>; })()}
           </>}
         </Card>
 
-        {/* avisos como pop-up: aparecem uma vez e somem (nada de card fixo poluindo o Painel) */}
+        {faixasInicio.length>0&&<div data-faixas-inicio style={{display:'flex',flexDirection:'column',gap:8}}>
+          {faixasInicio.map(f=><div key={f.k} data-faixa={f.k} style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',padding:'11px 14px',borderRadius:14,
+            border:`1.5px solid ${f.tom==='bad'?C.red+'55':f.tom==='warn'?C.gold+'66':C.border}`,background:f.tom==='bad'?C.redSoft:f.tom==='warn'?C.goldSoft:C.plumSoft,color:C.ink,fontSize:13.5,lineHeight:1.45}}>
+            <span style={{flex:1,minWidth:200}}><b>{f.titulo}</b>{f.texto?<> · {f.texto}</>:null}</span>
+            {f.acao&&<button onClick={f.acao[1]} style={{...btnS,padding:'7px 12px'}}>{f.acao[0]}</button>}</div>)}
+        </div>}
 
 
         <ResumoTorneios tours={tours} players={players} solo={solo}
           abi={tours.length?tours.reduce((s,t)=>s+nominalTorneio(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0}/>
 
-        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaAtual={bancaAtual}/>
+        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaSemana={bancaSemana} tours={tours} leitura={somenteLeitura?alunoAberto:null}/>
 
         {/* fora da grade fica FIXO: o pop-up passa em 8s e some pra sempre, e essa é a
             informação que o produto existe pra mostrar. Uma linha, sem parágrafo. */}
         {foraGradeTours.length>0&&<button onClick={()=>setAlertDetail({items:foraGradeTours})}
           style={{display:'flex',alignItems:'center',gap:9,width:'100%',textAlign:'left',cursor:'pointer',
             padding:'12px 15px',borderRadius:14,border:`1.5px solid ${C.red}55`,background:C.redSoft,color:C.red,fontWeight:700,fontSize:13.5}}>
-          <IcoAlert s={17}/><span style={{flex:1,minWidth:0}}>{foraGradeTours.length} torneio{foraGradeTours.length!==1?'s':''} fora da grade nesta semana</span>
+          <IcoAlert s={17}/><span style={{flex:1,minWidth:0}}>{foraGradeTours.length} torneio{foraGradeTours.length!==1?'s':''} fora da grade nesta semana (desde {dataBR(iniSemana)})</span>
           <span style={{fontSize:18,flexShrink:0}}>›</span>
         </button>}
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={fmt(resSemanaAtual)} sub={resSemanaAtual===0&&!daily.some(e=>weekEnding(e.entry_date)===CURWK)?`semana começando · ${weekLabel(CURWK)}`:weekLabel(CURWK)}/>
+          <Stat Icon={resSemanaAtual>=0?IcoUp:IcoDown} tone={resSemanaAtual>=0?C.greenMid:C.red} bg={resSemanaAtual>=0?C.greenSoft:C.redSoft} label="Resultado da semana" value={resSemanaAtual===0?fmt(0):fmtSinal(resSemanaAtual)}
+            sub={!daily.some(e=>weekEnding(e.entry_date)===CURWK)?(todayISO()===iniSemana?`semana começando · ${weekLabel(CURWK)}`:`nada lançado nesta semana · ${weekLabel(CURWK)}`):weekLabel(CURWK)}/>
           {!solo&&<Stat Icon={IcoAlert} tone={makeUpTotal>0?C.gold:C.greenMid} bg={makeUpTotal>0?C.goldSoft:C.greenSoft} label="Make-up em aberto" value={fmt(makeUpTotal)} sub={players.map(p=>`${p.split(' ')[0]}: ${fmt(curMakeUp[p])}`).join(' · ')}/>}
           {!solo&&<Stat Icon={IcoCashOut} tone={P} bg={C.plumSoft} label="Saque autorizado" value={fmt(saqueAutTotal)} sub="semana atual, respeitando o piso"/>}
-          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Lucro acumulado':'Lucro da pool (acum.)'} value={fmt(solo?resTotalGeral:lucroPoolAcum)} sub={solo?'desde o começo':`pago em saques: ${fmt(totalPago)}`}/>
+          <Stat Icon={IcoChip} tone={C.green} bg={C.greenSoft} label={solo?'Resultado dos jogos':'Lucro da pool (acum.)'} value={solo?(resTotalGeral===0?fmt(0):fmtSinal(resTotalGeral)):fmt(lucroPoolAcum)}
+            sub={solo?(modoTime?'soma dos torneios lançados (não é o lifetime do contrato)':'soma dos torneios desde o começo'):`pago em saques: ${fmt(totalPago)}`}/>
         </div>
 
         {!solo&&<Recolhivel titulo="Divisão do dinheiro" sub='Acumulado autorizado e ainda não sacado' chip={fmt(players.reduce((s,p)=>s+aReceber[p],0))}>
@@ -4986,8 +5301,8 @@ function Dashboard({session,profile}){
         <Recolhivel titulo="Gráficos" sub="curva de lucro, banca, semana a semana e volume" chip={`${solo?3:5} gráficos`}>
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>Passe o dedo pra ver os valores.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>{solo?'Resultado acumulado':'Lucro acumulado por jogador'}</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>{toque?'Passe o dedo':'Passe o mouse'} pra ver os valores.</div>
           <MultiLineChart labels={lucroLabels} series={lucroSeries}/>
         </Card>
 
@@ -5047,9 +5362,9 @@ function Dashboard({session,profile}){
               {tsImp.res.erros.length>0&&<div style={{marginTop:6,color:C.red}}>{tsImp.res.erros.map((x,i)=><div key={i}>• {x}</div>)}</div>}
             </div>}
           </Card>
-          <Recolhivel titulo="Onde pego esse arquivo?" sub="GG · WPT · PokerStars">
+          <Recolhivel titulo="Onde pego esse arquivo?" sub={['GG',...(temWpt?['WPT']:[]),'PokerStars'].join(' · ')}>
             <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.6}}>
-              <b style={{color:C.ink}}>GG e WPT:</b> PokerCraft → o <b>Tournament Summary</b> do torneio (o resultado, não as mãos). Pode mandar a pasta toda ou o .zip.<br/>
+              <b style={{color:C.ink}}>{temWpt?'GG e WPT:':'GG:'}</b> PokerCraft → o <b>Tournament Summary</b> do torneio (o resultado, não as mãos). Pode mandar a pasta toda ou o .zip.<br/>
               <b style={{color:C.ink}}>PokerStars:</b> o resumo que chega por e-mail, ou o do histórico local.<br/>
               O sistema lê nome, buy-in, re-entries, field, colocação e premiação — você <b>confere antes de salvar</b> e reimportar a mesma pasta não duplica nada.<br/>
               Os arquivos de <b>mãos</b> (hand history) vão na aba <b>Stats</b>, não aqui.
@@ -5064,12 +5379,12 @@ function Dashboard({session,profile}){
 
       {/* ---------------- DIÁRIO (resumo por jogador/dia, editável pelos torneios) ---------------- */}
       {view==='diario'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:12}}>
-        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. Toque num dia pra conferir/corrigir.</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
+        <div><div style={{fontSize:13,color:C.inkSoft,fontWeight:600}}>Resumo por jogador e dia — monta sozinho dos torneios. {somenteLeitura?(toque?'Toque num dia para ver os torneios.':'Clique num dia para ver os torneios.'):(toque?'Toque num dia pra conferir ou corrigir.':'Clique num dia pra conferir ou corrigir.')}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,lineHeight:1.1}}>Diário</div></div>
 
         {/* filtros */}
         <Card style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:12}}>
-            <Seg label="Jogador" value={diF.player} options={['Todos',...players]} onChange={v=>setDiF(f=>({...f,player:v}))}/>
+            {!solo&&<Seg label="Jogador" value={diF.player} options={['Todos',...players]} onChange={v=>setDiF(f=>({...f,player:v}))}/>}
             {diarySites.length>1&&<Seg label="Plataforma" value={diF.site} options={diarySites} onChange={v=>setDiF(f=>({...f,site:v}))}/>}
             {diaryMods.length>1&&<Seg label="Modalidade" value={diF.mod} options={diaryMods} onChange={v=>setDiF(f=>({...f,mod:v}))}/>}
           </div>
@@ -5113,14 +5428,19 @@ function Dashboard({session,profile}){
 
       {/* ---------------- SEMANAL ---------------- */}
       {view==='semanal'&&<div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-        <Card style={{padding:20}}>
+        {modoTime&&<Card data-contrato-semana style={{padding:20}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Contrato do time</h3>
+          <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>{sitSel&&sitSel.contrato?faixasTexto(sitSel.contrato):'Sem contrato definido pelo time ainda.'}</div>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:6,lineHeight:1.5}}>A divisão vale no saque: o cashout é dividido pela faixa do lifetime (o que já foi sacado + o profit). As semanas abaixo mostram só o resultado dos jogos.</div>
+        </Card>}
+        {!solo&&<Card style={{padding:20}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:'0 0 4px'}}>Geral da pool</h3>
           <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Split {pctFmt(num(config.player_pct)*100)} pro jogador · {pctFmt((1-num(config.player_pct))*100)} pra pool</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Lucro acumulado da pool</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:C.green}}>{fmt(lucroPoolAcum)}</div></div>
             <div style={{padding:14,borderRadius:14,background:C.bg}}><div style={{fontSize:12.5,color:C.inkSoft,fontWeight:700}}>Total pago em saques</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,color:P}}>{fmt(totalPago)}</div></div>
           </div>
-        </Card>
+        </Card>}
         {!solo&&<SemanalGeral geral={geralSemana} curMonth={curMonthISO}/>}
         {players.map(p=><SemanalPlayer key={p} player={p} weeks={weeksByPlayer[p]||[]} config={config} curMonth={curMonthISO} makeUpAtual={curMakeUp[p]} solo={solo}/>)}
       </div>}
@@ -5140,7 +5460,7 @@ function Dashboard({session,profile}){
           <Stat Icon={IcoPanel} tone={mRoi>=0?C.greenMid:C.red} bg={mRoi>=0?C.greenSoft:C.redSoft} label="ROI do mês" value={pctFmt(mRoi)} sub={`sobre ${fmt(mBuyins)} em buy-ins`}/>
         </div>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>Por jogador</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 12px'}}>{solo?'Resumo do mês':'Por jogador'}</h3>
           {perPlayerMonth.map(pm=><div key={pm.p} style={{padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <span style={{width:10,height:10,borderRadius:99,background:pcolor(pm.p)}}/>
@@ -5159,14 +5479,14 @@ function Dashboard({session,profile}){
             </div>
           </div>)}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginTop:14}}>
-            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>
-            <div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>
+            {!solo&&<div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Mais lucrativo</div><div style={{fontWeight:700,marginTop:2}}>{maisLucrativo?`${maisLucrativo.p} (${fmt(maisLucrativo.res)})`:'—'}</div></div>}
+            {!solo&&<div style={{padding:12,borderRadius:12,background:C.bg}}><div style={{fontSize:12,color:C.inkSoft,fontWeight:700}}>Maior volume</div><div style={{fontWeight:700,marginTop:2}}>{maiorVolume?`${maiorVolume.p} (${fmt(maiorVolume.vol)})`:'—'}</div></div>}
             <div style={{padding:12,borderRadius:12,background:C.greenSoft}}><div style={{fontSize:12,color:C.green,fontWeight:700}}>Melhor dia</div><div style={{fontWeight:700,marginTop:2}}>{melhorDia?<>{dLabel(melhorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(melhorDia.r)}</span></>:'—'}</div></div>
             <div style={{padding:12,borderRadius:12,background:C.redSoft}}><div style={{fontSize:12,color:C.red,fontWeight:700}}>Pior dia</div><div style={{fontWeight:700,marginTop:2}}>{piorDia?<>{dLabel(piorDia.d)} · <span style={{whiteSpace:'nowrap'}}>{fmt(piorDia.r)}</span></>:'—'}</div></div>
           </div>
         </Card>
         {monthTours.length>0&&<Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>{solo?'Onde você lucra':'Onde vocês lucram'}</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>{somenteLeitura?`Onde ${alunoAberto} lucra`:solo?'Onde você lucra':'Onde vocês lucram'}</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:10}}>Resultado e ROI por site e por modalidade neste mês.</div>
           {!solo&&<div style={{marginBottom:14}}><Seg value={mensalWho} options={['Geral',...players]} onChange={setMensalWho}/></div>}
           {monthToursWho.length===0?<Empty>Sem torneios de {mensalWho} neste mês.</Empty>:[['Por site',bySite],['Por modalidade',byModality]].map(([titulo,rows])=><div key={titulo} style={{marginBottom:14}}>
@@ -5536,9 +5856,9 @@ function Dashboard({session,profile}){
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontWeight:700,fontSize:13.5}}>{dLabel(x.date)} · {(x.hh&&(x.hh.tournament_name||('#'+x.hh.site_tournament_id)))||(x.t&&(x.t.tournament_name||'Torneio'))} <span style={{color:C.inkSoft,fontWeight:600}}>· {(x.hh&&x.hh.site)||(x.t&&x.t.site)||''}</span></div>
                 <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>
-                  {x.tipo==='ok'&&`Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${x.hh.hands} mão(s) no arquivo`}
+                  {x.tipo==='ok'&&`Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${pl(x.hh.hands,'mão','mãos')} no arquivo`}
                   {x.tipo==='buyin'&&`Lançado ${fmt(x.t.buyin)} mas as mãos mostram ${fmt(x.hh.buyin)} — confere qual está certo e corrige o lançamento`}
-                  {x.tipo==='semlanc'&&`As mãos provam que esse torneio foi jogado (${x.hh.hands} mão(s), buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`}
+                  {x.tipo==='semlanc'&&`As mãos provam que esse torneio foi jogado (${pl(x.hh.hands,'mão','mãos')}, buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`}
                   {x.tipo==='semhh'&&`Lançado ${fmt(x.t.buyin)}${num(x.t.prize)>0?` · prêmio ${fmt(x.t.prize)}`:''} — sem hand history importado pra comprovar (importe as mãos na aba Stats)`}
                 </div>
               </div>
@@ -5582,7 +5902,7 @@ function Dashboard({session,profile}){
             <div><div style={{fontSize:12.5,opacity:.85}}>Salas</div><div style={{fontWeight:700,fontSize:15}}>{fmt(partesBanca.salas)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.resultados)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Movimentos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.movimentos)}</div></div>
-            <div><div style={{fontSize:12.5,opacity:.85}}>Capital do time</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.aportes)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Reload e capital do time</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.aportes)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(partesBanca.saques)}</div></div>
           </div>
           {partesBanca.corte&&<div style={{fontSize:12.5,opacity:.85,marginTop:10}}>Jogos e movimentos até {dataBR(partesBanca.corte)} já estão no saldo das salas (planilha ou entrada no time): contam só os de depois.</div>}</>
@@ -5594,9 +5914,17 @@ function Dashboard({session,profile}){
           </div>}
         </Card>
 
+        {modoTime&&!somenteLeitura&&!gestaoAtiva&&timeGente.joga&&<TimeApp secao="dinheiro" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+        {modoTime&&!semDinheiro&&historicoTime.length>0&&<Card data-historico-time style={{padding:20}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Reload, capital e saques</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,marginBottom:6,lineHeight:1.5}}>O time lança quando manda ou recebe dinheiro. Só leitura: já está na banca, não lance de novo em Movimentos.</div>
+          {historicoTime.map(e=><div key={e.k} data-historico={e.tipo} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:`1px solid ${C.border}`}}>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>{e.tipo}{e.sala?` · ${e.sala}`:''}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dataBR(e.data)}{e.texto?` · ${e.texto}`:''}</div></div>
+            <span style={{fontWeight:800,fontSize:15,color:e.valor>=0?C.greenMid:C.red,flexShrink:0}}>{fmtSinal(e.valor)}</span></div>)}
+        </Card>}
         {modoTime?<Card data-salas-time style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Salas</h3>
-          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>Saldo de cada sala na foto: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'o que você tinha quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Saldo de entrada (por sala)</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>O que {somenteLeitura?`${alunoAberto} tinha`:'você tinha'} em cada sala na entrada: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.{somenteLeitura?` Só leitura: só ${alunoAberto} muda.`:''}</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
             {(salasTravadas||somenteLeitura?wallets.map(w=>w.wallet):[...new Set([...wallets.map(w=>w.wallet),...WALLETS.filter(x=>x!=='Reserva')])]).map(w=>{ const wr=wallets.find(x=>x.wallet===w); const editar=!salasTravadas&&!somenteLeitura;
               return <button key={w} data-sala={w} disabled={!editar} onClick={()=>editar&&setQuickEdit({label:`Saldo inicial · ${w}`,hint:'O que você tinha nessa sala quando entrou no time, antes de qualquer reload. Depois do primeiro reload ou saque, esse saldo trava (o reload já entra sozinho).',kind:'money',current:wr?num(wr.saldo_inicial):0,onSave:nv=>saveWallet(jogadorSel,w,nv)})}
@@ -5642,14 +5970,15 @@ function Dashboard({session,profile}){
       </div>}
 
       {/* ---------------- CONFIG ---------------- */}
-      {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+      {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView} onMarca={loadAll}/>}
       {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}
+        onPadrao={timeGente.podeConfigurar?k=>{ const row=PADRAO_TIME[k]; if(row) setQuickEdit({label:`${row.label} · padrão do time`,kind:row.kind,current:config[row.key],onSave:nv=>askSaveConfig(row,nv)}); }:null}
         marca={ws?{nome:ws.marca_nome||'',logo:ws.marca_logo||null}:null} nomeTime={ws?.name} onMarca={loadAll}/>}
       {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
-        {!(gestaoAtiva&&view==='config')&&<>
+        {!modoTime&&<>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{modoTime?(view==='g_regras'?'Regras de jogo':'Configurações do time'):'Configurações da pool'}</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>Toque no lápis pra ajustar. Todos veem a mesma configuração.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:21,fontWeight:600,margin:'0 0 4px'}}>{solo?'Configurações':'Configurações da pool'}</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12}}>{toque?'Toque no lápis':'Clique no lápis'} pra ajustar.{solo?'':' Todos veem a mesma configuração.'}</div>
           {modoTime&&<div data-ajustes-time style={{fontSize:12.5,color:C.inkSoft,marginTop:-6,marginBottom:8}}>{timeGente.podeConfigurar?'Regras do time inteiro: valem pra todos os jogadores.':'Regras do time: só quem configura o time altera.'}</div>}
           {(solo?[
             ...(modoTime?[]:[{label:'Seu nome',val:config.player1_name,kind:'text',key:'player1_name'}]),
@@ -5657,7 +5986,7 @@ function Dashboard({session,profile}){
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             ...(modoTime?[]:[{label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)}]),
-            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:dataBR(config.week_start_date)},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]:[
@@ -5673,12 +6002,12 @@ function Dashboard({session,profile}){
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
-            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:dataBR(config.week_start_date)},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{row.label}</div><div style={{fontSize:13,color:C.inkSoft,marginTop:1,overflow:'hidden',textOverflow:'ellipsis'}}>{row.show!=null?row.show:String(row.val)}</div></div>
-            {(!modoTime||timeGente.podeConfigurar)&&<button onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}
+            {(!modoTime||timeGente.podeConfigurar)&&<button aria-label={`Mudar ${row.label}`} onClick={()=>setQuickEdit({label:row.label,kind:row.kind,current:row.val,onSave:nv=>askSaveConfig(row,nv)})} style={{width:38,height:38,borderRadius:11,border:'none',background:C.plumSoft,color:P,cursor:'pointer',display:'grid',placeItems:'center',flexShrink:0}}><IcoPencil s={17}/></button>}
           </div>)}
         </Card>
         <Card style={{padding:20,marginTop:16}}>
@@ -5722,8 +6051,9 @@ function Dashboard({session,profile}){
           <button onClick={()=>{setTour(1); setView(TOUR_STEPS[0].v);}} style={{marginTop:12,marginLeft:8,padding:'12px 20px',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Rever o tour do sistema</button>
         </Card>}
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Sua conta</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troca a tua senha quando quiser. Só afeta o teu login.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Minha conta</h3>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troque sua senha quando quiser.</div>
+          <button className="mobile-only" data-sair-conta onClick={sair} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12}}><IcoLogout s={16}/>Sair da conta</button>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
             {!isStandalone()&&<button onClick={instalar} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoChip s={18}/>Instalar na tela inicial</button>}
@@ -5747,8 +6077,9 @@ function Dashboard({session,profile}){
 
     {/* nav mobile: só o essencial + "Mais" */}
     <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
-      {nav.filter(n=>MAIN_TABS.includes(n.id)).map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
-      <NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!nav.filter(n=>MAIN_TABS.includes(n.id)).some(n=>navAtiva(n.id))} onClick={()=>setMenuOpen(true)} mobile/>
+      {(()=>{ const fora=nav.filter(n=>!MAIN_TABS.includes(n.id)), barra=fora.length===1?[...nav.filter(n=>MAIN_TABS.includes(n.id)),fora[0]]:nav.filter(n=>MAIN_TABS.includes(n.id));
+        return <>{barra.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={navAtiva(n.id)} onClick={()=>{setView(n.id);setMenuOpen(false);}} mobile/>)}
+          {fora.length>1&&<NavBtn Icon={IcoMenu} label="Mais" active={menuOpen||!barra.some(n=>navAtiva(n.id))} onClick={()=>setMenuOpen(true)} mobile/>}</>; })()}
     </nav>
 
     {/* gaveta "Mais" (demais telas) */}
@@ -5759,8 +6090,9 @@ function Dashboard({session,profile}){
           <button onClick={()=>setMenuOpen(false)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-          {nav.filter(n=>!MAIN_TABS.includes(n.id)).map(n=><button key={n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,padding:'16px 14px',borderRadius:14,border:`1.5px solid ${view===n.id?P:C.border}`,background:view===n.id?C.plumSoft:C.warm,color:view===n.id?P:C.ink,fontWeight:700,fontSize:15,cursor:'pointer'}}><n.Icon s={20}/>{n.label}</button>)}
+          {nav.filter(n=>!MAIN_TABS.includes(n.id)).map(n=><button key={n.id} onClick={()=>{setView(n.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',justifyContent:'flex-start',textAlign:'left',gap:10,padding:'16px 14px',borderRadius:14,border:`1.5px solid ${view===n.id?P:C.border}`,background:view===n.id?C.plumSoft:C.warm,color:view===n.id?P:C.ink,fontWeight:700,fontSize:15,cursor:'pointer',lineHeight:1.25}}><span style={{flexShrink:0,display:'grid'}}><n.Icon s={20}/></span><span style={{minWidth:0}}>{n.label}</span></button>)}
         </div>
+        <button data-sair-mais onClick={sair} style={{marginTop:14,width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer'}}><IcoLogout s={16}/>Sair da conta</button>
       </div>
     </div>}
 
@@ -5931,7 +6263,7 @@ function Dashboard({session,profile}){
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
       if(type==='transfer') return <AddModal title="Nova transferência" fields={FIELDS.transfer} initial={initial} onClose={()=>setModal(null)} onSave={addTransfer}/>;
       const [list,setter]=MODAL_STATE[type]; return (
-      <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)}
+      <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)} aviso={type==='tour'?stopBatido:null}
         onSave={d=>add(MODAL_TABLE[type],normalizeRow(type,d),setter,list)}/>);})()}
 
     {/* modal editar */}
@@ -6048,9 +6380,9 @@ function Dashboard({session,profile}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:480,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'80vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:20,fontWeight:600,margin:0,display:'flex',alignItems:'center',gap:8}}><span style={{color:C.red}}><IcoAlert s={20}/></span>Fora da grade</h3>
-          <button onClick={()=>setAlertDetail(null)} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button onClick={()=>setAlertDetail(null)} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
-        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana fora da grade.{somenteLeitura?'':' Toque no lápis pra corrigir.'}</div>
+        <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Torneios desta semana (desde {dataBR(iniSemana)}) fora da grade.{somenteLeitura?'':` ${toque?'Toque':'Clique'} no lápis pra corrigir.`}</div>
         {sortByCreated(alertDetail.items||[]).map(t=><Row key={t.id} onEdit={somenteLeitura?null:()=>{setAlertDetail(null);editTour(t);}} onDelete={somenteLeitura?null:()=>{delTour(t); setAlertDetail(d=>d&&{...d,items:d.items.filter(x=>x.id!==t.id)});}}
           left={<><span style={{width:38,height:38,borderRadius:11,background:C.redSoft,display:'grid',placeItems:'center',flexShrink:0,color:C.red}}><IcoTrophy s={18}/></span>
             <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5}}>{t.tournament_name||'Torneio'} <span style={{color:PLAYER_COLORS[players.indexOf(t.player)]||C.inkSoft,fontWeight:700}}>· {t.player}</span></div>
@@ -6169,7 +6501,7 @@ function App(){
     const {data:sub}=sb.auth.onAuthStateChange((e,s)=>{ setSession(s); if(e==='PASSWORD_RECOVERY') setRecovery(true); });
     // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
     if(LINK_EMAIL){
-      const aviso='Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      const aviso='Esse link do e-mail venceu ou já foi usado. Entre com seu e-mail e senha. Se era pra trocar a senha, peça outro em "Esqueci minha senha".';
       if(LINK_EMAIL.invalido) setLinkAviso(aviso);
       else sb.auth.verifyOtp(LINK_EMAIL).then(({error})=>{ if(error) setLinkAviso(aviso); }).catch(()=>setLinkAviso(aviso));
     }

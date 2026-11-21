@@ -41,7 +41,7 @@ await cenario('gestor que joga', time(), async (page) => {
   ok(/Painel de Maria/.test(await page.locator('[data-aluno-aberto]').innerText()), 'abre o painel da Maria com a faixa "só leitura"');
   await irPara(page, 'Torneios');
   let t = await page.locator('main').innerText();
-  ok(/TORNEIOS JOGADOS\s*1\s*em 1 dia/i.test(t) && /1 torneio · Maria/.test(t) && /−US\$\s20,00/.test(t), 'só os torneios da Maria');
+  ok(/TORNEIOS JOGADOS\s*1\s*1 dia de jogo/i.test(t) && /1 torneio · Maria/.test(t) && /−US\$\s20,00/.test(t), 'só os torneios da Maria');
   ok(await page.getByRole('button', { name: 'Adicionar' }).count() === 0 && !/Importar do site/.test(t), 'só leitura: sem lançar nem importar pelo aluno');
   ok(!/Meu time|Ajustes/.test(await nav(page)), 'no painel do aluno não aparece Meu time nem Ajustes');
   await page.getByRole('button', { name: 'Voltar para a gestão' }).click();
@@ -53,14 +53,14 @@ await cenario('gestor que joga', time(), async (page) => {
   ok(/Início/.test(n) && /Torneios/.test(n) && /Meu time/.test(n) && !/Visão geral/.test(n), 'Meu jogo: abas de jogador');
   await irPara(page, 'Torneios');
   t = await page.locator('main').innerText();
-  ok(/TORNEIOS JOGADOS\s*2\s*em 2 dias/i.test(t), 'Meu jogo: os 2 torneios dele (inclui "hero " com espaço e caixa diferentes), sem o da Maria');
+  ok(/TORNEIOS JOGADOS\s*2\s*2 dias de jogo/i.test(t), 'Meu jogo: os 2 torneios dele (inclui "hero " com espaço e caixa diferentes), sem o da Maria');
   for (const sub of ['Diário', 'Semana', 'Mês', 'Lista']) { await page.getByRole('tab', { name: sub, exact: true }).click(); await page.waitForTimeout(250); }
   ok(await page.locator('[data-sub-torneios]').count() === 1, 'Diário, Semana e Mês ficam dentro de Torneios');
   for (const aba of ['Stats', 'Banca', 'Início']) await irPara(page, aba);
   ok(/MU\s*US\$\s60,00/.test(await page.locator('[data-painel-mk]').innerText()) && /Profit \+US\$\s40,00/.test(await page.locator('[data-painel-mk]').innerText()), 'Início mostra MU e profit (banca 100 − MU 60)');
   await irPara(page, 'Ajustes');
   t = await corpo(page);
-  ok(/Configurações do time/.test(t) && !/Seu nome/.test(t) && !/Seu plano/.test(t), 'Ajustes do time: sem nome, sem plano');
+  ok(!/Configurações do time/.test(t) && !/Seu nome/.test(t) && !/Seu plano/.test(t), 'Ajustes do time: sem as regras repetidas (ficam em Meu time), sem nome, sem plano');
   ok(await page.getByRole('button', { name: /^Saques$/ }).count() === 0, 'sem a aba Saques do pool');
 });
 
@@ -79,8 +79,9 @@ await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1
   await page.locator('[data-sala="GG Poker"]').click();
   ok(/antes de qualquer reload/.test(await corpo(page)), '…e o aviso diz que é o saldo de quando entrou, antes de qualquer reload');
   await page.mouse.click(8, 8); await page.waitForTimeout(250);   // fecha o editor clicando fora
-  await irPara(page, 'Ajustes');
-  ok(await page.locator('[data-ajustes-time]').count() === 1 && /só quem configura o time altera/.test(await corpo(page)), 'aluno vê as regras do time sem poder editar');
+  await irPara(page, 'Meu time');
+  await page.locator('[data-minhas-regras]').waitFor({ timeout: 8000 });
+  ok(await page.locator('[data-minhas-regras]').getByRole('button').count() === 0, 'aluno vê as regras da reta em Meu time, sem poder editar');
 });
 
 // 2b) a banca do aluno vem do SERVIDOR (a mesma da lista e do MK): salas + o que veio depois da foto + capital do time − saques
@@ -93,16 +94,16 @@ await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id:
   const t = await page.locator('main').innerText();
   ok(/Minha banca\s*US\$\s250,50/.test(t), 'banca = a do servidor (US$ 250,50), não a soma local');
   const pt = await page.locator('[data-partes-banca]').innerText();
-  ok(/Salas US\$\s155,00/.test(pt) && /Capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
+  ok(/Salas US\$\s155,00/.test(pt) && /Reload e capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
   ok(/MK −US\$\s49,50/.test(await page.locator('[data-painel-mk]').innerText()), 'MK pela mesma conta: 250,50 − MU 300 = −49,50');
   await irPara(page, 'Banca');
-  ok(/Capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
+  ok(/Reload e capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
   ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
   ok(await page.locator('[data-salas-travadas]').count() === 1 && await page.locator('[data-sala="GG Poker"]').isDisabled() && /US\$\s80,00/.test(await page.locator('[data-sala="GG Poker"]').innerText()),
     'BUG-10 salas travadas depois do reload: mostram o saldo da foto e não abrem pra editar');
-  await irPara(page, 'Meu time');
+  // o dinheiro do jogador no time fica na Banca (A-058)
   await page.locator('[data-lifetime]').waitFor({ timeout: 8000 });
-  ok(/−US\$\s49,50/.test(await page.locator('[data-lifetime]').innerText()), 'Meu time: lifetime = já sacado 0 + profit agora −49,50');
+  ok(/−US\$\s49,50/.test(await page.locator('[data-lifetime]').innerText()), 'Banca: lifetime = já sacado 0 + profit agora −49,50');
 });
 
 // 3) pool de 2 ('team'): nada muda

@@ -209,10 +209,20 @@ const cent = v => {
   const r = Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-6) / 100;
   return r === 0 ? 0 : r;
 };
-const fmt = n => (Number(n) || 0).toLocaleString('pt-BR', {
-  style: 'currency',
-  currency: 'USD'
-});
+// um formatador só (A-026): US$ 1.234,56, e o negativo com o sinal de menos tipográfico (−US$), igual ao fmtSinal
+// valor curto de eixo de gráfico: US$ 1.234 (sem centavos), negativo com o sinal antes do US$
+const fmtEixo = v => {
+  const r = Math.round(Number(v) || 0);
+  return (r < 0 ? '−' : '') + 'US$ ' + Math.abs(r).toLocaleString('pt-BR');
+};
+const fmt = n => {
+  const v = cent(Number(n) || 0),
+    t = Math.abs(v).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'USD'
+    });
+  return v < 0 ? '−' + t : t;
+};
 const pctFmt = n => `${(Number(n) || 0).toFixed(1).replace('.', ',')}%`;
 const mKey = d => (d || '').slice(0, 7);
 const mLabel = k => {
@@ -1359,6 +1369,7 @@ const isZip = u => u.length > 3 && u[0] === 0x50 && u[1] === 0x4B && u[2] <= 8; 
    por arquivo e traz o resultado oficial do site — é a fonte da verdade do que aconteceu. */
 const TS_START = /^(?:PokerStars |GGPoker )?Tournament #\d+[,\s]/m;
 // "$9,815.75" -> 9815.75 (vírgula só é separador de milhar nesses arquivos, que são sempre en-US)
+const pl = (n, um, varios) => `${n} ${n === 1 ? um : varios}`; // plural certo: "1 torneio", "2 torneios" (A-064)
 const tsMoney = s => {
   const n = parseFloat(String(s).replace(/[^\d.,-]/g, '').replace(/,(?=\d{3}(\D|$))/g, '').replace(',', '.'));
   return isNaN(n) ? 0 : n;
@@ -1757,7 +1768,7 @@ function hhInsights(d) {
     p: 0
   });
   const gapNB = nb.h >= 200 ? (nb.v - nb.p) / nb.h * 100 : null;
-  if (d.hands < 300) add('info', 'Amostra pequena', `Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
+  if (d.hands < 300) add('info', 'Amostra pequena', `Com ${pl(d.hands, 'mão', 'mãos')}, as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
   if (d.hands >= 200) {
     if (p.vpip > 29) {
       const ep = pp('EP'),
@@ -2247,7 +2258,19 @@ function gradeCelulaAceita(c, buyin, gtd, nome) {
     motivo: topo > 0 ? `buy-in ${fmtGrade(buyin)} acima do teto ${fmtGrade(topo)}` : 'nada liberado'
   };
 }
-const fmtGrade = v => '$' + (Math.round(v * 100) / 100).toFixed(2).replace('.', ',');
+const fmtGrade = v => 'US$ ' + (Math.round(v * 100) / 100).toFixed(2).replace('.', ',');
+// nome de sala do jeito que cada um escreve ("GGpoker", "gg") aparece de um jeito só (A-026, A-066)
+const NOME_SALA = {
+  gg: 'GG Poker',
+  ps: 'PokerStars',
+  pses: 'PokerStars.es',
+  wpn: 'WPN (ACR)',
+  party: 'partypoker',
+  '888': '888poker'
+};
+const nomeSala = s => NOME_SALA[salaChave(s)] || String(s || '').trim();
+// valor escrito na grade ("$1.08", "$3,3") no formato do app: US$ 1,08. Só muda a tela: a célula guardada fica como foi escrita
+const fmtGradeTexto = t => String(t || '').replace(/\$\s?(\d+)(?:[.,](\d{1,2}))?(?![\d.,])/g, (m, i, d) => 'US$ ' + i + (d != null ? ',' + (d.length === 1 ? d + '0' : d) : ''));
 const fmtGtd = v => v >= 1e6 ? v / 1e6 + 'M' : v >= 1000 ? Math.round(v / 100) / 10 + 'k' : String(v);
 // torneio x grade -> {status:'dentro'|'atencao'|'fora', motivo (1 linha)}
 function classificarTorneioGrade(t, grade) {
@@ -2941,12 +2964,52 @@ function SLMeter({
     color: col
   }));
 }
+// buy-in de referência do stop diário ("10 buy-ins"): o teto da reta (regra abi_max); se a reta tem grade (um teto por
+// tipo de torneio, não um só), o ABI do próprio jogador nos últimos 30 dias; sem nada disso, o ABI máximo do time
+function abiDoStop(config, player, tours, data) {
+  const d = String(data || todayISO()).slice(0, 10);
+  const daReta = regraDoJogador('abi_max', player, d);
+  if (daReta != null && num(daReta) > 0) return {
+    valor: num(daReta),
+    origem: 'teto da reta'
+  };
+  if (comGrade(player, d)) {
+    const desde = addDaysISO(d, -29);
+    let bi = 0,
+      ent = 0;
+    (tours || []).forEach(t => {
+      if (!nomeIgual(t.player, player) || t.entry_date < desde || t.entry_date > d) return;
+      const e = 1 + num(t.reentries);
+      bi += num(t.buyin) * e;
+      ent += e;
+    });
+    if (ent > 0) return {
+      valor: Math.round(bi / ent * 100) / 100,
+      origem: 'ABI dos últimos 30 dias'
+    };
+  }
+  return {
+    valor: abiMaxFor(config, player, d),
+    origem: 'ABI máximo do time'
+  };
+}
+// a reta do jogador tem grade naquela data? (aí não existe um teto de ABI só: a grade confere torneio a torneio)
+function comGrade(player, data) {
+  const u = (GRADE_CTX.unidadeDe || {})[String(player || '').trim().toLowerCase()];
+  return !!(u && gradeDoTorneio({
+    unidade_id: u,
+    entry_date: String(data || todayISO()).slice(0, 10)
+  }, GRADE_CTX.unidades, GRADE_CTX.grades));
+}
+// stop semanal: % da banca do COMEÇO da semana (a de agora cai com um saque e faria o stop "estourar" sem ser verdade)
 function StopLossCard({
   players,
   config,
   daily,
   curWeek,
-  bancaAtual
+  bancaSemana,
+  tours,
+  leitura
 }) {
   const today = todayISO();
   const [open, setOpen] = useState(null); // null = automático (abre sozinho se alguém passou de 70%)
@@ -2956,15 +3019,17 @@ function StopLossCard({
   })) return null;
   const rows = players.map((p, i) => {
     const st = stopDe(config, p); // no time: o stop da reta do jogador
-    const abiMax = abiMaxFor(config, p, today);
+    const abi = abiDoStop(config, p, tours, today),
+      abiMax = abi.valor;
     const slDay = st.dia * abiMax;
     const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
-    const wkLim = st.semana * bancaAtual;
+    const wkLim = Math.max(0, st.semana * bancaSemana);
     const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
     const pct = Math.max(slDay > 0 ? dayLoss / slDay * 100 : 0, wkLim > 0 ? wkLoss / wkLim * 100 : 0);
     return {
       p,
       i,
+      abi,
       abiMax,
       slDay,
       dayLoss,
@@ -3045,7 +3110,7 @@ function StopLossCard({
       color: C.inkSoft,
       marginBottom: 14
     }
-  }, "Quanto do seu limite j\xE1 foi usado. Ver ", /*#__PURE__*/React.createElement("b", null, "antes"), " de estourar \xE9 o ponto \u2014 quando a barra fica vermelha, o dia (ou a semana) acabou."), /*#__PURE__*/React.createElement("div", {
+  }, leitura ? `Quanto do limite de ${leitura} já foi usado. Quando a barra fica vermelha, o dia (ou a semana) dele acabou.` : /*#__PURE__*/React.createElement(React.Fragment, null, "Quanto do seu limite j\xE1 foi usado. Ver ", /*#__PURE__*/React.createElement("b", null, "antes"), " de estourar \xE9 o ponto: quando a barra fica vermelha, o dia (ou a semana) acabou.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -3058,7 +3123,7 @@ function StopLossCard({
       flexDirection: 'column',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, rows.length > 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -3075,17 +3140,33 @@ function StopLossCard({
     style: {
       fontSize: 13.5
     }
-  }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-    label: `Hoje · limite ${r.st.dia} buy-ins`,
+  }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-stop-dia": true
+  }, /*#__PURE__*/React.createElement(SLMeter, {
+    label: `Hoje · limite ${r.st.dia} buy-ins (${fmt(r.slDay)})`,
     used: r.dayLoss,
     limit: r.slDay,
     detail: `${(r.dayLoss / (r.abiMax || 1)).toFixed(1).replace('.', ',')} de ${r.st.dia} bi`
-  }), r.wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "1 buy-in = ", fmt(r.abiMax), " (", r.abi.origem, ")")), r.wkLim > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-stop-semana": true
+  }, /*#__PURE__*/React.createElement(SLMeter, {
     label: `Semana · limite ${pctFmt(r.st.semana * 100)} da banca`,
     used: r.wkLoss,
     limit: r.wkLim,
     detail: `${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`
-  }))))));
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "banca no come\xE7o da semana: ", fmt(bancaSemana))))))));
 }
 
 /* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
@@ -3138,7 +3219,7 @@ function MultiBars({
       color: series[j].color,
       whiteSpace: 'nowrap'
     }
-  }, num(v) >= 0 ? '+' : '−', "$", Math.abs(num(v)).toFixed(2).replace('.', ',')))), hasNeg ? /*#__PURE__*/React.createElement("div", {
+  }, fmtSinal(num(v))))), hasNeg ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 4,
@@ -3269,7 +3350,7 @@ function LineChart({
   const pts = data.map((d, i) => `${(xF(i) * 100).toFixed(2)},${yF(num(d.value)).toFixed(2)}`);
   const area = `0,100 ${pts.join(' ')} 100,100`;
   const ticks = [0, 1, 2, 3].map(k => lo + range * k / 3);
-  const compact = v => '$' + Math.round(v).toLocaleString('pt-BR');
+  const compact = fmtEixo;
   const GUT = 44;
   const track = (cx, el) => {
     const r = el.getBoundingClientRect();
@@ -3458,7 +3539,7 @@ function MultiLineChart({
   const xF = i => n === 1 ? 0.5 : i / (n - 1);
   const yF = v => PADT + (1 - (v - lo) / range) * (100 - PADT - PADB);
   const ticks = [0, 1, 2, 3].map(k => lo + range * k / 3);
-  const compact = v => (v >= 0 ? '+' : '−') + '$' + Math.round(Math.abs(v)).toLocaleString('pt-BR');
+  const compact = v => (v > 0 ? '+' : '') + fmtEixo(v);
   const GUT = 46;
   const track = (cx, el) => {
     const r = el.getBoundingClientRect();
@@ -3866,11 +3947,15 @@ function QuickEditModal({
   kind = 'money',
   opts,
   onClose,
-  onSave
+  onSave,
+  exigeMudar
 }) {
+  useEsc(onClose);
   const init = kind === 'percent' ? String(num(currentValue) * 100).replace('.', ',') : kind === 'list' ? Array.isArray(currentValue) ? currentValue.join(', ') : String(currentValue || '') : kind === 'text' || kind === 'date' ? String(currentValue ?? '') : String(currentValue ?? 0).replace('.', ',');
   const [val, setVal] = useState(init);
+  const travado = !!exigeMudar && val === init; // ex.: mover de reta começa na reta atual e só salva quando muda (A-011)
   const save = () => {
+    if (travado) return;
     if (kind === 'text') return onSave(val.trim());
     if (kind === 'date') return onSave(val);
     if (kind === 'list') return onSave(val.split(/[\n,]+/).map(s => s.trim()).filter(Boolean));
@@ -3978,6 +4063,7 @@ function QuickEditModal({
     autoFocus: true
   }), /*#__PURE__*/React.createElement("button", {
     onClick: save,
+    disabled: travado,
     style: {
       width: '100%',
       padding: '15px 0',
@@ -3987,7 +4073,8 @@ function QuickEditModal({
       color: '#fff',
       fontWeight: 700,
       fontSize: 16,
-      cursor: 'pointer'
+      cursor: travado ? 'not-allowed' : 'pointer',
+      opacity: travado ? .45 : 1
     }
   }, "Salvar")));
 }
@@ -4000,8 +4087,10 @@ function AddModal({
   initial,
   onClose,
   onSave,
-  onEdit
+  onEdit,
+  aviso
 }) {
+  useEsc(onClose);
   const [f, setF] = useState(() => {
     const o = {};
     fields.forEach(fd => {
@@ -4076,6 +4165,7 @@ function AddModal({
     }
   }, title), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
+    "aria-label": "Fechar",
     style: {
       width: 38,
       height: 38,
@@ -4089,9 +4179,22 @@ function AddModal({
     }
   }, /*#__PURE__*/React.createElement(IcoX, {
     s: 20
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), aviso && /*#__PURE__*/React.createElement("div", {
+    "data-aviso-form": true,
+    role: "alert",
+    style: {
+      background: C.redSoft,
+      color: C.red,
+      borderRadius: 12,
+      padding: '10px 13px',
+      fontSize: 13.5,
+      fontWeight: 700,
+      lineHeight: 1.45,
+      marginBottom: 14
+    }
+  }, aviso), /*#__PURE__*/React.createElement("div", {
     className: "modalgrid"
-  }, fields.map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
+  }, fields.filter(fd => !fd.oculto).map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
     key: fd.k,
     type: "button",
     className: fd.full ? 'full' : '',
@@ -4403,6 +4506,7 @@ function ChangePassModal({
   onClose,
   email
 }) {
+  useEsc(onClose);
   const [p0, setP0] = useState('');
   const [p1, setP1] = useState('');
   const [p2, setP2] = useState('');
@@ -4580,6 +4684,7 @@ function DeleteAccountModal({
   nickname,
   onClose
 }) {
+  useEsc(onClose);
   const [txt, setTxt] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -4732,7 +4837,7 @@ function Login({
     const nome = nNome.trim();
     const mail = nMail.trim().toLowerCase();
     const zap = nZap.replace(/\D/g, '');
-    if (nome.length < 2) return setErr('Diz teu nome ou apelido (pelo menos 2 letras).');
+    if (nome.length < 2) return setErr('Diga seu nome ou apelido (pelo menos 2 letras).');
     if (nome.length > 30) return setErr('Apelido muito longo — no máximo 30 caracteres.');
     // o apelido também é login: com @ confundiria com e-mail, e só números com CPF
     if (nome.includes('@')) return setErr('O apelido não pode ter @ (é ele que você usa pra entrar).');
@@ -4791,7 +4896,7 @@ function Login({
     if (!data || !data.session) {
       setBusy(false);
       setMode('login');
-      setOk('Conta criada! Confirma no teu e-mail e depois entra aqui — teu apelido fica guardado.');
+      setOk('Conta criada! Confirme no seu e-mail e depois entre aqui: seu apelido fica guardado.');
       return;
     }
     // sessão já veio: cria perfil + workspace solo e recarrega limpo
@@ -4896,7 +5001,7 @@ function Login({
     setErr('');
     setOk('');
     const id = ident.trim();
-    if (!id) return setErr('Digita teu e-mail, apelido ou CPF no campo acima que eu mando o link.');
+    if (!id) return setErr('Digite seu e-mail, apelido ou CPF no campo acima que o link vai pro seu e-mail.');
     setBusy(true);
     const redirectTo = window.location.origin + window.location.pathname;
     if (id.includes('@')) {
@@ -4988,7 +5093,7 @@ function Login({
     const pap = papelDe(conv.capacidades || []);
     if (pap) return /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", ", /*#__PURE__*/React.createElement("b", null, (PAPEL_ROT[pap] || 'gestão').toLowerCase()), " do time", conv.joga_em ? /*#__PURE__*/React.createElement(React.Fragment, null, ", e tamb\xE9m joga na ", /*#__PURE__*/React.createElement("b", null, conv.joga_em)) : null, ".");
     return conv.pessoa ? /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra como ", /*#__PURE__*/React.createElement("b", null, conv.pessoa), ", em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".") : /*#__PURE__*/React.createElement(React.Fragment, null, "Voc\xEA entra em ", /*#__PURE__*/React.createElement("b", null, conv.unidade), ".");
-  })(), " Cria tua conta (ou entra, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
+  })(), " Crie sua conta (ou entre, se j\xE1 tiver uma) e o time aparece direto.")) : /*#__PURE__*/React.createElement("div", {
     "data-convite": "ruim",
     style: {
       background: C.goldSoft,
@@ -5065,7 +5170,7 @@ function Login({
       fontSize: 13.5,
       fontWeight: 700
     }
-  }, "Falta confirmar teu e-mail \uD83D\uDCEC"), /*#__PURE__*/React.createElement("div", {
+  }, "Falta confirmar seu e-mail \uD83D\uDCEC"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.ink,
@@ -6293,6 +6398,7 @@ function DayCard({
   today
 }) {
   const [open, setOpen] = useState(!!today);
+  const abre = dayTours.length > 0 || !!onAdd; // dia vazio no painel só leitura: nada pra abrir
   const per = players.map((p, i) => {
     const ts = dayTours.filter(t => t.player === p);
     return {
@@ -6310,7 +6416,12 @@ function DayCard({
       border: today ? `1.5px solid ${P}` : `1px solid ${C.border}`
     }
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setOpen(o => !o),
+    onClick: () => {
+      if (abre) setOpen(o => !o);
+    },
+    disabled: !abre,
+    "aria-expanded": abre ? open : undefined,
+    "aria-label": `${dLabel(date)} · ${pl(dayTours.length, 'torneio', 'torneios')}${today ? ' · hoje' : ''}`,
     style: {
       width: '100%',
       display: 'flex',
@@ -6319,8 +6430,9 @@ function DayCard({
       padding: '15px 18px',
       background: today ? C.plumSoft : 'transparent',
       border: 'none',
-      cursor: 'pointer',
-      textAlign: 'left'
+      cursor: abre ? 'pointer' : 'default',
+      textAlign: 'left',
+      color: 'inherit'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6347,7 +6459,8 @@ function DayCard({
       fontSize: 17,
       color: res >= 0 ? C.greenMid : C.red
     }
-  }, res >= 0 ? '+' : '−', fmt(Math.abs(res))), /*#__PURE__*/React.createElement("span", {
+  }, res >= 0 ? '+' : '−', fmt(Math.abs(res))), abre && /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
     style: {
       color: C.inkSoft,
       fontSize: 20,
@@ -6679,7 +6792,14 @@ function WeekRow({
     style: {
       color: P
     }
-  }, fmt(w.saqueAut)))), wkTorn > 0 && /*#__PURE__*/React.createElement("div", {
+  }, fmt(w.saqueAut)))), wkTorn > 0 && (comGrade(player, w.week) ? /*#__PURE__*/React.createElement("div", {
+    "data-abi-semana": true,
+    style: {
+      marginTop: 8,
+      fontSize: 11.5,
+      color: C.inkSoft
+    }
+  }, "ABI m\xE9dio da semana ", fmt(wkAbi), " \xB7 a grade da reta confere cada torneio") : /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 8
     }
@@ -6692,7 +6812,7 @@ function WeekRow({
   }, "ABI m\xE9dio da semana ", fmt(wkAbi), " / m\xE1x ", fmt(pAbi)), /*#__PURE__*/React.createElement(Bar2, {
     pct: pAbi > 0 ? wkAbi / pAbi * 100 : 0,
     color: wkAbi >= pAbi * 0.9 ? C.red : wkAbi >= pAbi * 0.7 ? C.gold : C.greenMid
-  })));
+  }))));
 }
 // bloco recolhível: o padrão pra tirar texto/gráfico da frente sem apagar a informação
 function Recolhivel({
@@ -6780,7 +6900,8 @@ function ResumoTorneios({
       res: ts.reduce((s, t) => s + lucroTorneio(t), 0)
     };
   });
-  const dias = [...new Set(tours.map(t => t.entry_date))].length;
+  const datas = [...new Set(tours.map(t => t.entry_date))].sort(),
+    dias = datas.length;
   return /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 18
@@ -6812,6 +6933,7 @@ function ResumoTorneios({
       lineHeight: 1.1
     }
   }, tours.length)), /*#__PURE__*/React.createElement("div", {
+    "data-dias-de-jogo": true,
     style: {
       fontSize: 12,
       color: C.inkSoft,
@@ -6819,7 +6941,7 @@ function ResumoTorneios({
       flexShrink: 0,
       lineHeight: 1.5
     }
-  }, "em ", dias, " dia", dias !== 1 ? 's' : '', abi > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "ABI m\xE9dio ", fmt(abi)))), !solo && /*#__PURE__*/React.createElement("div", {
+  }, dias, " dia", dias !== 1 ? 's' : '', " de jogo", datas.length ? ` desde ${dataBR(datas[0])}` : '', abi > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "ABI m\xE9dio ", fmt(abi)))), !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 12,
       display: 'flex',
@@ -7069,6 +7191,7 @@ function Sininho({
   onIr
 }) {
   const [aberto, setAberto] = useState(false);
+  useEsc(() => setAberto(false), aberto);
   const novos = avisos.filter(a => !a.lido_em).length;
   const quando = t => {
     const m = Math.round((Date.now() - Date.parse(t)) / 60000);
@@ -7080,7 +7203,8 @@ function Sininho({
     }
   }, /*#__PURE__*/React.createElement("button", {
     "data-sininho": true,
-    "aria-label": `Avisos${novos ? ` (${novos} novos)` : ''}`,
+    "aria-label": `Avisos${novos ? `: ${novos} ${novos === 1 ? 'aviso novo' : 'avisos novos'}` : ''}`,
+    "aria-expanded": aberto,
     onClick: () => {
       const v = !aberto;
       setAberto(v);
@@ -7153,7 +7277,18 @@ function Sininho({
     style: {
       fontSize: 14.5
     }
-  }, "Avisos"), avisos.length > 0 && /*#__PURE__*/React.createElement("button", {
+  }, "Avisos", novos ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 600,
+      color: C.inkSoft,
+      fontSize: 12.5
+    }
+  }, " \xB7 ", novos, " ", novos === 1 ? 'novo' : 'novos') : null), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'flex',
+      gap: 4
+    }
+  }, avisos.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: onLimpar,
     style: {
       border: 'none',
@@ -7163,7 +7298,23 @@ function Sininho({
       fontSize: 12.5,
       cursor: 'pointer'
     }
-  }, "Limpar tudo")), avisos.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Limpar tudo"), /*#__PURE__*/React.createElement("button", {
+    "aria-label": "Fechar avisos",
+    onClick: () => setAberto(false),
+    style: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      cursor: 'pointer',
+      display: 'grid',
+      placeItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement(IcoX, {
+    s: 15
+  })))), avisos.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '22px 14px',
       textAlign: 'center',
@@ -7180,7 +7331,8 @@ function Sininho({
       borderBottom: `1px solid ${C.border}`,
       background: a.lido_em ? 'transparent' : C.plumSoft
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("button", {
+    "data-aviso-ir": true,
     onClick: () => {
       setAberto(false);
       onIr(a);
@@ -7188,7 +7340,13 @@ function Sininho({
     style: {
       flex: 1,
       minWidth: 0,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      textAlign: 'left',
+      border: 'none',
+      background: 'transparent',
+      padding: 0,
+      font: 'inherit',
+      color: 'inherit'
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7196,7 +7354,12 @@ function Sininho({
       fontSize: 13.5,
       color: a.tone === C.red ? C.red : C.ink
     }
-  }, a.titulo), a.texto && /*#__PURE__*/React.createElement("div", {
+  }, a.titulo, a.vezes > 1 ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft,
+      fontWeight: 600
+    }
+  }, " \xB7 ", a.vezes, "\xD7") : null), a.texto && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -7209,7 +7372,12 @@ function Sininho({
       color: C.inkSoft,
       marginTop: 3
     }
-  }, a.criado_em ? quando(a.criado_em) : 'situação atual da banca', a.items && a.items.length ? ' · toque pra ver' : '')), /*#__PURE__*/React.createElement("button", {
+  }, a.criado_em ? quando(a.criado_em) : 'situação atual da banca', " \xB7 ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: P,
+      fontWeight: 700
+    }
+  }, "ver \u203A"))), /*#__PURE__*/React.createElement("button", {
     "aria-label": "Apagar aviso",
     onClick: () => onApagar(a),
     style: {
@@ -7395,10 +7563,12 @@ const Kpi = ({
   }, rot), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 24,
+      fontSize: 'clamp(18px,5vw,24px)',
       fontWeight: 700,
       marginTop: 4,
-      color: cor
+      color: cor,
+      overflowWrap: 'anywhere',
+      lineHeight: 1.2
     }
   }, val), sub && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7431,9 +7601,11 @@ const Chip = ({
   on,
   onClick,
   children,
+  disabled,
   ...r
 }) => /*#__PURE__*/React.createElement("button", _extends({}, r, {
   onClick: onClick,
+  disabled: disabled,
   "aria-pressed": !!on,
   style: {
     padding: '6px 11px',
@@ -7443,7 +7615,8 @@ const Chip = ({
     color: on ? P : C.inkSoft,
     fontWeight: 700,
     fontSize: 12.5,
-    cursor: 'pointer'
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? .45 : 1
   }
 }), children);
 
@@ -7560,6 +7733,7 @@ function ConviteModal({
   onGerar,
   onClose
 }) {
+  useEsc(onClose);
   // onde se joga: as retas (unidades sem nada dentro); time só com a raiz joga na raiz
   const folha = u => !unidades.some(x => x.mae_id === u.id);
   const retas = unidades.filter(u => folha(u) && (u.mae_id || unidades.length === 1) && podeGerir(u.id));
@@ -7880,9 +8054,13 @@ function PessoaModal({
   onSalvar,
   onRemover,
   onLink,
-  onClose
+  onClose,
+  souEu,
+  ultimoAdmin
 }) {
+  useEsc(onClose);
   const [nome, setNome] = useState(p.nome);
+  const nomeLivre = !p.user_id || souEu; // o nome de quem já tem conta é dele: só ele muda
   const [papel, setPapel] = useState(p.papel === 'personalizado' ? 'personalizado' : p.papel || 'professor');
   const [onde, setOnde] = useState(p.unidades);
   const raiz = unidades.find(u => !u.mae_id);
@@ -7951,10 +8129,24 @@ function PessoaModal({
   }, "Nome no time"), /*#__PURE__*/React.createElement("input", {
     id: "ed-nome",
     "data-ed-nome": true,
-    style: inputStyle,
+    style: {
+      ...inputStyle,
+      ...(nomeLivre ? {} : {
+        background: C.bg,
+        color: C.inkSoft
+      })
+    },
     value: nome,
+    disabled: !nomeLivre,
     onChange: e => setNome(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }), !nomeLivre && /*#__PURE__*/React.createElement("div", {
+    "data-nome-dele": true,
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 6
+    }
+  }, "O nome de quem j\xE1 tem conta \xE9 dele: s\xF3 ele muda.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: labelStyle
   }, "Papel"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7965,8 +8157,19 @@ function PessoaModal({
   }, ['professor', 'financeiro', 'admin', ...(p.papel === 'personalizado' ? ['personalizado'] : [])].map(k => /*#__PURE__*/React.createElement(Chip, {
     key: k,
     on: papel === k,
-    onClick: () => setPapel(k)
-  }, PAPEL_ROT[k]))), papel !== 'personalizado' && /*#__PURE__*/React.createElement("div", {
+    disabled: ultimoAdmin && k !== 'admin',
+    onClick: () => {
+      if (!(ultimoAdmin && k !== 'admin')) setPapel(k);
+    }
+  }, PAPEL_ROT[k]))), ultimoAdmin && /*#__PURE__*/React.createElement("div", {
+    "data-ultimo-admin": true,
+    style: {
+      fontSize: 12.5,
+      color: C.red,
+      fontWeight: 700,
+      marginTop: 6
+    }
+  }, "\xDAnico admin do time: fa\xE7a outra pessoa admin antes de mudar este papel ou tirar do time."), !ultimoAdmin && papel !== 'personalizado' && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -8012,7 +8215,7 @@ function PessoaModal({
     "data-gerar-link-pessoal": true,
     onClick: onLink,
     style: btnS
-  }, "Gerar link pessoal de novo"), /*#__PURE__*/React.createElement("button", {
+  }, "Gerar link pessoal de novo"), !ultimoAdmin && /*#__PURE__*/React.createElement("button", {
     onClick: onRemover,
     style: {
       ...btnS,
@@ -8028,9 +8231,12 @@ function EstruturaModal({
   onCriar,
   onRenomear,
   onArquivar,
-  onClose
+  onClose,
+  ocupada
 }) {
+  useEsc(onClose);
   const nivel = u => String(u.caminho).split('/').filter(Boolean).length - 1;
+  // arquivar só vale com a unidade vazia: sem unidade dentro e sem ninguém (ocupada diz quantos)
   return /*#__PURE__*/React.createElement("div", {
     onClick: onClose,
     style: {
@@ -8116,22 +8322,34 @@ function EstruturaModal({
   }, " \xB7 ", u.rotulo)), podeAdmin(u.id) && /*#__PURE__*/React.createElement("button", {
     style: btnS,
     onClick: () => onCriar(u)
-  }, "+ Dentro"), podeAdmin(u.id) && /*#__PURE__*/React.createElement("button", {
+  }, "+ Nova unidade dentro"), podeAdmin(u.id) && /*#__PURE__*/React.createElement("button", {
     style: btnS,
     onClick: () => onRenomear(u)
-  }, "Renomear"), u.mae_id && podeAdmin(u.mae_id) && /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...btnS,
-      color: C.red
-    },
-    onClick: () => onArquivar(u)
-  }, "Arquivar"))), /*#__PURE__*/React.createElement("div", {
+  }, "Renomear"), u.mae_id && podeAdmin(u.mae_id) && (() => {
+    const filhas = unidades.some(f => f.mae_id === u.id),
+      gente = ocupada ? ocupada(u) : 0,
+      vazia = !filhas && !gente;
+    return /*#__PURE__*/React.createElement("button", {
+      "data-arquivar": u.nome,
+      disabled: !vazia,
+      title: vazia ? undefined : filhas ? 'Tem unidade dentro' : `Tem ${gente} pessoa${gente !== 1 ? 's' : ''}`,
+      style: {
+        ...btnS,
+        color: C.red,
+        opacity: vazia ? 1 : .45,
+        cursor: vazia ? 'pointer' : 'not-allowed'
+      },
+      onClick: () => {
+        if (vazia) onArquivar(u);
+      }
+    }, "Arquivar");
+  })())), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
       lineHeight: 1.5
     }
-  }, "Arquivar s\xF3 funciona com a unidade vazia (sem jogador e sem unidade dentro). O hist\xF3rico fica.")));
+  }, "Arquivar s\xF3 fica liberado com a unidade vazia (sem jogador, sem gestor e sem unidade dentro). O hist\xF3rico fica.")));
 }
 
 /* contrato do time por faixas do lifetime (já sacado + profit): o saque inteiro vai na faixa do dia (plano 3.3) */
@@ -8141,6 +8359,7 @@ function ContratoModal({
   onSalvar,
   onClose
 }) {
+  useEsc(onClose);
   const f = Array.isArray(atual) && atual.length ? [...atual].sort((a, b) => (a.ate == null ? 1e15 : a.ate) - (b.ate == null ? 1e15 : b.ate)) : [{
     ate: 10000,
     jogador: .35
@@ -8569,7 +8788,7 @@ function ConsolePlataforma({
       setLink({
         titulo: `Link de admin do ${n}`,
         url: url(r.convite),
-        texto: `${adm}, teu acesso de admin ao time ${n} no GrinderBank:`
+        texto: `${adm}, seu acesso de admin ao time ${n} no GrinderBank:`
       });
       setNovo({
         nome: '',
@@ -8636,7 +8855,7 @@ function ConsolePlataforma({
         if (tok && typeof tok === 'string') setLink({
           titulo: `Link de admin do ${t.nome}`,
           url: url(tok),
-          texto: `${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`
+          texto: `${v}, seu acesso de admin ao time ${t.nome} no GrinderBank:`
         });
       }
     })]);
@@ -9588,6 +9807,82 @@ function SalaCampo({
     onChange: e => onChange(e.target.value)
   }));
 }
+// janelas por cima de tudo vão direto pro body: dentro de um bloco com animação, filtro ou rolagem, uma janela "fixa"
+// fica presa nele e abre fora da tela (A-010)
+const Portal = ({
+  children
+}) => ReactDOM.createPortal(children, document.body);
+// celular: as tabelas largas viram cartões (A-034)
+function useCelular(max = 640) {
+  const q = () => typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(`(max-width: ${max}px)`).matches : false;
+  const [m, setM] = useState(q);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia(`(max-width: ${max}px)`),
+      f = e => setM(e.matches);
+    mq.addEventListener ? mq.addEventListener('change', f) : mq.addListener(f);
+    return () => {
+      mq.removeEventListener ? mq.removeEventListener('change', f) : mq.removeListener(f);
+    };
+  }, [max]);
+  return m;
+}
+// unidades na ordem da árvore: mãe antes das filhas; irmãs pela ordem e depois pelo rótulo/nome com número natural
+// ("Reta 2" antes de "Reta 10"). O caminho é feito de ids, então ordenar por ele embaralhava as retas (A-025)
+function ordenarUnidades(us) {
+  const filhos = {};
+  (us || []).forEach(u => {
+    const k = u.mae_id || '';
+    (filhos[k] || (filhos[k] = [])).push(u);
+  });
+  const cmp = (a, b) => num(a.ordem) - num(b.ordem) || String(a.rotulo || a.nome).localeCompare(String(b.rotulo || b.nome), 'pt-BR', {
+    numeric: true
+  }) || String(a.nome).localeCompare(String(b.nome), 'pt-BR', {
+    numeric: true
+  });
+  const out = [],
+    vistos = new Set();
+  const vai = k => {
+    (filhos[k] || []).sort(cmp).forEach(u => {
+      if (vistos.has(u.id)) return;
+      vistos.add(u.id);
+      out.push(u);
+      vai(u.id);
+    });
+  };
+  vai('');
+  (us || []).forEach(u => {
+    if (!vistos.has(u.id)) {
+      vistos.add(u.id);
+      out.push(u);
+      vai(u.id);
+    }
+  });
+  return out;
+}
+// Esc fecha a janela aberta (a de cima: cada uma registra o seu e só a última responde)
+const pilhaEsc = [];
+function useEsc(onClose, ativo = true) {
+  const ref = React.useRef(onClose);
+  ref.current = onClose;
+  useEffect(() => {
+    if (!ativo) return;
+    const f = () => ref.current && ref.current();
+    pilhaEsc.push(f);
+    const k = e => {
+      if (e.key === 'Escape' && pilhaEsc[pilhaEsc.length - 1] === f) {
+        e.stopPropagation();
+        f();
+      }
+    };
+    window.addEventListener('keydown', k);
+    return () => {
+      window.removeEventListener('keydown', k);
+      const i = pilhaEsc.lastIndexOf(f);
+      if (i >= 0) pilhaEsc.splice(i, 1);
+    };
+  }, [ativo]);
+}
 const fundoModal = {
   position: 'fixed',
   inset: 0,
@@ -9610,6 +9905,32 @@ const caixaModal = {
   flexDirection: 'column',
   gap: 12
 };
+// janela de baixo (o padrão do app): fundo escuro, Esc fecha e vai pro body
+function Janela({
+  onClose,
+  children,
+  rotulo,
+  attrs,
+  largura
+}) {
+  useEsc(onClose);
+  return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", _extends({
+    onClick: e => e.stopPropagation(),
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": rotulo,
+    className: "ftfade",
+    style: {
+      ...caixaModal,
+      ...(largura ? {
+        maxWidth: largura
+      } : {})
+    }
+  }, attrs || {}), children)));
+}
 const topoModal = (titulo, onClose) => /*#__PURE__*/React.createElement("div", {
   style: {
     display: 'flex',
@@ -9647,6 +9968,7 @@ function CapitalModal({
   onSalvar,
   onClose
 }) {
+  useEsc(onClose);
   const [valor, setValor] = useState('');
   const [sala, setSala] = useState('');
   const [indo, setIndo] = useState(false);
@@ -9711,6 +10033,7 @@ function SalasModal({
   dados,
   onClose
 }) {
+  useEsc(onClose);
   const salas = dados && dados.salas || [],
     conf = dados && dados.ultima_conferencia;
   const difDe = ch => {
@@ -9776,6 +10099,7 @@ function PlanilhaManualModal({
   onPronto,
   onClose
 }) {
+  useEsc(onClose);
   const base = (salas || []).filter(s => s.chave).map(s => s.sala);
   const [mk, setMk] = useState('');
   const [co, setCo] = useState('');
@@ -9844,7 +10168,7 @@ function PlanilhaManualModal({
   }, "+ sala"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle,
     htmlFor: "pm-mk"
-  }, "MakeUp (capital do time com voc\xEA)"), /*#__PURE__*/React.createElement("input", {
+  }, "MU: capital do time com voc\xEA (na planilha, \"MakeUp\")"), /*#__PURE__*/React.createElement("input", {
     id: "pm-mk",
     "data-manual-makeup": true,
     style: inputStyle,
@@ -9957,6 +10281,7 @@ function SaidaModal({
   onConfirmar,
   onClose
 }) {
+  useEsc(onClose);
   const a = previa.acerto || {},
     r = previa.resultado || {},
     lv = previa.leva || {},
@@ -10175,9 +10500,11 @@ function TimeApp({
   onIr,
   marca,
   nomeTime,
-  onMarca
+  onMarca,
+  onPadrao
 }) {
   const uid = session.user.id;
+  const celular = useCelular();
   const [d, setD] = useState(null);
   const [cortes, setCortes] = useState({}); // conferência da planilha: até que dia os saldos dela valem (por planilha)
   const [pedEsc, setPedEsc] = useState({}); // pedido de entrada: reta e nome escolhidos antes de aprovar
@@ -10261,6 +10588,9 @@ function TimeApp({
   const carregar = async () => {
     const q = (t, cols = '*') => lerTudo(() => sb.from(t).select(cols).order('id')); // paginado: o servidor corta em 1.000 linhas
     const [u, p, v, a, cv, sq, ct, ab, rl, gr, rg, tc, pd, acs, cfs] = await Promise.all([q('unidade'), q('pessoa'), q('vinculo'), q('acesso'), q('convite', 'id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'), q('saque'), q('contrato'), q('abertura'), q('reload'), q('grade'), q('regra_unidade'), sb.from('time_codigo').select('workspace_id,codigo,ativo'), q('pedido_entrada'), q('acerto_saida'), q('conferencia_saldo')]);
+    const stp = await sb.rpc('stop_semana_do_time', {
+      p_inicio: weekStart(weekEnding(todayISO()))
+    });
     const pessoas = p.data || [],
       vinculos = v.data || [];
     const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
@@ -10277,7 +10607,7 @@ function TimeApp({
       if (!r2.error && r2.data) salasEu = r2.data;
     }
     setD({
-      unidades: (u.data || []).filter(x => !x.arquivada).sort((x, y) => String(x.caminho).localeCompare(String(y.caminho))),
+      unidades: ordenarUnidades((u.data || []).filter(x => !x.arquivada)),
       pessoas,
       vinculos,
       acessos: a.data || [],
@@ -10294,15 +10624,30 @@ function TimeApp({
       regras: rg.error ? [] : rg.data || [],
       codigo: tc.error ? null : (tc.data || [])[0] || null,
       pedidos: pd.error ? [] : (pd.data || []).filter(x => x.status === 'pendente').sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em))),
-      acertos: acs.error ? [] : (acs.data || []).sort((x, y) => String(y.registrado_em).localeCompare(String(x.registrado_em)))
+      acertos: acs.error ? [] : (acs.data || []).sort((x, y) => String(y.registrado_em).localeCompare(String(x.registrado_em))),
+      stopSemana: stp && !stp.error && Array.isArray(stp.data) ? stp.data : []
     });
   };
   useEffect(() => {
     carregar();
   }, []);
+  // trocou de tela: nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
   useEffect(() => {
     setAviso(null);
     setMenuDe(null);
+    setPerg(null);
+    setCapitalDe(null);
+    setSalasDe(null);
+    setSaidaDe(null);
+    setConvite(null);
+    setGradeAberta(null);
+    setPessoaEd(null);
+    setEstrutura(false);
+    setContratoAberto(false);
+    setSaqueAberto(false);
+    setReloadAberto(false);
+    setManualAberta(false);
+    setPlanilha(null);
   }, [secao]);
   const rodar = async (nome, args, okTexto) => {
     setAviso(null);
@@ -10336,6 +10681,7 @@ function TimeApp({
 
   /* ---------- quem pode o quê (o banco confere de novo em cada ação) ---------- */
   const U = Object.fromEntries(d.unidades.map(u => [u.id, u]));
+  const posU = Object.fromEntries(d.unidades.map((u, i) => [u.id, i])); // posição na árvore (ordem das retas)
   const raiz = d.unidades.find(u => !u.mae_id);
   const meus = d.eu ? d.acessos.filter(a => a.pessoa_id === d.eu.id) : [];
   const pode = (cap, uid_) => {
@@ -10457,6 +10803,22 @@ function TimeApp({
   const reloadsParaDecidir = d.reloads.filter(r => ['solicitado', 'aprovado'].includes(r.status) && (!d.eu || r.pessoa_id !== d.eu.id) && pode('aprovar_saques', r.unidade_id));
   const paraConferir = d.aberturas.filter(a => a.status === 'enviada' && (!d.eu || a.pessoa_id !== d.eu.id) && pode('aprovar_saques', a.unidade_id));
   const parados = linhas.filter(l => l.status === 'ativo' && l.torneios != null && (l.ultimo_lancamento == null || diasDesde(l.ultimo_lancamento) > 7));
+  // stop loss batido (A-060): o semanal vem do servidor (base = banca do começo da semana); o diário, dos torneios de hoje
+  const stops = linhas.filter(l => l.status === 'ativo' && (!d.eu || l.pessoa_id !== d.eu.id) && pode('ver_desempenho', l.unidade_id)).map(l => {
+    const sem = (d.stopSemana || []).find(x => x.pessoa_id === l.pessoa_id);
+    const hojeRes = (tours || []).filter(t => t.entry_date === hoje && (t.pessoa_id === l.pessoa_id || !t.pessoa_id && nomeIgual(t.player, l.nome))).reduce((a, t) => a + lucroTorneio(t), 0);
+    const slDia = stopDe(config || {}, l.nome).dia * abiDoStop(config || {}, l.nome, tours, hoje).valor;
+    return sem && sem.bateu || slDia > 0 && hojeRes <= -slDia ? {
+      pessoa_id: l.pessoa_id,
+      nome: l.nome
+    } : null;
+  }).filter(Boolean);
+  // conferência de saldos que não bateu (a última de cada um): pendência de quem vê o dinheiro (A-012)
+  const ultimaConf = {};
+  (d.conferencias || []).forEach(c => {
+    if (!ultimaConf[c.pessoa_id]) ultimaConf[c.pessoa_id] = c;
+  });
+  const divergentes = Object.values(ultimaConf).filter(c => c.diverge && (!d.eu || c.pessoa_id !== d.eu.id) && pode('ver_financeiro', c.unidade_id) && linhas.some(l => l.pessoa_id === c.pessoa_id && l.status === 'ativo'));
   const convidados = linhas.filter(l => l.status === 'convidado');
   const RELOAD_ROTULO = {
     solicitado: 'aguardando aprovação',
@@ -10480,9 +10842,11 @@ function TimeApp({
     setPerg({
       label: `Mover ${p.nome}`,
       hint: (mk != null && mk < 0 ? `Atenção: ${p.nome} está em MK (${fmtSinal(mk)}).${bloqueia ? ' Este time não promove com MK: o servidor vai recusar.' : ''} ` : '') + 'O histórico até hoje fica na reta atual; daqui pra frente conta na nova.',
+      // começa na reta atual (marcada) e o Salvar só liga quando escolher outra
       kind: 'select',
-      opts: destinos.map(caminhoNome),
-      valor: caminhoNome(destinos[0]),
+      opts: d.unidades.filter(x => x.id === uAtual || destinos.includes(x)).map(x => x.id === uAtual ? `${caminhoNome(x)} (atual)` : caminhoNome(x)),
+      valor: U[uAtual] ? `${caminhoNome(U[uAtual])} (atual)` : caminhoNome(destinos[0]),
+      exigeMudar: !!U[uAtual],
       onSave: async nome => {
         setPerg(null);
         const alvo = destinos.find(x => caminhoNome(x) === nome);
@@ -10536,12 +10900,12 @@ function TimeApp({
     if (t && typeof t === 'string') setLink({
       titulo: `Link pessoal de ${p.nome}`,
       url: urlConvite(t),
-      texto: `${p.nome}, teu convite pro time no GrinderBank:`
+      texto: `${p.nome}, seu convite pro time no GrinderBank:`
     });
   };
   const renomear = p => setPerg({
     label: `Nome de ${p.nome}`,
-    hint: 'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca).',
+    hint: 'Como aparece no time e nos lançamentos (os torneios dele acompanham a troca). Depois que ele entrar com a conta dele, o nome passa a ser dele.',
     kind: 'text',
     valor: p.nome,
     onSave: async n => {
@@ -10623,7 +10987,7 @@ function TimeApp({
           p_usos: null
         });
         titulo = `Link pessoal de ${nome}`;
-        texto = `${nome}, teu convite pro time no GrinderBank:`;
+        texto = `${nome}, seu convite pro time no GrinderBank:`;
       } else {
         pessoa = await chama('convidar_equipe', {
           p_nome: nome,
@@ -10638,7 +11002,7 @@ function TimeApp({
           p_usos: null
         });
         titulo = `Convite de ${PAPEL_ROT[quem].toLowerCase()} pra ${nome}`;
-        texto = `${nome}, teu convite pra gestão do time no GrinderBank:`;
+        texto = `${nome}, seu convite pra gestão do time no GrinderBank:`;
       }
       await Promise.all([carregar(), carregarResumo()]);
       return {
@@ -10654,7 +11018,9 @@ function TimeApp({
   };
 
   /* ================= MEU TIME (jogador) ================= */
-  if (secao === 'meu') {
+  // jogador: "meu" é a reta (regras, grade, contrato); "dinheiro" (dentro da Banca) é MU, planilha, saque, reload e salas (A-058)
+  if (secao === 'meu' || secao === 'dinheiro') {
+    const soDinheiro = secao === 'dinheiro';
     const meusSaques = d.eu ? d.saques.filter(s => s.pessoa_id === d.eu.id) : [];
     const meusReloads = d.eu ? d.reloads.filter(r => r.pessoa_id === d.eu.id) : [];
     const minhaAbertura = d.eu ? d.aberturas.find(a => a.pessoa_id === d.eu.id) : null;
@@ -10665,13 +11031,14 @@ function TimeApp({
     const saqueAberto_ = meusSaques.some(s => ['solicitado', 'aprovado'].includes(s.status)),
       reloadAberto_ = meusReloads.some(r => ['solicitado', 'aprovado'].includes(r.status));
     return /*#__PURE__*/React.createElement("div", {
-      className: "ftfade",
+      className: soDinheiro ? undefined : 'ftfade',
+      "data-secao-time": secao,
       style: {
         display: 'flex',
         flexDirection: 'column',
         gap: 16
       }
-    }, header('Meu time'), avisoBox, !d.sit && /*#__PURE__*/React.createElement(Card, {
+    }, !soDinheiro && header('Meu time'), avisoBox, !soDinheiro && !d.sit && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -10685,13 +11052,88 @@ function TimeApp({
         color: C.inkSoft,
         marginTop: 4
       }
-    }, "Pe\xE7a o link de convite da sua reta pro professor.")), d.sit && /*#__PURE__*/React.createElement(Card, {
+    }, "Pe\xE7a o link de convite da sua reta pro professor.")), !soDinheiro && d.sit && /*#__PURE__*/React.createElement(Card, {
+      "data-minha-reta": true,
       style: {
         padding: 20
       }
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Minha conta no time", minhaUnidade ? /*#__PURE__*/React.createElement("span", {
+    }, "Sua reta", minhaUnidade ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14,
+        color: C.inkSoft,
+        fontWeight: 500
+      }
+    }, " \xB7 ", nomeUnidade(U[minhaUnidade])) : null), d.eu && /*#__PURE__*/React.createElement("div", {
+      "data-meu-nome": true,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        fontSize: 13.5,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        minWidth: 180
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "Seu nome no time: "), /*#__PURE__*/React.createElement("b", null, d.eu.nome)), /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => setPerg({
+        label: 'Seu nome no time',
+        hint: 'É como o time vê você e como aparecem os seus lançamentos (os torneios acompanham a troca).',
+        kind: 'text',
+        valor: d.eu.nome,
+        onSave: async n => {
+          setPerg(null);
+          const nn = String(n || '').trim();
+          if (!nn || nn === d.eu.nome) return;
+          const r = await rodar('renomear_pessoa', {
+            p_alvo: d.eu.id,
+            p_nome: nn
+          }, `Agora você é ${nn} no time.`);
+          if (r && onMarca) onMarca();
+        }
+      })
+    }, "Mudar")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        color: C.inkSoft,
+        lineHeight: 1.55
+      }
+    }, "Contrato: ", faixasTexto(d.sit.contrato)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13,
+        color: C.inkSoft,
+        flex: 1,
+        minWidth: 200
+      }
+    }, "MU, planilha de abertura, saque, reload e salas ficam na Banca."), onIr && /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => onIr('banca')
+    }, "Ir pra Banca"))), soDinheiro && d.sit && /*#__PURE__*/React.createElement(Card, {
+      "data-meu-dinheiro": true,
+      style: {
+        padding: 20
+      }
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Seu dinheiro no time", minhaUnidade ? /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 14,
         color: C.inkSoft,
@@ -10713,7 +11155,7 @@ function TimeApp({
       }
     }, fmt(d.sit.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: labelStyle
-    }, mk != null && mk < 0 ? 'Make-up' : 'Profit'), /*#__PURE__*/React.createElement("div", {
+    }, mk != null && mk < 0 ? 'MK (quanto falta pro MU)' : 'Profit (passou do MU)'), /*#__PURE__*/React.createElement("div", {
       "data-meu-mk": true,
       style: {
         fontWeight: 800,
@@ -10740,7 +11182,7 @@ function TimeApp({
         fontWeight: 600,
         marginTop: 6
       }
-    }, mk < 0 ? 'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.' : 'Fora de MK: dá pra pedir saque.'), /*#__PURE__*/React.createElement("div", {
+    }, saqueAberto_ ? 'Saque em andamento: veja abaixo.' : mk < 0 ? 'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.' : 'Fora de MK: pode pedir saque.'), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft,
@@ -10777,7 +11219,7 @@ function TimeApp({
         ...btnS,
         display: 'inline-block'
       }
-    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar planilha (modelo Samba)', /*#__PURE__*/React.createElement("input", {
+    }, minhaAbertura ? 'Enviar a planilha de novo' : 'Importar planilha (modelo do time)', /*#__PURE__*/React.createElement("input", {
       type: "file",
       accept: ".xlsx",
       "data-importar-planilha": true,
@@ -10818,7 +11260,7 @@ function TimeApp({
         fontSize: 14.5,
         opacity: reloadAberto_ ? .5 : 1
       }
-    }, "Pedir reload")), meusReloads.slice(0, 3).map(r => /*#__PURE__*/React.createElement("div", {
+    }, "Pedir reload")), meusReloads.filter(r => ['solicitado', 'aprovado'].includes(r.status) || ['recusado', 'cancelado'].includes(r.status) && diasDesde(r.decidido_em || r.solicitado_em) <= 30).slice(0, 3).map(r => /*#__PURE__*/React.createElement("div", {
       key: r.id,
       style: {
         display: 'flex',
@@ -10849,7 +11291,7 @@ function TimeApp({
       style: {
         marginTop: 10
       }
-    }, meusSaques.slice(0, 6).map(s => /*#__PURE__*/React.createElement("div", {
+    }, meusSaques.filter(s => ['solicitado', 'aprovado'].includes(s.status) || ['recusado', 'cancelado'].includes(s.status) && diasDesde(s.decidido_em || s.solicitado_em) <= 30).slice(0, 6).map(s => /*#__PURE__*/React.createElement("div", {
       key: s.id,
       style: {
         display: 'flex',
@@ -10875,14 +11317,21 @@ function TimeApp({
       onClick: () => rodar('cancelar_saque', {
         p_id: s.id
       }, 'Pedido cancelado.')
-    }, "Cancelar"))))), d.salasEu && /*#__PURE__*/React.createElement(Card, {
+    }, "Cancelar"))))), soDinheiro && d.salasEu && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       },
       "data-minhas-salas": true
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Minhas salas"), (d.salasEu.salas || []).length === 0 && /*#__PURE__*/React.createElement("div", {
+    }, "Saldo de cada sala agora"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        marginTop: -4,
+        marginBottom: 6
+      }
+    }, "O que o sistema calcula hoje: saldo de entrada + jogos + movimentos + capital e reload \u2212 saques."), (d.salasEu.salas || []).length === 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13.5,
         color: C.inkSoft
@@ -10961,13 +11410,21 @@ function TimeApp({
         fontWeight: 600,
         color: conf.resultado.diverge ? C.red : C.greenMid
       }
-    }, conf.resultado.diverge ? `Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.` : 'Bateu com o sistema.'), !conf && d.salasEu.ultima_conferencia && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12.5,
-        color: C.inkSoft,
-        marginTop: 6
-      }
-    }, "\xDAltima confer\xEAncia: ", dataBR(d.salasEu.ultima_conferencia.criado_em), " \xB7 ", d.salasEu.ultima_conferencia.diverge ? 'não bateu' : 'bateu', "."), /*#__PURE__*/React.createElement("div", {
+    }, conf.resultado.diverge ? `Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.` : 'Bateu com o sistema.'), !conf && d.salasEu.ultima_conferencia && (() => {
+      const uc = d.salasEu.ultima_conferencia,
+        difs = (Array.isArray(uc.salas) ? uc.salas : []).filter(x => Math.abs(Number(x.diferenca) || 0) >= 0.01);
+      // diz quanto e onde (A-054): "GG Poker: US$ 15,00 a mais"
+      return /*#__PURE__*/React.createElement("div", {
+        "data-ultima-conferencia": true,
+        style: {
+          fontSize: 12.5,
+          color: uc.diverge ? C.red : C.inkSoft,
+          fontWeight: uc.diverge ? 600 : 400,
+          marginTop: 6,
+          lineHeight: 1.5
+        }
+      }, "\xDAltima confer\xEAncia: ", dataBR(uc.criado_em), " \xB7 ", uc.diverge ? /*#__PURE__*/React.createElement(React.Fragment, null, "n\xE3o bateu. ", difs.map(x => `${x.sala}: ${fmt(Math.abs(Number(x.diferenca)))} a ${Number(x.diferenca) > 0 ? 'mais' : 'menos'} que o sistema`).join(' · '), ". O time foi avisado: confira os torneios e movimentos dessas salas.") : 'bateu.');
+    })(), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         gap: 8,
@@ -11015,7 +11472,7 @@ function TimeApp({
         setConf(null);
         carregar();
       }
-    }, conf.resultado ? 'Fechar' : 'Cancelar'))), minhaUnidade && /*#__PURE__*/React.createElement(Card, {
+    }, conf.resultado ? 'Fechar' : 'Cancelar'))), !soDinheiro && minhaUnidade && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       },
@@ -11041,7 +11498,7 @@ function TimeApp({
           color: C.inkSoft
         }
       }, rr.rot), /*#__PURE__*/React.createElement("b", null, rr.txt(v)));
-    })), minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
+    })), !soDinheiro && minhaGradeReta && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -11071,7 +11528,7 @@ function TimeApp({
         color: C.inkSoft,
         marginTop: 8
       }
-    }, "Vale desde ", dataBR(minhaGradeReta.vigente_desde), minhaGradeReta.unidade_id !== minhaUnidade ? ` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})` : '', ". Cada torneio lan\xE7ado \xE9 conferido com ela.")), !minhaGradeReta && minhaGrade.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    }, "Vale desde ", dataBR(minhaGradeReta.vigente_desde), minhaGradeReta.unidade_id !== minhaUnidade ? ` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})` : '', ". Cada torneio lan\xE7ado \xE9 conferido com ela.")), !soDinheiro && !minhaGradeReta && minhaGrade.length > 0 && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -11085,12 +11542,13 @@ function TimeApp({
         color: C.inkSoft,
         marginTop: 8
       }
-    }, "Da planilha enviada em ", dataBR(minhaAbertura?.enviado_em), ". As regras valem como o time definiu na planilha.")), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+    }, "Da planilha enviada em ", dataBR(minhaAbertura?.enviado_em), ". As regras valem como o time definiu na planilha.")), /*#__PURE__*/React.createElement(Portal, null, perg && /*#__PURE__*/React.createElement(QuickEditModal, {
       label: perg.label,
       hint: perg.hint,
       kind: perg.kind,
       opts: perg.opts,
       currentValue: perg.valor,
+      exigeMudar: perg.exigeMudar,
       onClose: () => setPerg(null),
       onSave: perg.onSave
     }), reloadAberto && /*#__PURE__*/React.createElement(ReloadModal, {
@@ -11125,7 +11583,7 @@ function TimeApp({
         const r = await rodar('solicitar_saque', a, 'Pedido de saque enviado. Aguarde a aprovação do time.');
         if (r) setSaqueAberto(false);
       }
-    }));
+    })));
   }
 
   /* ================= GESTÃO ================= */
@@ -11182,6 +11640,7 @@ function TimeApp({
     kind: perg.kind,
     opts: perg.opts,
     currentValue: perg.valor,
+    exigeMudar: perg.exigeMudar,
     onClose: () => setPerg(null),
     onSave: perg.onSave
   }), convite && /*#__PURE__*/React.createElement(ConviteModal, {
@@ -11234,6 +11693,8 @@ function TimeApp({
     podeAdmin: u => pode('administrar', u),
     nomeUnidade: nomeUnidade,
     onClose: () => setPessoaEd(null),
+    souEu: pessoaEd.user_id === uid,
+    ultimoAdmin: pessoaEd.papel === 'admin' && !!raiz && new Set(d.acessos.filter(a => a.unidade_id === raiz.id && (a.capacidades || []).includes('administrar') && d.pessoas.some(x => x.id === a.pessoa_id && x.status !== 'saiu')).map(a => a.pessoa_id)).size <= 1,
     onLink: pessoaEd.status === 'convidado' ? () => {
       const p = pessoaEd;
       setPessoaEd(null);
@@ -11281,6 +11742,7 @@ function TimeApp({
     unidades: d.unidades,
     podeAdmin: u => pode('administrar', u),
     onClose: () => setEstrutura(false),
+    ocupada: u => new Set([...d.vinculos.filter(v => !v.fim && v.unidade_id === u.id).map(v => v.pessoa_id), ...d.acessos.filter(a => a.unidade_id === u.id).map(a => a.pessoa_id)].filter(pid => d.pessoas.some(x => x.id === pid && x.status !== 'saiu'))).size,
     onCriar: u => setPerg({
       label: `Nova unidade dentro de ${u.nome}`,
       hint: 'Ex.: Pandeiro, Reco-reco, Turma A.',
@@ -11355,10 +11817,12 @@ function TimeApp({
       const v = ls.map(l => l[k]).filter(x => x != null);
       return v.length ? v.reduce((a, b) => a + Number(b), 0) : null;
     };
-    const temPerf = vis.some(l => l.torneios != null);
+    const temPerf = vis.some(l => l.torneios != null),
+      temDin = vis.some(l => l.banca != null);
     const torn = soma(vis, 'torneios'),
       inv = soma(vis, 'investido'),
       luc = soma(vis, 'lucro');
+    const emMk = vis.filter(l => mkDe(l.banca, l.mu) != null && mkDe(l.banca, l.mu) < 0).length;
     // ABI por entrada (reentry conta), igual ao do aluno: a média do grupo pesa pelas entradas de cada um
     const pesoAbi = l => Number(l.entradas ?? l.torneios) || 0;
     const abiPond = (() => {
@@ -11375,7 +11839,7 @@ function TimeApp({
         ls: []
       })).ls.push(l);
       return m;
-    }, {})).filter(x => x.u).sort((a, b) => String(a.u.caminho).localeCompare(String(b.u.caminho)));
+    }, {})).filter(x => x.u).sort((a, b) => posU[a.u.id] - posU[b.u.id]);
     const pend = [...(paraDecidir.filter(s => s.status === 'solicitado').length ? [{
       n: paraDecidir.filter(s => s.status === 'solicitado').length,
       t: 'Saques para aprovar',
@@ -11401,6 +11865,17 @@ function TimeApp({
       t: 'Alunos sem lançar há mais de 7 dias',
       ir: 'g_jogadores',
       sit: 'parados',
+      tom: 'bad'
+    }] : []), ...(stops.length ? [{
+      n: stops.length,
+      t: `Bateram o stop loss: ${stops.slice(0, 3).map(x => x.nome).join(', ')}${stops.length > 3 ? '…' : ''}`,
+      ir: 'g_jogadores',
+      sit: 'stop',
+      tom: 'bad'
+    }] : []), ...(divergentes.length ? [{
+      n: divergentes.length,
+      t: `Conferência de saldos com diferença: ${divergentes.slice(0, 3).map(c => nomeDe(c.pessoa_id)).join(', ')}${divergentes.length > 3 ? '…' : ''}`,
+      ir: 'g_financeiro',
       tom: 'bad'
     }] : []), ...(convidados.length && podeConvidar ? [{
       n: convidados.length,
@@ -11439,7 +11914,7 @@ function TimeApp({
     }, /*#__PURE__*/React.createElement(Kpi, {
       rot: "Alunos ativos",
       val: vis.length,
-      sub: parados.length ? `${parados.length} sem lançar há 7+ dias` : 'todos lançando'
+      sub: temPerf ? parados.length ? `${parados.length} sem lançar há 7+ dias` : 'todos lançando' : null
     }), temPerf && /*#__PURE__*/React.createElement(Kpi, {
       rot: "Torneios",
       val: (torn || 0).toLocaleString('pt-BR'),
@@ -11449,13 +11924,29 @@ function TimeApp({
       val: luc == null ? '—' : fmtSinal(luc),
       tom: luc > 0 ? 'ok' : luc < 0 ? 'bad' : null,
       sub: inv > 0 ? `ROI ${pctFmt(luc / inv * 100)}` : null
-    }), /*#__PURE__*/React.createElement(Kpi, {
+    }), temPerf && /*#__PURE__*/React.createElement(Kpi, {
       "data-kpi-fora": true,
       rot: "Fora da grade \xB7 7 dias",
       val: `${foraTot} torneio${foraTot !== 1 ? 's' : ''}`,
       tom: foraTot ? 'bad' : 'ok',
       sub: foraTot ? `de ${foraAlunos} aluno${foraAlunos !== 1 ? 's' : ''} · ver quais` : 'tudo dentro',
-      onClick: foraTot ? () => onIr('g_grades') : null
+      onClick: foraTot ? () => {
+        setFiltro({
+          reta: null,
+          sit: 'fora',
+          busca: ''
+        });
+        onIr('g_jogadores');
+      } : null
+    }), !temPerf && temDin && /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Banca dos alunos",
+      val: fmt(soma(vis, 'banca') || 0),
+      sub: "todas as salas"
+    }), !temPerf && temDin && /*#__PURE__*/React.createElement(Kpi, {
+      rot: "Em MK",
+      val: `${emMk} aluno${emMk !== 1 ? 's' : ''}`,
+      tom: emMk ? 'warn' : 'ok',
+      sub: emMk ? 'banca abaixo do MU' : 'ninguém em MK'
     })), /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
@@ -11476,6 +11967,7 @@ function TimeApp({
     }, pend.map((p, i) => /*#__PURE__*/React.createElement("button", {
       key: i,
       "data-pendencia": p.t,
+      "aria-label": `${p.n}: ${p.t}`,
       onClick: () => {
         if (p.sit) setFiltro(f => ({
           ...f,
@@ -11523,7 +12015,83 @@ function TimeApp({
         fontSize: 14,
         color: C.inkSoft
       }
-    }, "Nenhum aluno com v\xEDnculo ainda. Use ", /*#__PURE__*/React.createElement("b", null, "+ Convidar"), " pra chamar os jogadores."), porReta.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "Nenhum aluno com v\xEDnculo ainda. Use ", /*#__PURE__*/React.createElement("b", null, "+ Convidar"), " pra chamar os jogadores."), porReta.length > 0 && celular && /*#__PURE__*/React.createElement("div", {
+      "data-por-reta-cartoes": true,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, porReta.map(({
+      u,
+      ls
+    }) => {
+      const i_ = soma(ls, 'investido'),
+        l_ = soma(ls, 'lucro'),
+        n_ = soma(ls, 'torneios'),
+        fora = ls.reduce((a, l) => a + (gradePorPessoa[l.pessoa_id]?.fora || 0), 0),
+        g = gradeEf(u.id);
+      return /*#__PURE__*/React.createElement("button", {
+        key: u.id,
+        "data-reta": u.nome,
+        onClick: () => {
+          setFiltro({
+            reta: u.id,
+            sit: null,
+            busca: ''
+          });
+          onIr('g_jogadores');
+        },
+        style: {
+          textAlign: 'left',
+          font: 'inherit',
+          color: C.ink,
+          background: C.warm,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: '11px 13px',
+          cursor: 'pointer'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap'
+        }
+      }, /*#__PURE__*/React.createElement("b", null, u.nome), u.rotulo && /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft,
+          fontSize: 12.5
+        }
+      }, "\xB7 ", u.rotulo), g && g.simulada && /*#__PURE__*/React.createElement(Tag, {
+        tom: "warn"
+      }, "grade simulada"), /*#__PURE__*/React.createElement("span", {
+        style: {
+          marginLeft: 'auto',
+          color: P,
+          fontWeight: 800
+        },
+        "aria-hidden": "true"
+      }, "\u203A")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12.5,
+          color: C.inkSoft,
+          marginTop: 4,
+          lineHeight: 1.5
+        }
+      }, ls.length, " aluno", ls.length !== 1 ? 's' : '', temPerf ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 ", n_ ?? 0, " torneios \xB7 ", /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: l_ > 0 ? C.greenMid : l_ < 0 ? C.red : C.inkSoft,
+          fontWeight: 700
+        }
+      }, l_ == null ? '—' : fmtSinal(l_)), i_ > 0 ? ` · ROI ${pctFmt(l_ / i_ * 100)}` : '', " \xB7 ", /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: fora ? C.red : C.inkSoft,
+          fontWeight: fora ? 700 : 400
+        }
+      }, fora, " fora da grade")) : null));
+    })), porReta.length > 0 && !celular && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
       }
@@ -11533,7 +12101,7 @@ function TimeApp({
         width: '100%',
         borderCollapse: 'collapse'
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Reta', 'Alunos', ...(temPerf ? ['Torneios', 'ABI', 'ROI', 'Resultado'] : []), 'Fora da grade'].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Reta', 'Alunos', ...(temPerf ? ['Torneios', 'ABI', 'ROI', 'Resultado', 'Fora da grade'] : [])].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thS
     }, h)))), /*#__PURE__*/React.createElement("tbody", null, porReta.map(({
@@ -11588,13 +12156,13 @@ function TimeApp({
           ...tdS,
           color: l_ > 0 ? C.greenMid : l_ < 0 ? C.red : C.ink
         }
-      }, l_ == null ? '—' : fmtSinal(l_))), /*#__PURE__*/React.createElement("td", {
+      }, l_ == null ? '—' : fmtSinal(l_)), /*#__PURE__*/React.createElement("td", {
         style: {
           ...tdS,
           color: fora ? C.red : C.ink,
           fontWeight: fora ? 700 : 400
         }
-      }, fora));
+      }, fora)));
     }), porReta.length > 1 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdS,
@@ -11610,7 +12178,7 @@ function TimeApp({
         ...tdS,
         fontWeight: 800
       }
-    }, torn ?? '—'), /*#__PURE__*/React.createElement("td", {
+    }, torn == null ? '—' : Number(torn).toLocaleString('pt-BR')), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdS,
         fontWeight: 800
@@ -11625,25 +12193,25 @@ function TimeApp({
         ...tdS,
         fontWeight: 800
       }
-    }, luc == null ? '—' : fmtSinal(luc))), /*#__PURE__*/React.createElement("td", {
+    }, luc == null ? '—' : fmtSinal(luc)), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdS,
         fontWeight: 800
       }
-    }, foraTot))))), /*#__PURE__*/React.createElement("div", {
+    }, foraTot)))))), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.inkSoft,
         marginTop: 8
       }
-    }, "Clique na reta pra ver os jogadores dela. ROI do bloco \xE9 pelo total investido. Fora da grade: \xFAltimos 7 dias.")))), modais);
+    }, celular ? 'Toque' : 'Clique', " na reta pra ver os jogadores dela.", temPerf ? ' ROI do bloco é pelo total investido. Fora da grade: últimos 7 dias.' : '')))), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
 
   /* ---------- JOGADORES ---------- */
   if (secao === 'g_jogadores') {
-    const retasComJogador = [...new Set(linhas.map(l => l.unidade_id))].map(id => U[id]).filter(Boolean).sort((a, b) => String(a.caminho).localeCompare(String(b.caminho)));
+    const retasComJogador = [...new Set(linhas.map(l => l.unidade_id))].map(id => U[id]).filter(Boolean).sort((a, b) => posU[a.id] - posU[b.id]);
     const busca = filtro.busca.trim().toLowerCase();
-    const lista = linhas.filter(l => (!filtro.reta || String(l.caminho || U[l.unidade_id]?.caminho || '').startsWith(U[filtro.reta]?.caminho || '§')) && (!busca || l.nome.toLowerCase().includes(busca)) && (!filtro.sit || filtro.sit === 'fora' && gradePorPessoa[l.pessoa_id]?.fora > 0 || filtro.sit === 'mk' && mkDe(l.banca, l.mu) < 0 || filtro.sit === 'parados' && parados.includes(l) || filtro.sit === 'convidados' && l.status === 'convidado'));
+    const lista = linhas.filter(l => (!filtro.reta || String(l.caminho || U[l.unidade_id]?.caminho || '').startsWith(U[filtro.reta]?.caminho || '§')) && (!busca || l.nome.toLowerCase().includes(busca)) && (!filtro.sit || filtro.sit === 'fora' && gradePorPessoa[l.pessoa_id]?.fora > 0 || filtro.sit === 'mk' && mkDe(l.banca, l.mu) < 0 || filtro.sit === 'parados' && parados.includes(l) || filtro.sit === 'stop' && stops.some(x => x.pessoa_id === l.pessoa_id) || filtro.sit === 'convidados' && l.status === 'convidado'));
     const chave = {
       nome: l => l.nome.toLowerCase(),
       torneios: l => l.torneios ?? -1,
@@ -11660,9 +12228,36 @@ function TimeApp({
     });
     const temDin = linhas.some(l => l.banca != null),
       temPerf = linhas.some(l => l.torneios != null);
-    const col = (k, r) => /*#__PURE__*/React.createElement("th", {
+    // nome e ⋯ presos nas pontas: a tabela rola de lado sem esconder de quem é a linha (A-017)
+    const fixaEsq = {
+        position: 'sticky',
+        left: 0,
+        background: C.surface,
+        zIndex: 1,
+        boxShadow: `1px 0 0 ${C.border}`
+      },
+      fixaDir = {
+        position: 'sticky',
+        right: 0,
+        background: C.surface,
+        zIndex: 1,
+        boxShadow: `-1px 0 0 ${C.border}`
+      };
+    const acoesJog = l => {
+      const p = d.pessoas.find(x => x.id === l.pessoa_id) || {
+        id: l.pessoa_id,
+        nome: l.nome
+      };
+      return [...(verPainel(l) ? [['Ver painel do aluno', () => onVerJogador(l.nome, l)]] : []), ...(pode('promover', l.unidade_id) && l.status === 'ativo' ? [['Mover de reta (promover)', () => moverJogador(p, l.unidade_id)]] : []), ...(pode('aprovar_saques', l.unidade_id) && l.status === 'ativo' ? [['Capital mandado (MU)', () => capital(p)]] : []), ...(l.status === 'convidado' && pode('gerir_pessoas', l.unidade_id) ? [['Link pessoal', () => linkPessoal(p, l.unidade_id)]] : []),
+      // o nome de quem já tem conta é dele (só o aluno mexe na conta dele): o time renomeia só convidado
+      ...((pode('gerir_pessoas', l.unidade_id) || souAdmin) && !p.user_id ? [['Renomear', () => renomear(p)]] : []), ...(pode('gerir_pessoas', l.unidade_id) && p.user_id !== uid ? [['Registrar saída', () => saida(p), true]] : [])];
+    };
+    const col = (k, r, extra) => /*#__PURE__*/React.createElement("th", {
       key: k,
-      style: thS
+      style: {
+        ...thS,
+        ...(extra || {})
+      }
     }, /*#__PURE__*/React.createElement("button", {
       onClick: () => setOrd(o => ({
         k,
@@ -11740,7 +12335,7 @@ function TimeApp({
         background: C.border,
         margin: '0 4px'
       }
-    }), [['fora', 'Fora da grade'], ...(temDin ? [['mk', 'Em MK']] : []), ['parados', 'Sem lançar'], ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
+    }), [...(temPerf ? [['fora', 'Fora da grade']] : []), ...(temDin ? [['mk', 'Em MK']] : []), ...(temPerf ? [['parados', 'Sem lançar'], ...(stops.length ? [['stop', 'Stop loss']] : [])] : []), ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
       key: k,
       "data-filtro-sit": k,
       on: filtro.sit === k,
@@ -11750,7 +12345,7 @@ function TimeApp({
       }))
     }, r)), periodoChips), /*#__PURE__*/React.createElement(Card, {
       style: {
-        padding: '6px 10px'
+        padding: celular ? '8px' : '6px 10px'
       }
     }, resumo == null && /*#__PURE__*/React.createElement("div", {
       style: {
@@ -11760,7 +12355,136 @@ function TimeApp({
       }
     }, /*#__PURE__*/React.createElement("div", {
       className: "spin"
-    })), resumo != null && !lista.length && /*#__PURE__*/React.createElement(Empty, null, linhas.length ? 'Ninguém com esse filtro.' : 'Nenhum jogador no time ainda. Use + Convidar.'), lista.length > 0 && /*#__PURE__*/React.createElement("div", {
+    })), resumo != null && !lista.length && /*#__PURE__*/React.createElement(Empty, null, linhas.length ? 'Ninguém com esse filtro.' : 'Nenhum jogador no time ainda. Use + Convidar.'), lista.length > 0 && celular && /*#__PURE__*/React.createElement("div", {
+      "data-jogadores-cartoes": true,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, lista.map(l => {
+      const g = gradePorPessoa[l.pessoa_id],
+        dd = diasDesde(l.ultimo_lancamento),
+        conv = l.status === 'convidado',
+        ac = acoesJog(l);
+      return /*#__PURE__*/React.createElement("div", {
+        key: l.pessoa_id,
+        "data-jogador": l.nome,
+        style: {
+          background: C.warm,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: '11px 12px'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, verPainel(l) ? /*#__PURE__*/React.createElement("button", {
+        onClick: () => onVerJogador(l.nome, l),
+        style: {
+          border: 'none',
+          background: 'transparent',
+          padding: 0,
+          color: P,
+          fontWeight: 700,
+          fontSize: 15,
+          cursor: 'pointer',
+          textAlign: 'left'
+        }
+      }, l.nome) : /*#__PURE__*/React.createElement("b", {
+        style: {
+          fontSize: 15
+        }
+      }, l.nome), conv && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+        tom: "plum"
+      }, "convite enviado")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, U[l.unidade_id]?.nome || l.unidade)), ac.length > 0 && /*#__PURE__*/React.createElement("button", {
+        "aria-label": `Ações de ${l.nome}`,
+        "data-acoes": l.nome,
+        onClick: () => setMenuDe(l.pessoa_id),
+        style: {
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          border: `1.5px solid ${C.border}`,
+          background: C.surface,
+          color: C.inkSoft,
+          fontWeight: 800,
+          cursor: 'pointer',
+          flexShrink: 0
+        }
+      }, "\u22EF")), !conv && /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+          gap: '6px 10px',
+          marginTop: 8,
+          fontSize: 12.5
+        }
+      }, temPerf && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Torneios "), /*#__PURE__*/React.createElement("b", null, l.torneios ?? '—'), l.abi != null && l.torneios ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, " \xB7 ABI ", fmt(l.abi)) : null), temPerf && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Resultado "), /*#__PURE__*/React.createElement("b", {
+        style: {
+          color: l.lucro > 0 ? C.greenMid : l.lucro < 0 ? C.red : C.ink
+        }
+      }, l.lucro == null || !l.torneios ? '—' : fmtSinal(l.lucro))), temDin && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Banca "), /*#__PURE__*/React.createElement("b", null, l.banca == null ? '—' : fmt(l.banca)), l.mu != null && /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, " \xB7 MU ", fmt(l.mu))), temDin && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "MK / Profit "), /*#__PURE__*/React.createElement(MkSelo, {
+        v: mkDe(l.banca, l.mu)
+      })), temPerf && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Grade 7 dias "), !g ? '—' : g.fora ? /*#__PURE__*/React.createElement(Tag, {
+        tom: "bad"
+      }, g.fora, " fora") : g.atencao ? /*#__PURE__*/React.createElement(Tag, {
+        tom: "warn"
+      }, g.atencao, " aten\xE7\xE3o") : /*#__PURE__*/React.createElement(Tag, {
+        tom: "ok"
+      }, "dentro")), temPerf && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "\xDAltimo "), /*#__PURE__*/React.createElement("b", null, l.ultimo_lancamento ? dataBR(l.ultimo_lancamento) : 'nunca lançou'), dd != null && dd > 7 && /*#__PURE__*/React.createElement("span", {
+        "data-parado": true,
+        style: {
+          color: C.red,
+          fontWeight: 700
+        }
+      }, " \xB7 parado h\xE1 ", dd, " dias"))));
+    })), lista.length > 0 && !celular && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
       }
@@ -11768,29 +12492,32 @@ function TimeApp({
       "data-jogadores": true,
       style: {
         width: '100%',
-        borderCollapse: 'collapse'
+        borderCollapse: 'separate',
+        borderSpacing: 0
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, col('nome', 'Jogador'), temPerf && col('torneios', 'Torneios'), temPerf && col('lucro', 'Resultado'), temDin && col('banca', 'Banca'), temDin && col('mk', 'Make-up'), col('grade', 'Grade 7 dias'), col('ultimo', 'Último lançamento'), /*#__PURE__*/React.createElement("th", {
-      style: thS
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, col('nome', 'Jogador', fixaEsq), temPerf && col('torneios', 'Torneios'), temPerf && col('lucro', 'Resultado'), temDin && col('banca', 'Banca'), temDin && col('mk', 'MK / Profit'), temPerf && col('grade', 'Grade 7 dias'), temPerf && col('ultimo', 'Último lançamento'), /*#__PURE__*/React.createElement("th", {
+      style: {
+        ...thS,
+        ...fixaDir
+      }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         position: 'absolute',
         left: -9999
       }
     }, "A\xE7\xF5es")))), /*#__PURE__*/React.createElement("tbody", null, lista.map(l => {
-      const p = d.pessoas.find(x => x.id === l.pessoa_id) || {
-        id: l.pessoa_id,
-        nome: l.nome
-      };
       const g = gradePorPessoa[l.pessoa_id];
       const dd = diasDesde(l.ultimo_lancamento);
       const conv = l.status === 'convidado';
-      const acoes = [...(verPainel(l) ? [['Ver painel do aluno', () => onVerJogador(l.nome, l)]] : []), ...(pode('promover', l.unidade_id) && l.status === 'ativo' ? [['Mover de reta (promover)', () => moverJogador(p, l.unidade_id)]] : []), ...(pode('aprovar_saques', l.unidade_id) && l.status === 'ativo' ? [['Capital mandado (MU)', () => capital(p)]] : []), ...(l.status === 'convidado' && pode('gerir_pessoas', l.unidade_id) ? [['Link pessoal', () => linkPessoal(p, l.unidade_id)]] : []), ...(pode('gerir_pessoas', l.unidade_id) || souAdmin ? [['Renomear', () => renomear(p)]] : []), ...(pode('gerir_pessoas', l.unidade_id) && p.user_id !== uid ? [['Registrar saída', () => saida(p), true]] : [])];
+      const ac = acoesJog(l);
       return /*#__PURE__*/React.createElement("tr", {
         key: l.pessoa_id,
         "data-jogador": l.nome
       }, /*#__PURE__*/React.createElement("td", {
-        style: tdS
+        style: {
+          ...tdS,
+          ...fixaEsq
+        }
       }, verPainel(l) ? /*#__PURE__*/React.createElement("button", {
         onClick: () => onVerJogador(l.nome, l),
         style: {
@@ -11802,7 +12529,7 @@ function TimeApp({
           fontSize: 14,
           cursor: 'pointer'
         }
-      }, l.nome) : /*#__PURE__*/React.createElement("b", null, l.nome), l.status === 'convidado' && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+      }, l.nome) : /*#__PURE__*/React.createElement("b", null, l.nome), conv && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
         tom: "plum"
       }, "convite enviado")), /*#__PURE__*/React.createElement("div", {
         style: {
@@ -11841,7 +12568,7 @@ function TimeApp({
         }
       }, "\u2014") : /*#__PURE__*/React.createElement(MkSelo, {
         v: mkDe(l.banca, l.mu)
-      })), /*#__PURE__*/React.createElement("td", {
+      })), temPerf && /*#__PURE__*/React.createElement("td", {
         style: tdS
       }, !g ? /*#__PURE__*/React.createElement("span", {
         style: {
@@ -11853,9 +12580,9 @@ function TimeApp({
         tom: "warn"
       }, g.atencao, " aten\xE7\xE3o") : /*#__PURE__*/React.createElement(Tag, {
         tom: "ok"
-      }, "dentro")), /*#__PURE__*/React.createElement("td", {
+      }, "dentro")), temPerf && /*#__PURE__*/React.createElement("td", {
         style: tdS
-      }, l.ultimo_lancamento ? dLabel(l.ultimo_lancamento) : conv ? '—' : 'nunca lançou', dd != null && dd > 7 && /*#__PURE__*/React.createElement("div", {
+      }, l.ultimo_lancamento ? dataBR(l.ultimo_lancamento) : conv ? '—' : 'nunca lançou', dd != null && dd > 7 && /*#__PURE__*/React.createElement("div", {
         "data-parado": true,
         style: {
           fontSize: 12,
@@ -11865,39 +12592,35 @@ function TimeApp({
       }, "parado h\xE1 ", dd, " dias")), /*#__PURE__*/React.createElement("td", {
         style: {
           ...tdS,
-          position: 'relative'
+          ...fixaDir
         }
-      }, acoes.length > 0 && /*#__PURE__*/React.createElement("button", {
+      }, ac.length > 0 && /*#__PURE__*/React.createElement("button", {
         "aria-label": `Ações de ${l.nome}`,
-        "aria-expanded": menuDe === l.pessoa_id,
         "data-acoes": l.nome,
-        onClick: () => setMenuDe(m => m === l.pessoa_id ? null : l.pessoa_id),
+        onClick: () => setMenuDe(l.pessoa_id),
         style: {
           width: 36,
           height: 36,
           borderRadius: 10,
-          border: `1.5px solid ${menuDe === l.pessoa_id ? P : C.border}`,
-          background: menuDe === l.pessoa_id ? C.plumSoft : C.surface,
-          color: menuDe === l.pessoa_id ? P : C.inkSoft,
+          border: `1.5px solid ${C.border}`,
+          background: C.surface,
+          color: C.inkSoft,
           fontWeight: 800,
           cursor: 'pointer'
         }
-      }, "\u22EF"), menuDe === l.pessoa_id && /*#__PURE__*/React.createElement("div", {
-        role: "menu",
-        style: {
-          position: 'absolute',
-          right: 8,
-          top: 48,
-          zIndex: 5,
-          width: 230,
-          background: C.surface,
-          border: `1px solid ${C.border}`,
-          borderRadius: 14,
-          boxShadow: '0 16px 40px -18px rgba(25,35,29,.45)',
-          padding: 6,
-          whiteSpace: 'normal'
+      }, "\u22EF")));
+    }))))), (() => {
+      const l = menuDe && lista.find(x => x.pessoa_id === menuDe);
+      if (!l) return null;
+      const ac = acoesJog(l);
+      return /*#__PURE__*/React.createElement(Janela, {
+        onClose: () => setMenuDe(null),
+        rotulo: `Ações de ${l.nome}`,
+        attrs: {
+          'data-acoes-modal': true,
+          role: 'menu'
         }
-      }, acoes.map(([r, fn, perigo]) => /*#__PURE__*/React.createElement("button", {
+      }, topoModal(l.nome, () => setMenuDe(null)), ac.map(([r, fn, perigo]) => /*#__PURE__*/React.createElement("button", {
         key: r,
         role: "menuitem",
         onClick: () => {
@@ -11905,26 +12628,18 @@ function TimeApp({
           fn();
         },
         style: {
-          display: 'block',
-          width: '100%',
           textAlign: 'left',
-          padding: '10px 12px',
-          borderRadius: 10,
-          border: 'none',
-          background: 'transparent',
+          padding: '13px 14px',
+          borderRadius: 13,
+          border: `1.5px solid ${perigo ? C.redSoft : C.border}`,
+          background: C.surface,
           color: perigo ? C.red : C.ink,
-          fontWeight: 600,
-          fontSize: 13.5,
+          fontWeight: 700,
+          fontSize: 14.5,
           cursor: 'pointer'
         }
-      }, r)))));
-    }))))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.inkSoft,
-        lineHeight: 1.5
-      }
-    }, "Make-up = banca \u2212 MU: ", /*#__PURE__*/React.createElement("b", null, "MK"), " com o valor quando a banca est\xE1 abaixo do capital do time; positivo \xE9 profit. Resultado e ROI s\xE3o do per\xEDodo; banca e make-up s\xE3o de agora."), modais);
+      }, r)));
+    })(), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
 
   /* ---------- GRADES ---------- */
@@ -12127,24 +12842,57 @@ function TimeApp({
         color: C.inkSoft,
         marginTop: 8
       }
-    }, "Vale desde ", dataBR(g.vigente_desde), ". Escrita como na planilha; o app l\xEA cada c\xE9lula e confere cada torneio.")), /*#__PURE__*/React.createElement(Card, {
+    }, "Vale desde ", dataBR(g.vigente_desde), ". Escrita como na planilha; o app l\xEA cada c\xE9lula e confere cada torneio.")), podeVerDesempenho && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Confer\xEAncia dos \xFAltimos 7 dias \xB7 ", sel.nome), !podeVerDesempenho ? /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 13.5,
-        color: C.inkSoft
-      }
-    }, "Seu papel n\xE3o v\xEA os torneios dos alunos.") : !conf.length ? /*#__PURE__*/React.createElement("div", {
+    }, "Confer\xEAncia dos \xFAltimos 7 dias \xB7 ", sel.nome), !conf.length ? /*#__PURE__*/React.createElement("div", {
       "data-conferencia-vazia": true,
       style: {
         fontSize: 13.5,
         color: C.inkSoft
       }
-    }, "Nenhum torneio fora ou em aten\xE7\xE3o nos \xFAltimos 7 dias.") : /*#__PURE__*/React.createElement("div", {
+    }, "Nenhum torneio fora ou em aten\xE7\xE3o nos \xFAltimos 7 dias.") : celular ? /*#__PURE__*/React.createElement("div", {
+      "data-conferencia": true,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, conf.slice(0, 60).map(({
+      t,
+      sg,
+      pessoa
+    }, i) => /*#__PURE__*/React.createElement("div", {
+      key: t.id || i,
+      style: {
+        background: C.warm,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: '9px 11px',
+        fontSize: 12.5,
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 6,
+        alignItems: 'center',
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("b", null, nomeDe(pessoa)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, dataBR(t.entry_date)), /*#__PURE__*/React.createElement(Tag, {
+      tom: sg.status === 'fora' ? 'bad' : 'warn'
+    }, sg.status === 'fora' ? 'fora' : 'atenção')), /*#__PURE__*/React.createElement("div", null, t.tournament_name || 'Torneio', " \xB7 ", fmt(t.buyin), num(t.reentries) > 0 ? ` +${num(t.reentries)}re` : ''), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft
+      }
+    }, sg.motivo, sg.simulada ? ' · grade simulada' : '')))) : /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
       }
@@ -12170,7 +12918,7 @@ function TimeApp({
       }
     }, nomeDe(pessoa)), /*#__PURE__*/React.createElement("td", {
       style: tdS
-    }, dLabel(t.entry_date)), /*#__PURE__*/React.createElement("td", {
+    }, dataBR(t.entry_date)), /*#__PURE__*/React.createElement("td", {
       style: {
         ...tdS,
         maxWidth: 240,
@@ -12189,7 +12937,7 @@ function TimeApp({
         whiteSpace: 'normal',
         minWidth: 220
       }
-    }, sg.motivo, sg.simulada ? ' · grade simulada' : ''))))))))), modais);
+    }, sg.motivo, sg.simulada ? ' · grade simulada' : ''))))))))), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
 
   /* ---------- FINANCEIRO ---------- */
@@ -12198,7 +12946,9 @@ function TimeApp({
     const soma = k => din.reduce((a, l) => a + Number(l[k] || 0), 0);
     const aReceber = paraDecidir.filter(s => s.status === 'aprovado').reduce((a, s) => a + Number(s.total_time || 0), 0);
     const historico = d.saques.filter(s => ['pago', 'recusado'].includes(s.status) && pode('ver_financeiro', s.unidade_id)).slice(0, 10);
-    const itens = paraDecidir.length + reloadsParaDecidir.length + paraConferir.length;
+    const itens = paraDecidir.length + reloadsParaDecidir.length + paraConferir.length + divergentes.length;
+    // o que está aberto mas não é deste papel decidir (ex.: professor vê os saques, quem aprova é o financeiro) (A-042)
+    const deOutros = d.saques.filter(x => ['solicitado', 'aprovado'].includes(x.status) && !paraDecidir.includes(x)).length + d.reloads.filter(x => ['solicitado', 'aprovado'].includes(x.status) && !reloadsParaDecidir.includes(x)).length + d.aberturas.filter(x => x.status === 'enviada' && !paraConferir.includes(x)).length;
     return /*#__PURE__*/React.createElement("div", {
       className: "ftfade",
       style: {
@@ -12240,11 +12990,12 @@ function TimeApp({
         fontWeight: 500
       }
     }, itens)), itens === 0 && /*#__PURE__*/React.createElement("div", {
+      "data-nada-resolver": true,
       style: {
         fontSize: 14,
         color: C.inkSoft
       }
-    }, "Nada para resolver agora."), paraDecidir.map(s => /*#__PURE__*/React.createElement("div", {
+    }, deOutros ? `Nada para você resolver. ${deOutros} ${deOutros === 1 ? 'item aberto está' : 'itens abertos estão'} com quem aprova os saques.` : 'Nada para resolver agora.'), paraDecidir.map(s => /*#__PURE__*/React.createElement("div", {
       key: s.id,
       "data-saque": nomeDe(s.pessoa_id),
       style: {
@@ -12271,16 +13022,29 @@ function TimeApp({
         fontWeight: 700
       }
     }, SAQUE_ROTULO[s.status])), /*#__PURE__*/React.createElement("div", {
+      "data-saque-conta": true,
       style: {
         color: C.inkSoft,
         marginTop: 4,
-        lineHeight: 1.5
+        lineHeight: 1.6
       }
-    }, "Banca informada ", fmt(s.banca), s.banca_sistema != null ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 no sistema ", fmt(s.banca_sistema)) : null, " \xB7 MU antes ", fmt(s.mu_antes), " \xB7 devolu\xE7\xE3o ", fmt(s.devolucao), " + cashout ", fmt(s.cashout), " \u2192 jogador ", fmt(s.parte_jogador), " \xB7 ", /*#__PURE__*/React.createElement("b", {
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
       style: {
         color: C.ink
       }
-    }, "time recebe ", fmt(s.total_time)), s.observacao ? ` · "${s.observacao}"` : ''), s.banca_sistema != null && Math.abs(Number(s.banca) - Number(s.banca_sistema)) > 1 && /*#__PURE__*/React.createElement("div", {
+    }, "Banca:"), " informada ", fmt(s.banca), s.banca_sistema != null ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 no sistema ", fmt(s.banca_sistema)) : null, " \xB7 MU antes ", fmt(s.mu_antes)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "Saque:"), " ", Number(s.devolucao) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, "devolve ", fmt(s.devolucao), " de MU + ") : null, "cashout ", fmt(s.cashout)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "Divis\xE3o do cashout:"), " jogador ", fmt(s.parte_jogador), Number(s.cashout) > 0 ? ` (${pctFmt(Number(s.parte_jogador) / Number(s.cashout) * 100)})` : '', " \xB7 time ", fmt(s.parte_time), Number(s.cashout) > 0 ? ` (${pctFmt(Number(s.parte_time) / Number(s.cashout) * 100)})` : '', " \xB7 ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, "o time recebe ", fmt(s.total_time))), s.observacao ? /*#__PURE__*/React.createElement("div", null, "\"", s.observacao, "\"") : null), s.banca_sistema != null && Math.abs(Number(s.banca) - Number(s.banca_sistema)) > 1 && /*#__PURE__*/React.createElement("div", {
       "data-banca-diferente": true,
       style: {
         color: C.red,
@@ -12462,7 +13226,7 @@ function TimeApp({
           marginTop: 4,
           lineHeight: 1.5
         }
-      }, "MakeUp ", /*#__PURE__*/React.createElement("b", {
+      }, "MU (capital do time; na planilha, \"MakeUp\") ", /*#__PURE__*/React.createElement("b", {
         style: {
           color: C.ink
         }
@@ -12521,7 +13285,7 @@ function TimeApp({
             fontSize: 12,
             color: C.inkSoft
           }
-        }, "jogos e movimentos at\xE9 esse dia j\xE1 est\xE3o nos saldos da planilha; contam s\xF3 os de depois")), vespera && v && v < vespera && /*#__PURE__*/React.createElement("div", {
+        }, "S\xF3 contam jogos e movimentos depois desta data.")), vespera && v && v < vespera && /*#__PURE__*/React.createElement("div", {
           "data-antecipa": nomeDe(a.pessoa_id),
           style: {
             fontSize: 12.5,
@@ -12548,8 +13312,8 @@ function TimeApp({
       }, "Conferir como est\xE1"), /*#__PURE__*/React.createElement("button", {
         style: btnS,
         onClick: () => setPerg({
-          label: `MakeUp de ${nomeDe(a.pessoa_id)}`,
-          hint: 'Valor certo do MU (capital do time com o jogador).',
+          label: `MU de ${nomeDe(a.pessoa_id)}`,
+          hint: 'Valor certo do MU: o capital do time com o jogador (na planilha aparece como MakeUp).',
           kind: 'money',
           valor: a.mu,
           onSave: mu => setPerg({
@@ -12568,14 +13332,143 @@ function TimeApp({
             }
           })
         })
-      }, "Corrigir e conferir")));
-    })), din.length > 0 && /*#__PURE__*/React.createElement(Card, {
+      }, "Corrigir MU e cashout")));
+    }), divergentes.map(c => /*#__PURE__*/React.createElement("div", {
+      key: c.id,
+      "data-divergente": nomeDe(c.pessoa_id),
+      style: {
+        padding: '12px 0',
+        borderTop: `1px solid ${C.border}`,
+        fontSize: 13.5
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: "bad"
+    }, "confer\xEAncia"), /*#__PURE__*/React.createElement("b", null, nomeDe(c.pessoa_id)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "\xB7 ", dataBR(c.criado_em), " \xB7 saldo diferente do sistema")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft,
+        marginTop: 4,
+        lineHeight: 1.6
+      }
+    }, (Array.isArray(c.salas) ? c.salas : []).filter(x => Math.abs(Number(x.diferenca) || 0) >= 0.01).map(x => /*#__PURE__*/React.createElement("div", {
+      key: x.chave || x.sala
+    }, /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.ink
+      }
+    }, x.sala), ": informou ", fmt(x.informado), " \xB7 sistema ", fmt(x.sistema), " \xB7 ", /*#__PURE__*/React.createElement("b", {
+      style: {
+        color: C.red
+      }
+    }, fmt(Math.abs(Number(x.diferenca))), " ", Number(x.diferenca) > 0 ? 'a mais' : 'a menos'))), /*#__PURE__*/React.createElement("div", null, "Total: ", fmtSinal(Number(c.diferenca)), ". Confira com o jogador os torneios e movimentos dessas salas.")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 8,
+        marginTop: 8
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      style: btnS,
+      onClick: () => verSalas({
+        id: c.pessoa_id,
+        nome: nomeDe(c.pessoa_id)
+      })
+    }, "Ver salas"))))), din.length > 0 && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Dinheiro por jogador"), /*#__PURE__*/React.createElement("div", {
+    }, "Dinheiro por jogador"), celular && /*#__PURE__*/React.createElement("div", {
+      "data-dinheiro-cartoes": true,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, [...din].sort((a, b) => (mkDe(a.banca, a.mu) ?? 0) - (mkDe(b.banca, b.mu) ?? 0)).map(l => {
+      const c = d.conferencias.find(x => x.pessoa_id === l.pessoa_id),
+        mk = mkDe(l.banca, l.mu);
+      return /*#__PURE__*/React.createElement("div", {
+        key: l.pessoa_id,
+        "data-dinheiro-de": l.nome,
+        style: {
+          background: C.warm,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: '11px 12px'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("b", null, l.nome), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: C.inkSoft
+        }
+      }, U[l.unidade_id]?.nome || l.unidade)), /*#__PURE__*/React.createElement("button", {
+        style: {
+          ...btnS,
+          padding: '6px 10px',
+          fontSize: 12.5
+        },
+        onClick: () => verSalas({
+          id: l.pessoa_id,
+          nome: l.nome
+        })
+      }, "Salas")), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
+          gap: '6px 10px',
+          marginTop: 8,
+          fontSize: 12.5
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Banca "), /*#__PURE__*/React.createElement("b", null, fmt(l.banca))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "MU "), /*#__PURE__*/React.createElement("b", null, l.mu == null ? '—' : fmt(l.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "MK / Profit "), /*#__PURE__*/React.createElement(MkSelo, {
+        v: mk
+      })), /*#__PURE__*/React.createElement("div", {
+        "data-lifetime-de": l.nome
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Lifetime "), /*#__PURE__*/React.createElement("b", null, l.lucro_sacado == null ? '—' : mk == null ? fmt(l.lucro_sacado) : fmtSinal(cent(num(l.lucro_sacado) + mk)))), /*#__PURE__*/React.createElement("div", {
+        style: {
+          gridColumn: '1/-1',
+          color: c ? c.diverge ? C.red : C.greenMid : C.inkSoft,
+          fontWeight: c ? 700 : 400
+        }
+      }, c ? `${c.diverge ? `conferência diverge ${fmtSinal(Number(c.diferenca))}` : 'conferência bateu'} · ${dataBR(c.criado_em)}` : 'sem conferência de saldos')));
+    })), !celular && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
       }
@@ -12585,7 +13478,7 @@ function TimeApp({
         width: '100%',
         borderCollapse: 'collapse'
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'Make-up', 'Lifetime', 'Salas'].map(h => /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Jogador', 'Reta', 'Banca', 'MU', 'MK / Profit', 'Lifetime', 'Salas'].map(h => /*#__PURE__*/React.createElement("th", {
       key: h,
       style: thS
     }, h)))), /*#__PURE__*/React.createElement("tbody", null, [...din].sort((a, b) => (mkDe(a.banca, a.mu) ?? 0) - (mkDe(b.banca, b.mu) ?? 0)).map(l => /*#__PURE__*/React.createElement("tr", {
@@ -12651,9 +13544,10 @@ function TimeApp({
       style: {
         fontSize: 12,
         color: C.inkSoft,
-        marginTop: 4
+        marginTop: 4,
+        lineHeight: 1.5
       }
-    }, "Lifetime = o que j\xE1 sacou + o profit de agora (como na planilha)."), /*#__PURE__*/React.createElement("div", {
+    }, "MU = capital do time com o jogador. MK = quanto falta pra banca voltar ao MU; Profit = o que passou dele. Lifetime = o que j\xE1 sacou + o profit de agora (como na planilha)."), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.inkSoft,
@@ -12747,7 +13641,7 @@ function TimeApp({
           });
         }
       })
-    }, "Confirmar recebimento"))))), modais);
+    }, "Confirmar recebimento"))))), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
 
   /* ---------- EQUIPE E CONVITES ---------- */
@@ -12854,7 +13748,57 @@ function TimeApp({
       }
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Pessoas da gest\xE3o"), /*#__PURE__*/React.createElement("div", {
+    }, "Pessoas da gest\xE3o"), celular && /*#__PURE__*/React.createElement("div", {
+      "data-gestao": true,
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, gestao.map(p => /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      "data-gestor": p.nome,
+      style: {
+        background: C.warm,
+        border: `1px solid ${C.border}`,
+        borderRadius: 14,
+        padding: '11px 12px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0,
+        fontSize: 13,
+        lineHeight: 1.5
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", {
+      style: {
+        fontSize: 14.5
+      }
+    }, p.nome), p.user_id === uid && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, " (voc\xEA)"), p.status === 'convidado' && /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
+      tom: "plum"
+    }, "convite enviado"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Tag, {
+      tom: p.papel === 'admin' ? 'plum' : p.papel === 'financeiro' ? 'warn' : 'ok'
+    }, PAPEL_ROT[p.papel] || '—'), " ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "cuida de ", p.unidades.map(id => U[id] ? U[id].mae_id ? U[id].nome : 'time inteiro' : null).filter(Boolean).join(', '))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.inkSoft
+      }
+    }, p.joga ? `também joga na ${U[p.joga]?.nome}` : 'não joga')), /*#__PURE__*/React.createElement("button", {
+      "data-editar-gestor": p.nome,
+      style: btnS,
+      onClick: () => setPessoaEd(p)
+    }, "Editar")))), !celular && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
       }
@@ -13157,7 +14101,7 @@ function TimeApp({
         color: C.inkSoft,
         marginTop: 8
       }
-    }, "O link s\xF3 aparece na hora de gerar. Perdeu? Cancele e gere outro.")), modais);
+    }, "O link s\xF3 aparece na hora de gerar. Perdeu? Cancele e gere outro.")), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
 
   /* ---------- REGRAS DO TIME (contrato e promoção; as regras de jogo ficam logo abaixo, nos Ajustes do time) ---------- */
@@ -13285,43 +14229,65 @@ function TimeApp({
           marginBottom: 10,
           lineHeight: 1.5
         }
-      }, "Cada unidade herda da de cima; sem regra em nenhuma, vale o padr\xE3o do time (Regras de jogo). Mude s\xF3 onde a reta \xE9 diferente."), /*#__PURE__*/React.createElement("select", {
+      }, "Escolha \"Time inteiro\" pro padr\xE3o do time. Cada reta herda da de cima; mude s\xF3 onde a reta \xE9 diferente."), /*#__PURE__*/React.createElement("div", {
+        style: {
+          position: 'relative',
+          display: 'inline-block',
+          marginBottom: 6
+        }
+      }, /*#__PURE__*/React.createElement("select", {
         "data-regra-unidade": true,
         value: selU.id,
         onChange: e => setRegraSel(e.target.value),
         style: {
           ...inputStyle,
           width: 'auto',
-          marginBottom: 6
+          paddingRight: 36
         }
       }, unis.map(u => /*#__PURE__*/React.createElement("option", {
         key: u.id,
         value: u.id
-      }, u.mae_id ? caminhoNome(u) : 'Time inteiro'))), REGRAS_RETA.map(rr => {
+      }, u.mae_id ? caminhoNome(u) : 'Time inteiro'))), /*#__PURE__*/React.createElement("span", {
+        "aria-hidden": "true",
+        style: {
+          position: 'absolute',
+          right: 13,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          pointerEvents: 'none',
+          color: C.inkSoft,
+          fontSize: 12
+        }
+      }, "\u25BC")), REGRAS_RETA.map(rr => {
         const r = regraComOrigem(selU.id, rr.k),
           proprio = !!(r && r.unidade_id === selU.id),
           v = r ? r.valor : rr.padrao(config || {});
         const origem = r ? proprio ? ehRaiz ? 'do time' : 'desta unidade' : `herdado de ${U[r.unidade_id]?.nome}` : 'padrão do time';
-        const editavel = podeSel && (!ehRaiz || ['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k));
+        // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
+        const doPadrao = ehRaiz && !['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k) && !proprio;
+        const editavel = podeSel && (!doPadrao || !!onPadrao);
         return /*#__PURE__*/React.createElement("div", {
           key: rr.k,
           "data-regra": rr.k,
           style: {
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: celular ? '1fr auto' : 'minmax(170px,1fr) auto auto',
             alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
-            padding: '8px 0',
+            gap: '4px 10px',
+            padding: '9px 0',
             borderTop: `1px solid ${C.border}`,
             fontSize: 13.5
           }
         }, /*#__PURE__*/React.createElement("span", {
           style: {
-            flex: 1,
-            minWidth: 170,
-            color: C.inkSoft
+            color: C.inkSoft,
+            gridColumn: celular ? '1 / -1' : undefined
           }
-        }, rr.rot), /*#__PURE__*/React.createElement("b", {
+        }, rr.rot), /*#__PURE__*/React.createElement("span", {
+          style: {
+            minWidth: 0
+          }
+        }, /*#__PURE__*/React.createElement("b", {
           "data-regra-valor": true
         }, rr.txt(v)), /*#__PURE__*/React.createElement("span", {
           "data-regra-origem": true,
@@ -13329,34 +14295,43 @@ function TimeApp({
             fontSize: 12,
             color: C.inkSoft
           }
-        }, "\xB7 ", origem), editavel && /*#__PURE__*/React.createElement("button", {
+        }, " \xB7 ", origem)), /*#__PURE__*/React.createElement("span", {
+          style: {
+            display: 'flex',
+            gap: 6,
+            justifyContent: 'flex-end'
+          }
+        }, editavel && /*#__PURE__*/React.createElement("button", {
           style: btnS,
-          onClick: () => mudar(rr, v)
+          onClick: () => doPadrao ? onPadrao(rr.k) : mudar(rr, v)
         }, "Mudar"), editavel && proprio && /*#__PURE__*/React.createElement("button", {
           style: btnS,
           onClick: () => rodar('limpar_regra', {
             p_unidade: selU.id,
             p_chave: rr.k
           }, `${rr.rot}: ${selU.nome} volta a herdar.`)
-        }, "Herdar"));
+        }, "Herdar")));
       }), !ehRaiz && /*#__PURE__*/React.createElement("div", {
         "data-regra": "contrato",
         style: {
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: celular ? '1fr auto' : 'minmax(170px,1fr) auto auto',
           alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          padding: '8px 0',
+          gap: '4px 10px',
+          padding: '9px 0',
           borderTop: `1px solid ${C.border}`,
           fontSize: 13.5
         }
       }, /*#__PURE__*/React.createElement("span", {
         style: {
-          flex: 1,
-          minWidth: 170,
-          color: C.inkSoft
+          color: C.inkSoft,
+          gridColumn: celular ? '1 / -1' : undefined
         }
-      }, "Contrato"), /*#__PURE__*/React.createElement("b", {
+      }, "Contrato"), /*#__PURE__*/React.createElement("span", {
+        style: {
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("b", {
         "data-regra-valor": true
       }, faixasTexto((c || contratoRaiz)?.faixas)), /*#__PURE__*/React.createElement("span", {
         "data-regra-origem": true,
@@ -13364,7 +14339,13 @@ function TimeApp({
           fontSize: 12,
           color: C.inkSoft
         }
-      }, "\xB7 ", cProprio ? 'desta unidade' : c && c.unidade_id !== raiz?.id ? `herdado de ${U[c.unidade_id]?.nome}` : 'do time'), podeSel && /*#__PURE__*/React.createElement("button", {
+      }, " \xB7 ", cProprio ? 'desta unidade' : c && c.unidade_id !== raiz?.id ? `herdado de ${U[c.unidade_id]?.nome}` : 'do time')), /*#__PURE__*/React.createElement("span", {
+        style: {
+          display: 'flex',
+          gap: 6,
+          justifyContent: 'flex-end'
+        }
+      }, podeSel && /*#__PURE__*/React.createElement("button", {
         style: btnS,
         onClick: () => setContratoAberto(selU.id)
       }, "Mudar"), podeSel && cProprio && /*#__PURE__*/React.createElement("button", {
@@ -13373,7 +14354,7 @@ function TimeApp({
           p_unidade: selU.id,
           p_chave: 'contrato'
         }, `Contrato: ${selU.nome} volta a herdar.`)
-      }, "Herdar")));
+      }, "Herdar"))));
     })(), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
@@ -13390,7 +14371,7 @@ function TimeApp({
         cursor: 'pointer',
         font: 'inherit'
       }
-    }, "Grades"), "."), modais);
+    }, "Grades"), "."), /*#__PURE__*/React.createElement(Portal, null, modais));
   }
   return null;
 }
@@ -13399,6 +14380,7 @@ function ReloadModal({
   onClose,
   onPedir
 }) {
+  useEsc(onClose);
   const [f, setF] = useState({
     valor: '',
     sala: '',
@@ -13518,6 +14500,7 @@ function PlanilhaModal({
   onClose,
   onEnviar
 }) {
+  useEsc(onClose);
   const [busy, setBusy] = useState(false);
   const linha = (rot, val, forte) => /*#__PURE__*/React.createElement("div", {
     style: {
@@ -13600,7 +14583,7 @@ function PlanilhaModal({
     }
   }, p.nome, p.atualizado_em ? ` · planilha de ${dataBR(p.atualizado_em)}` : ''), /*#__PURE__*/React.createElement("div", null, (p.saldos || []).filter(s => s.saldo).map(s => /*#__PURE__*/React.createElement(React.Fragment, {
     key: s.sala
-  }, linha(s.sala, fmt(s.saldo)))), linha('Banca (soma das salas)', fmt(p.banca), true), linha('MakeUp (capital do time)', fmt(p.makeup), true), linha('Lucro na banca', fmt(p.lucro)), linha('Cashout (lucro já sacado)', fmt(p.cashout), true), linha('Lifetime', fmt(p.lifetime)), linha('Contrato', `${p.contrato_texto || '—'}${p.contrato_fim ? ` · até ${dataBR(p.contrato_fim)}` : ''}`), linha('Grade', `${(p.grade || []).length} linhas`)), (p.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
+  }, linha(s.sala, fmt(s.saldo)))), linha('Banca (soma das salas)', fmt(p.banca), true), linha('MU: capital do time (na planilha, "MakeUp")', fmt(p.makeup), true), linha('Lucro na banca', fmt(p.lucro)), linha('Cashout (lucro já sacado)', fmt(p.cashout), true), linha('Lifetime', fmt(p.lifetime)), linha('Contrato', `${p.contrato_texto || '—'}${p.contrato_fim ? ` · até ${dataBR(p.contrato_fim)}` : ''}`), linha('Grade', `${(p.grade || []).length} linhas`)), (p.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       color: C.red,
@@ -13651,6 +14634,7 @@ const gradeModelo = () => [...['GGpoker', 'PokerStars', 'ACR'].flatMap(site => G
 function GradeTabela({
   celulas
 }) {
+  const celular = useCelular();
   const th = {
     textAlign: 'left',
     padding: '6px 6px',
@@ -13659,6 +14643,33 @@ function GradeTabela({
     textTransform: 'uppercase',
     borderBottom: `1px solid ${C.border}`
   };
+  const cols = [['regular', 'Regular'], ['prog_ko', 'Prog KO'], ['hyper', 'Hyper']];
+  // no celular, uma linha da grade vira um cartão (as 5 colunas não cabem: o Hyper ficava cortado)
+  if (celular) return /*#__PURE__*/React.createElement("div", {
+    "data-grade": true,
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8
+    }
+  }, celulas.map((g, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    "data-grade-cartao": true,
+    style: {
+      background: C.warm,
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      padding: '9px 11px',
+      fontSize: 12.5,
+      lineHeight: 1.5
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("b", null, nomeSala(g.site)), " \xB7 ", g.tipo), cols.map(([k, r]) => /*#__PURE__*/React.createElement("div", {
+    key: k
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.inkSoft
+    }
+  }, r, ": "), g[k] ? fmtGradeTexto(g[k]) : '—')))));
   return /*#__PURE__*/React.createElement("div", {
     style: {
       overflowX: 'auto'
@@ -13670,30 +14681,33 @@ function GradeTabela({
       borderCollapse: 'collapse',
       fontSize: 12.5
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Sala', 'Tipo', 'Regular', 'Prog KO', 'Hyper'].map(h => /*#__PURE__*/React.createElement("th", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Sala', 'Tipo', ...cols.map(c => c[1])].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: th
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, celulas.map((g, i) => /*#__PURE__*/React.createElement("tr", {
     key: i,
     style: {
-      borderBottom: `1px solid ${C.border}`
+      borderBottom: `1px solid ${C.border}`,
+      verticalAlign: 'top'
     }
   }, /*#__PURE__*/React.createElement("td", {
     style: {
       padding: '6px',
-      fontWeight: 700
+      fontWeight: 700,
+      whiteSpace: 'nowrap'
     }
-  }, i === 0 || celulas[i - 1].site !== g.site ? g.site : ''), /*#__PURE__*/React.createElement("td", {
+  }, i === 0 || salaChave(celulas[i - 1].site) !== salaChave(g.site) ? nomeSala(g.site) : ''), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: '6px'
     }
-  }, g.tipo), ['regular', 'prog_ko', 'hyper'].map(k => /*#__PURE__*/React.createElement("td", {
+  }, g.tipo), cols.map(([k]) => /*#__PURE__*/React.createElement("td", {
     key: k,
     style: {
       padding: '6px',
-      whiteSpace: 'pre-line'
+      whiteSpace: 'pre-line',
+      minWidth: 120
     }
-  }, g[k] || '—')))))));
+  }, g[k] ? fmtGradeTexto(g[k]) : '—')))))));
 }
 function GradeModal({
   u,
@@ -13708,6 +14722,7 @@ function GradeModal({
   onRegra,
   onClose
 }) {
+  useEsc(onClose);
   const [linhas, setLinhas] = useState(() => (efetiva && efetiva.celulas || []).map(x => ({
     ...x
   })));
@@ -13760,8 +14775,9 @@ function GradeModal({
     style: {
       background: C.surface,
       width: '100%',
-      maxWidth: 980,
-      maxHeight: '92vh',
+      maxWidth: 1100,
+      height: '96vh',
+      maxHeight: '96vh',
       overflowY: 'auto',
       borderRadius: '24px 24px 0 0',
       padding: '22px 18px calc(22px + env(safe-area-inset-bottom))',
@@ -13863,16 +14879,28 @@ function GradeModal({
       padding: '5px 4px',
       minWidth: k === 'site' ? 90 : k === 'tipo' ? 110 : 150
     }
-  }, podeEditar ? /*#__PURE__*/React.createElement("input", {
+  }, podeEditar ? ['regular', 'prog_ko', 'hyper'].includes(k) ? /*#__PURE__*/React.createElement("textarea", {
+    "data-celula": k,
+    rows: Math.max(2, Math.ceil(String(g[k] || '').length / 24)),
+    value: g[k] || '',
+    onChange: e => muda(i, k, e.target.value),
+    style: {
+      ...inp,
+      resize: 'vertical',
+      lineHeight: 1.35,
+      fontFamily: 'inherit'
+    }
+  }) : /*#__PURE__*/React.createElement("input", {
     "data-celula": k,
     value: g[k] || '',
     onChange: e => muda(i, k, e.target.value),
     style: inp
   }) : /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: '7px 2px'
+      padding: '7px 2px',
+      whiteSpace: 'pre-line'
     }
-  }, g[k] || '—'), ['regular', 'prog_ko', 'hyper'].includes(k) && String(g[k] || '').trim() && /*#__PURE__*/React.createElement("div", {
+  }, g[k] ? k === 'site' ? nomeSala(g[k]) : fmtGradeTexto(g[k]) : '—'), ['regular', 'prog_ko', 'hyper'].includes(k) && String(g[k] || '').trim() && /*#__PURE__*/React.createElement("div", {
     "data-entendi": true,
     style: {
       fontSize: 11,
@@ -14017,6 +15045,7 @@ function SaqueModal({
   onClose,
   onPedir
 }) {
+  useEsc(onClose);
   // cada sala: o saldo de agora (o que o jogador vê no site) e quanto sai dela; o servidor confere tudo de novo
   const base = (salas || []).filter(s => s.chave);
   const [ls, setLs] = useState(() => base.length ? base.map(s => ({
@@ -14121,7 +15150,17 @@ function SaqueModal({
       fontSize: 13,
       lineHeight: 1.5
     }
-  }, "Em MK: a banca no sistema (", fmt(sug.banca), ") est\xE1 abaixo do MU (", fmt(sug.mu), "). Saque de lucro s\xF3 depois de sair do MK."), sug && !sug.em_mk && (Number(sug.devolucao) > 0 || Number(sug.cashout) > 0) && /*#__PURE__*/React.createElement("div", {
+  }, "Em MK: a banca no sistema (", fmt(sug.banca), ") est\xE1 abaixo do MU (", fmt(sug.mu), "). Saque de lucro s\xF3 depois de sair do MK."), sug && !sug.em_mk && !(Number(sug.devolucao) > 0 || Number(sug.cashout) > 0) && /*#__PURE__*/React.createElement("div", {
+    "data-saque-sugestao": "nada",
+    style: {
+      background: C.goldSoft,
+      color: '#6b4e1a',
+      borderRadius: 12,
+      padding: '10px 12px',
+      fontSize: 13,
+      lineHeight: 1.5
+    }
+  }, "Nada a sacar agora", Number(sug.reserva_por_sala) > 0 ? `: cada sala precisa manter ${fmt(sug.reserva_por_sala)} e nenhuma tem mais que isso` : ': a banca não passa do MU', ".", sug.por_sala && (sug.de_onde || []).length > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, " Hoje: ", (sug.de_onde || []).map(x => `${x.sala} ${fmt(x.saldo)}`).join(' · '), ".") : null), sug && !sug.em_mk && (Number(sug.devolucao) > 0 || Number(sug.cashout) > 0) && /*#__PURE__*/React.createElement("div", {
     "data-saque-sugestao": true,
     style: {
       background: C.bg,
@@ -14130,7 +15169,19 @@ function SaqueModal({
       fontSize: 13,
       lineHeight: 1.5
     }
-  }, "Sugest\xE3o: devolver ", /*#__PURE__*/React.createElement("b", null, fmt(sug.devolucao)), " de MU e sacar ", /*#__PURE__*/React.createElement("b", null, fmt(sug.cashout)), Number(sug.reserva_total) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, ", deixando ", fmt(sug.reserva_por_sala), " em ", Number(sug.salas) > 1 ? `cada uma das ${sug.salas} salas` : 'cada sala', " (banca depois ", fmt(sug.banca_depois), ")") : null, ".", sug.por_sala && (sug.de_onde || []).some(x => Number(x.sacar) > 0) ? /*#__PURE__*/React.createElement(React.Fragment, null, " Sai de: ", (sug.de_onde || []).filter(x => Number(x.sacar) > 0).map(x => `${x.sala} ${fmt(x.sacar)}`).join(', '), ".") : null, /*#__PURE__*/React.createElement("div", {
+  }, "Sugest\xE3o: devolver ", /*#__PURE__*/React.createElement("b", null, fmt(sug.devolucao)), " de MU e sacar ", /*#__PURE__*/React.createElement("b", null, fmt(sug.cashout)), " (banca depois ", fmt(sug.banca_depois), ").", sug.por_sala && (sug.de_onde || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
+    "data-saque-por-sala": true,
+    style: {
+      marginTop: 4
+    }
+  }, (sug.de_onde || []).map(x => {
+    const sai = Number(x.sacar) || 0,
+      fica = cent(num(x.saldo) - sai),
+      r = Number(sug.reserva_por_sala) || 0;
+    return /*#__PURE__*/React.createElement("div", {
+      key: x.sala
+    }, /*#__PURE__*/React.createElement("b", null, x.sala), ": ", sai > 0 ? `sai ${fmt(sai)}, fica ${fmt(fica)}` : r > 0 && num(x.saldo) <= r ? `fica ${fmt(x.saldo)} (já está na reserva de ${fmt(r)}: não sai nada)` : `fica ${fmt(x.saldo)}`);
+  })) : Number(sug.reserva_total) > 0 ? /*#__PURE__*/React.createElement(React.Fragment, null, " Deixa ", fmt(sug.reserva_total), " de reserva nas salas.") : null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 6
     }
@@ -14316,6 +15367,9 @@ function SaqueModal({
     }
   }, "Pedir saque")));
 }
+
+// telas que têm endereço próprio (#tela). O resto do hash (ex.: o retorno do login por e-mail) não é tela.
+const TELAS = new Set(['painel', 'torneios', 'diario', 'semanal', 'mensal', 'stats', 'saques', 'banca', 'config', 'time', 'g_visao', 'g_jogadores', 'g_grades', 'g_financeiro', 'g_equipe', 'g_regras']);
 function Dashboard({
   session,
   profile
@@ -14358,7 +15412,13 @@ function Dashboard({
   });
   const [avisoPedido, setAvisoPedido] = useState(null); // {erro,texto} do último pedido pelo código
   const [codTime, setCodTime] = useState('');
-  const [viewSel, setView] = useState('painel');
+  const [viewSel, setView] = useState(() => {
+    try {
+      const v = decodeURIComponent(String(window.location.hash || '').slice(1));
+      if (TELAS.has(v)) return v;
+    } catch (e) {}
+    return 'painel';
+  });
   const view = viewSel;
   const [modal, setModal] = useState(null); // string type | {type, initial}
   const [menuOpen, setMenuOpen] = useState(false); // gaveta "Mais" do nav mobile
@@ -14404,6 +15464,16 @@ function Dashboard({
   const gestaoAtiva = modoTime && !!timeGente.temGestao && !alunoAberto && (modoSel !== 'jogo' || !timeGente.joga);
   const podeTrocarModo = modoTime && !!timeGente.temGestao && !!timeGente.joga && !alunoAberto;
   const somenteLeitura = modoTime && !!alunoAberto;
+  const toque = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false; // celular: "toque"; computador: "clique"/"mouse"
+  // trocou de tela (ou de aluno): nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
+  useEffect(() => {
+    setAlertDetail(null);
+    setModal(null);
+    setEditing(null);
+    setQuickEdit(null);
+    setMenuOpen(false);
+    setCfgConfirm(null);
+  }, [viewSel, alunoAberto]);
   const trocarModo = m => {
     setModoSel(m);
     try {
@@ -14477,7 +15547,8 @@ function Dashboard({
     let vivo = true;
     const t = setTimeout(() => {
       sb.rpc('situacao_jogador', {
-        p_pessoa: pp.id
+        p_pessoa: pp.id,
+        p_inicio_semana: weekStart(weekEnding(todayISO()))
       }).then(({
         data,
         error
@@ -14495,6 +15566,43 @@ function Dashboard({
     };
   }, [modoTime, jogadorSel, timeGente, toursRaw, ledgerRaw, walletsRaw]);
   const [cfgConfirm, setCfgConfirm] = useState(null); // confirmação pendente de mudança nos Ajustes
+  // Esc fecha a janela de cima (confirmação, fora da grade, "Mais")
+  useEsc(() => {
+    if (cfgConfirm) return setCfgConfirm(null);
+    if (alertDetail) return setAlertDetail(null);
+    if (menuOpen) setMenuOpen(false);
+  }, !!(cfgConfirm || alertDetail || menuOpen));
+  // cada tela tem endereço (#banca, #g_jogadores...): o voltar do navegador volta de tela, e a tela nova abre no topo (A-024)
+  const viewRef = React.useRef(viewSel);
+  viewRef.current = viewSel;
+  const alunoRef = React.useRef(alunoAberto);
+  alunoRef.current = alunoAberto;
+  const primeiraTela = React.useRef(true);
+  useEffect(() => {
+    try {
+      const h = '#' + viewSel;
+      if (window.location.hash !== h) {
+        if (primeiraTela.current) window.history.replaceState(null, '', h);else window.history.pushState(null, '', h);
+      }
+    } catch (e) {}
+    primeiraTela.current = false;
+    try {
+      window.scrollTo(0, 0);
+    } catch (e) {}
+  }, [viewSel]);
+  useEffect(() => {
+    const f = () => {
+      const v = decodeURIComponent(String(window.location.hash || '').slice(1));
+      if (!TELAS.has(v) || v === viewRef.current) return;
+      if (alunoRef.current && v.startsWith('g_')) {
+        setAlunoAberto(null);
+        setAlunoResumo(null);
+      }
+      setView(v);
+    };
+    window.addEventListener('popstate', f);
+    return () => window.removeEventListener('popstate', f);
+  }, []);
   const [imp, setImp] = useState({
     busy: false,
     prog: '',
@@ -14659,7 +15767,7 @@ function Dashboard({
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime = async () => {
     try {
-      const [pe, vi, ac, un, sq, gr, rg] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status', 'pago').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'), sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde')]);
+      const [pe, vi, ac, un, sq, gr, rg, apo, rel] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'), sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'), lerTudo(() => sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')), lerTudo(() => sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id'))]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe = {};
       (pe.data || []).forEach(x => {
@@ -14679,7 +15787,7 @@ function Dashboard({
       const raiz = (un.data || []).find(u => !u.mae_id);
       const podeConfigurar = !!(eu && raiz && (ac.data || []).some(a => a.pessoa_id === eu.id && a.unidade_id === raiz.id && (a.capacidades || []).some(c => c === 'administrar' || c === 'configurar_regras')));
       const nomePorId = Object.fromEntries((pe.data || []).map(x => [x.id, x.nome]));
-      const saquesPagos = (sq.data || []).map(x => ({
+      const saquesPagos = (sq.data || []).filter(x => x.status === 'pago').map(x => ({
         id: 'saque-' + x.id,
         player: nomePorId[x.pessoa_id] || '',
         valor_sacado: num(x.devolucao) + num(x.cashout),
@@ -14706,7 +15814,12 @@ function Dashboard({
         pessoas: pessoas.map(x => ({
           id: x.id,
           nome: x.nome
-        }))
+        })),
+        dinheiro: {
+          saques: sq.error ? [] : sq.data || [],
+          aportes: apo.error ? [] : apo.data || [],
+          reloads: rel.error ? [] : rel.data || []
+        }
       });
     } catch (e) {
       console.error(e);
@@ -15298,7 +16411,7 @@ function Dashboard({
     });
     const semData = lidos.filter(r => !r.date); // freeroll (buy-in 0) é torneio de verdade e entra
     lidos = lidos.filter(r => r.date).sort((a, b) => a.date === b.date ? a.tid < b.tid ? -1 : 1 : a.date < b.date ? -1 : 1);
-    if (semData.length) issues.push(`${semData.length} resumo(s) sem data legível — deixei de fora.`);
+    if (semData.length) issues.push(`${pl(semData.length, 'resumo', 'resumos')} sem data legível: deixei de fora.`);
 
     // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
     // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
@@ -15461,7 +16574,7 @@ function Dashboard({
           }
         }
         // 23505 = o índice único do id do torneio barrou: já tinha sido importado em outro lugar
-        if (barrados) erros.push(`${barrados} torneio(s) já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.`);
+        if (barrados) erros.push(`${pl(barrados, 'torneio já tinha', 'torneios já tinham')} sido importado${barrados === 1 ? '' : 's'} em outro aparelho: saia e entre de novo pra ver a lista atualizada.`);
       }
     }
     for (const x of pv.completa) {
@@ -15928,6 +17041,7 @@ function Dashboard({
   const sites = Array.isArray(sitesReta) && sitesReta.length ? sitesReta : sitesTime;
   const modalidades = Array.isArray(modsReta) && modsReta.length ? modsReta : modalidadesTime;
   const CURWK = weekEnding(todayISO());
+  const temWpt = !modoTime || sites.some(x => /wpt/i.test(String(x))); // no time, WPT só aparece se for sala permitida
 
   /* banca central = inicial + resultados dos jogos + movimentos manuais − saques pagos
      (atualiza sozinha a cada torneio lançado; saque de jogador entra pela aba Saques) */
@@ -15945,6 +17059,10 @@ function Dashboard({
   const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
   const bancaAtual = modoTime && sitSel && sitSel.banca != null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
   const muTela = sitSel && sitSel.mu != null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // banca no começo da semana (base do stop semanal): no time vem do servidor; no pool e na conta individual, a soma
+  // do que aconteceu antes da semana
+  const iniSemana = weekStart(CURWK);
+  const bancaSemana = modoTime ? sitSel && sitSel.banca_inicio_semana != null ? cent(sitSel.banca_inicio_semana) : bancaAtual : cent(num(config.banca_inicial) + daily.filter(e => e.entry_date < iniSemana).reduce((s, e) => s + resultadoDia(e), 0) + ledger.filter(l => l.entry_date < iniSemana).reduce((s, l) => s + num(l.entrada) - num(l.saida), 0) - wds.filter(w => String(w.week_ending_date || '') < iniSemana).reduce((s, w) => s + num(w.valor_sacado), 0));
   // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
   const salasTravadas = modoTime && !!sitSel && (sitSel.abertura === 'confirmada' || partesBanca && (Number(partesBanca.aportes) !== 0 || Number(partesBanca.saques) !== 0));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
@@ -16025,7 +17143,8 @@ function Dashboard({
       text: `Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`
     });
   });
-  if (bancaAtual < piso) alerts.push({
+  // no time, piso só vale quando o time definiu um e a banca já tem os saldos de entrada (planilha conferida) (A-051)
+  if (bancaAtual < piso && !(modoTime && (!(piso > 0) || sitSel && sitSel.abertura !== 'confirmada'))) alerts.push({
     key: 'piso',
     tone: C.red,
     text: `Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`
@@ -16035,39 +17154,122 @@ function Dashboard({
   if (foraGradeTours.length) alerts.push({
     key: 'grade:' + CURWK,
     tone: C.red,
-    text: `${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,
+    text: `${pl(foraGradeTours.length, 'torneio', 'torneios')} fora da grade nesta semana. ${toque ? 'Toque' : 'Clique'} para ver ${foraGradeTours.length === 1 ? 'qual' : 'quais'}.`,
     items: foraGradeTours
   });
+  // histórico do dinheiro do time na Banca (A-018, A-062, A-069): capital, reload enviado e saque pago, só leitura
+  const historicoTime = (() => {
+    if (!modoTime) return [];
+    const pp = (timeGente.pessoas || []).find(x => nomeIgual(x.nome, jogadorSel));
+    const dt = timeGente.dinheiro;
+    if (!pp || !dt) return [];
+    const rlPorAporte = Object.fromEntries((dt.reloads || []).filter(r => r.aporte_id).map(r => [r.aporte_id, r]));
+    return [...(dt.aportes || []).filter(a => a.pessoa_id === pp.id).map(a => ({
+      k: 'a' + a.id,
+      data: String(a.data || a.criado_em || '').slice(0, 10),
+      tipo: rlPorAporte[a.id] ? 'Reload' : num(a.valor) >= 0 ? 'Capital do time' : 'Capital recolhido pelo time',
+      sala: a.sala,
+      valor: num(a.valor)
+    })), ...(dt.saques || []).filter(q => q.pessoa_id === pp.id && q.status === 'pago').map(q => ({
+      k: 's' + q.id,
+      data: String(q.pago_em || q.solicitado_em || '').slice(0, 10),
+      tipo: 'Saque',
+      texto: `${num(q.devolucao) > 0 ? `devolveu ${fmt(q.devolucao)} de MU + ` : ''}cashout ${fmt(q.cashout)} · ${somenteLeitura ? 'jogador' : 'você'} ficou com ${fmt(q.parte_jogador)}`,
+      valor: -(num(q.devolucao) + num(q.cashout))
+    }))].sort((x, y) => String(y.data).localeCompare(String(x.data)));
+  })();
+  // o que está em aberto, no Início (A-014, A-051, A-052, A-053, A-055): saque e reload pedidos, planilha, dias sem lançar
+  const faixasInicio = (() => {
+    if (!solo) return [];
+    const f = [],
+      quem = somenteLeitura ? alunoAberto : null;
+    const sq = modoTime && sitSel ? sitSel.saque_aberto : null,
+      rl = modoTime && sitSel ? sitSel.reload_aberto : null,
+      ab = modoTime && sitSel ? sitSel.abertura : null;
+    if (sq) f.push(sq.status === 'aprovado' ? {
+      k: 'saque',
+      tom: 'warn',
+      titulo: 'Saque aprovado',
+      texto: quem ? `o time espera ${fmt(sq.total_time)} de ${quem}` : `mande ${fmt(sq.total_time)} pro time; depois o time confirma que recebeu`
+    } : {
+      k: 'saque',
+      tom: 'warn',
+      titulo: 'Saque aguardando aprovação',
+      texto: `pedido em ${dataBR(sq.solicitado_em)} · o time recebe ${fmt(sq.total_time)}${Number(sq.parte_jogador) > 0 ? ` · ${quem ? quem + ' fica' : 'você fica'} com ${fmt(sq.parte_jogador)}` : ''}`
+    });
+    if (rl) f.push({
+      k: 'reload',
+      tom: 'warn',
+      titulo: rl.status === 'aprovado' ? 'Reload aprovado' : 'Reload aguardando aprovação',
+      texto: `${fmt(rl.valor)}${rl.sala ? ` na ${rl.sala}` : ''} · ${rl.status === 'aprovado' ? 'o time vai mandar o dinheiro' : `pedido em ${dataBR(rl.solicitado_em)}`}`
+    });
+    if (ab === 'sem') f.push({
+      k: 'planilha',
+      tom: 'bad',
+      titulo: quem ? 'Sem planilha de abertura' : 'Mande a planilha de abertura',
+      texto: quem ? 'a banca ainda não tem os saldos de entrada' : 'com ela o time registra seus saldos de entrada, o MU e o que você já sacou',
+      acao: quem ? null : ['Mandar agora', () => setView('banca')]
+    });
+    if (ab === 'enviada') f.push({
+      k: 'planilha',
+      tom: 'warn',
+      titulo: 'Planilha aguardando o time conferir',
+      texto: `enviada em ${dataBR(sitSel.abertura_enviada_em)}${sitSel.abertura_banca != null ? ` · banca na planilha ${fmt(sitSel.abertura_banca)}` : ''}`
+    });
+    const ultimo = tours.reduce((m, t) => t.entry_date > m ? t.entry_date : m, ''),
+      dd = ultimo ? diasDesde(ultimo) : null;
+    if (dd != null && dd >= 3) f.push({
+      k: 'parado',
+      tom: dd > 7 ? 'bad' : 'warn',
+      titulo: quem ? `Último torneio lançado: ${dataBR(ultimo)}` : `Seu último torneio lançado é de ${dataBR(ultimo)}`,
+      texto: `${dd} dias atrás${quem ? '' : '. Se jogou depois disso, lance os jogos'}`
+    });
+    return f;
+  })();
+  // stop já batido pelo jogador na tela (hoje ou na semana): o formulário de torneio avisa antes de lançar mais
+  const stopBatido = (() => {
+    if (!solo || somenteLeitura || !players[0]) return null;
+    const p = players[0],
+      st = stopDe(config, p),
+      hoje = todayISO();
+    const resHoje = daily.filter(e => e.player === p && e.entry_date === hoje).reduce((a, e) => a + resultadoDia(e), 0),
+      slDia = st.dia * abiDoStop(config, p, tours, hoje).valor;
+    if (slDia > 0 && resHoje <= -slDia) return `Você já bateu o stop loss de hoje (${fmtSinal(resHoje)}, limite ${fmt(slDia)}). A regra é parar por hoje.`;
+    const resSem = curWeek[p] ? curWeek[p].resultado : 0,
+      slSem = st.semana * bancaSemana;
+    if (slSem > 0 && resSem <= -slSem) return `Você já bateu o stop loss da semana (${fmtSinal(resSem)}, limite ${fmt(slSem)}). A regra é parar até a semana que vem.`;
+    return null;
+  })();
+  // quem bateu: "Você" na própria conta; o nome no pool e no painel aberto pela gestão
+  const quemBateu = p => solo && !somenteLeitura ? 'Você' : p;
   players.forEach(p => {
     const r = curWeek[p] ? curWeek[p].resultado : 0;
-    const lim = stopDe(config, p).semana * bancaAtual;
+    const lim = stopDe(config, p).semana * bancaSemana;
     if (lim > 0 && r < 0 && r <= -lim) alerts.push({
       key: 'slsem:' + p + ':' + CURWK,
       tone: C.red,
-      text: `${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`
+      text: `${quemBateu(p)} atingiu o stop loss semanal (${fmtSinal(r)}, limite ${fmt(lim)}: ${pctFmt(stopDe(config, p).semana * 100)} da banca do começo da semana).`
     });
   });
   daily.filter(e => weekEnding(e.entry_date) === CURWK).forEach(e => {
-    const sl = stopDe(config, e.player).dia * abiMaxFor(config, e.player, e.entry_date);
+    const sl = stopDe(config, e.player).dia * abiDoStop(config, e.player, tours, e.entry_date).valor;
     if (sl > 0 && resultadoDia(e) <= -sl) alerts.push({
       key: 'sldia:' + e.player + ':' + e.entry_date,
       tone: C.red,
-      text: `${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`
+      text: `${quemBateu(e.player)} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmtSinal(resultadoDia(e))}, limite ${fmt(sl)}).`
     });
   });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
   // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
+  // pela data do torneio (não a do cadastro): é o que a gestão vê como "último lançamento" (A-053)
   if (tours.length > 0) {
-    const ultimo = tours.reduce((m, t) => {
-      const d = String(t.created_at || t.entry_date || '').slice(0, 10);
-      return d > m ? d : m;
-    }, '');
+    const ultimo = tours.reduce((m, t) => t.entry_date > m ? t.entry_date : m, '');
     if (ultimo) {
-      const dias = Math.round((Date.parse(todayISO()) - Date.parse(ultimo)) / 86400000);
-      if (dias >= 2) alerts.push({
+      const dias = diasDesde(ultimo);
+      if (dias >= 3) alerts.push({
         key: 'parado',
         tone: C.gold,
-        text: `Faz ${dias} dias sem registrar torneios. Se você jogou nesse período, lance os jogos pra manter a banca e as estatísticas em dia.`
+        text: somenteLeitura ? `O último torneio lançado de ${alunoAberto} é de ${dataBR(ultimo)} (${dias} dias).` : `Seu último torneio lançado é de ${dataBR(ultimo)} (${dias} dias). Se jogou depois disso, lance os jogos pra manter a banca e as estatísticas em dia.`
       });
     }
   }
@@ -16104,10 +17306,28 @@ function Dashboard({
     id: 'p-' + a.key,
     lido_em: avLidos.includes(a.key) ? 'lido' : null
   }));
-  const todosAvisos = [...alertasPainel, ...avLocais, ...avisos.map(x => ({
-    ...x,
-    servidor: true
-  }))].sort((x, y) => String(y.criado_em || '9').localeCompare(String(x.criado_em || '9')));
+  const todosAvisos = (() => {
+    const l = [...alertasPainel, ...avLocais, ...avisos.map(x => ({
+      ...x,
+      servidor: true
+    }))].sort((x, y) => String(y.criado_em || '9').localeCompare(String(x.criado_em || '9')));
+    const vistos = {},
+      out = [];
+    l.forEach(a => {
+      const k = a.servidor ? `${a.tipo}|${a.ref_id || ''}|${a.titulo}|${a.texto || ''}` : 'id|' + a.id;
+      if (vistos[k]) {
+        vistos[k].vezes = (vistos[k].vezes || 1) + 1;
+        if (!a.lido_em) vistos[k].lido_em = null;
+        vistos[k].ids = [...(vistos[k].ids || [vistos[k].id]), a.id];
+        return;
+      }
+      vistos[k] = {
+        ...a
+      };
+      out.push(vistos[k]);
+    });
+    return out;
+  })();
 
   /* dados dos gráficos */
   const chartWeeks = allWeeks.slice(-8);
@@ -16184,7 +17404,9 @@ function Dashboard({
       k: 'player',
       label: 'Jogador',
       type: 'select',
-      opts: players
+      opts: players,
+      def: players[0],
+      oculto: players.length === 1
     }, {
       k: 'tournament_name',
       label: 'Torneio',
@@ -16283,7 +17505,9 @@ function Dashboard({
       k: 'player',
       label: 'Jogador',
       type: 'select',
-      opts: players
+      opts: players,
+      def: players[0],
+      oculto: players.length === 1
     }, {
       k: 'wallet',
       label: 'Saiu de qual carteira',
@@ -16355,6 +17579,34 @@ function Dashboard({
     wd: [wds, setWds]
   };
 
+  // padrão do time editado no bloco de regras ("Time inteiro"): cada regra da reta aponta pra sua coluna da configuração
+  const PADRAO_TIME = {
+    abi_max: {
+      label: 'ABI máximo (reta sem grade)',
+      kind: 'money',
+      key: 'abi_max_player1'
+    },
+    stop_dia_buyins: {
+      label: 'Stop loss diário (buy-ins)',
+      kind: 'money',
+      key: 'stoploss_daily_buyins'
+    },
+    stop_semana_pct: {
+      label: 'Stop loss semanal',
+      kind: 'percent',
+      key: 'stoploss_weekly_pct'
+    },
+    sites: {
+      label: 'Sites permitidos',
+      kind: 'list',
+      key: 'sites_permitidos'
+    },
+    modalidades: {
+      label: 'Modalidades permitidas',
+      kind: 'list',
+      key: 'modalidades_permitidas'
+    }
+  };
   /* nav: no celular só o essencial embaixo; o resto abre no "Mais" (menu hambúrguer) */
   let MAIN_TABS = ['painel', 'torneios', 'diario', 'stats'];
   let nav = [{
@@ -16459,7 +17711,7 @@ function Dashboard({
         label: 'Ajustes',
         Icon: IcoGear
       }])];
-      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'stats', 'time'];
+      MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'banca', 'time'];
     }
   }
   const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
@@ -16757,10 +18009,11 @@ function Dashboard({
         setAvLocais(l => l.filter(x => x.id !== av.id));
         return;
       }
-      setAvisos(a => a.filter(x => x.id !== av.id));
+      const ids = av.ids || [av.id];
+      setAvisos(a => a.filter(x => !ids.includes(x.id)));
       try {
-        await sb.rpc('apagar_aviso', {
-          p_id: av.id
+        for (const id of ids) await sb.rpc('apagar_aviso', {
+          p_id: id
         });
       } catch (e) {}
     },
@@ -16775,39 +18028,32 @@ function Dashboard({
       }
     },
     onIr: av => {
-      if (av.items && av.items.length) setAlertDetail({
+      if (av.items && av.items.length) return setAlertDetail({
         items: av.items
-      });else if (!av.local && !av.painel) {
-        if (gestaoAtiva) setView({
-          saque: 'g_financeiro',
-          reload: 'g_financeiro',
-          abertura: 'g_financeiro',
-          saida: 'g_financeiro',
-          saldo: 'g_financeiro',
-          entrada: 'g_jogadores',
-          grade: 'g_grades'
-        }[av.tipo] || 'g_visao');else setView('time');
+      });
+      if (av.painel) {
+        const k = String(av.key || '');
+        return setView(k.startsWith('parado') || k.startsWith('semres') ? 'torneios' : k.startsWith('piso') ? 'banca' : 'painel');
       }
+      if (av.local) return;
+      if (gestaoAtiva) return setView({
+        saque: 'g_financeiro',
+        reload: 'g_financeiro',
+        planilha: 'g_financeiro',
+        abertura: 'g_financeiro',
+        saida: 'g_financeiro',
+        saldo: 'g_financeiro',
+        capital: 'g_financeiro',
+        entrada: 'g_jogadores',
+        grade: 'g_grades'
+      }[av.tipo] || 'g_visao');
+      setView({
+        grade: 'time',
+        planilha: 'time',
+        entrada: 'time'
+      }[av.tipo] || (modoTime ? 'banca' : 'painel'));
     }
-  }), /*#__PURE__*/React.createElement("button", {
-    className: "mobile-only",
-    onClick: sair,
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
-      padding: '8px 14px',
-      borderRadius: 12,
-      border: `1px solid ${C.border}`,
-      background: 'transparent',
-      color: C.inkSoft,
-      fontWeight: 600,
-      cursor: 'pointer',
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement(IcoLogout, {
-    s: 16
-  }), "Sair"))), podeTrocarModo && /*#__PURE__*/React.createElement("div", {
+  }))), podeTrocarModo && /*#__PURE__*/React.createElement("div", {
     className: "mobile-only",
     style: {
       marginBottom: 14
@@ -16929,7 +18175,12 @@ function Dashboard({
       background: C.plumSoft,
       borderRadius: 14,
       padding: '10px 14px',
-      marginBottom: 16
+      marginBottom: 16,
+      position: 'sticky',
+      top: 8,
+      zIndex: 20,
+      boxShadow: '0 10px 24px -18px rgba(25,35,29,.5)',
+      border: `1px solid ${C.border}`
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
@@ -17155,7 +18406,7 @@ function Dashboard({
       opacity: .88,
       fontWeight: 600
     }
-  }, /*#__PURE__*/React.createElement("span", null, "Salas ", fmt(partesBanca.salas)), /*#__PURE__*/React.createElement("span", null, "Jogos ", fmtSinal(partesBanca.resultados)), Number(partesBanca.movimentos) !== 0 && /*#__PURE__*/React.createElement("span", null, "Movimentos ", fmtSinal(partesBanca.movimentos)), Number(partesBanca.aportes) !== 0 && /*#__PURE__*/React.createElement("span", null, "Capital do time ", fmtSinal(partesBanca.aportes)), Number(partesBanca.saques) > 0 && /*#__PURE__*/React.createElement("span", null, "Saques \u2212", fmt(partesBanca.saques)), partesBanca.corte && /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("span", null, "Salas ", fmt(partesBanca.salas)), /*#__PURE__*/React.createElement("span", null, "Jogos ", fmtSinal(partesBanca.resultados)), Number(partesBanca.movimentos) !== 0 && /*#__PURE__*/React.createElement("span", null, "Movimentos ", fmtSinal(partesBanca.movimentos)), Number(partesBanca.aportes) !== 0 && /*#__PURE__*/React.createElement("span", null, "Reload e capital do time ", fmtSinal(partesBanca.aportes)), Number(partesBanca.saques) > 0 && /*#__PURE__*/React.createElement("span", null, "Saques \u2212", fmt(partesBanca.saques)), partesBanca.corte && /*#__PURE__*/React.createElement("span", {
     style: {
       opacity: .85
     }
@@ -17186,7 +18437,21 @@ function Dashboard({
       opacity: .92
     }
   }, /*#__PURE__*/React.createElement("span", null, "Piso m\xEDnimo ", fmt(piso)), /*#__PURE__*/React.createElement("span", null, bancaAtual >= piso ? `${fmt(bancaAtual - piso)} acima do piso` : 'abaixo do piso!'))), modoTime && muTela != null && (() => {
-    const mk = mkDe(bancaAtual, muTela);
+    const mk = mkDe(bancaAtual, muTela),
+      ab = sitSel ? sitSel.abertura : null;
+    // sem a planilha conferida, a banca ainda não tem os saldos de entrada: MK aqui seria um número falso
+    if (ab === 'sem' || ab === 'enviada') return /*#__PURE__*/React.createElement("div", {
+      "data-painel-mk": "sem-foto",
+      style: {
+        marginTop: 12,
+        background: 'rgba(255,255,255,.14)',
+        borderRadius: 12,
+        padding: '9px 12px',
+        fontSize: 13.5,
+        fontWeight: 600
+      }
+    }, ab === 'sem' ? 'Sem planilha de abertura: a banca ainda não tem os saldos de entrada, então MU e MK ainda não valem.' : 'Planilha aguardando o time conferir: MU e MK passam a valer depois da conferência.');
+    const pedido = sitSel && sitSel.saque_aberto;
     return /*#__PURE__*/React.createElement("div", {
       "data-painel-mk": true,
       style: {
@@ -17204,8 +18469,42 @@ function Dashboard({
       style: {
         opacity: .85
       }
-    }, mk < 0 ? 'saque só depois de sair do MK' : 'fora de MK: dá pra pedir saque'));
-  })())), /*#__PURE__*/React.createElement(ResumoTorneios, {
+    }, pedido ? 'saque em andamento' : mk < 0 ? 'saque só depois de sair do MK' : 'fora de MK: pode pedir saque'));
+  })())), faixasInicio.length > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-faixas-inicio": true,
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8
+    }
+  }, faixasInicio.map(f => /*#__PURE__*/React.createElement("div", {
+    key: f.k,
+    "data-faixa": f.k,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      flexWrap: 'wrap',
+      padding: '11px 14px',
+      borderRadius: 14,
+      border: `1.5px solid ${f.tom === 'bad' ? C.red + '55' : f.tom === 'warn' ? C.gold + '66' : C.border}`,
+      background: f.tom === 'bad' ? C.redSoft : f.tom === 'warn' ? C.goldSoft : C.plumSoft,
+      color: C.ink,
+      fontSize: 13.5,
+      lineHeight: 1.45
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      minWidth: 200
+    }
+  }, /*#__PURE__*/React.createElement("b", null, f.titulo), f.texto ? /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 ", f.texto) : null), f.acao && /*#__PURE__*/React.createElement("button", {
+    onClick: f.acao[1],
+    style: {
+      ...btnS,
+      padding: '7px 12px'
+    }
+  }, f.acao[0])))), /*#__PURE__*/React.createElement(ResumoTorneios, {
     tours: tours,
     players: players,
     solo: solo,
@@ -17215,7 +18514,9 @@ function Dashboard({
     config: config,
     daily: daily,
     curWeek: curWeek,
-    bancaAtual: bancaAtual
+    bancaSemana: bancaSemana,
+    tours: tours,
+    leitura: somenteLeitura ? alunoAberto : null
   }), foraGradeTours.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: () => setAlertDetail({
       items: foraGradeTours
@@ -17242,7 +18543,7 @@ function Dashboard({
       flex: 1,
       minWidth: 0
     }
-  }, foraGradeTours.length, " torneio", foraGradeTours.length !== 1 ? 's' : '', " fora da grade nesta semana"), /*#__PURE__*/React.createElement("span", {
+  }, foraGradeTours.length, " torneio", foraGradeTours.length !== 1 ? 's' : '', " fora da grade nesta semana (desde ", dataBR(iniSemana), ")"), /*#__PURE__*/React.createElement("span", {
     style: {
       fontSize: 18,
       flexShrink: 0
@@ -17258,8 +18559,8 @@ function Dashboard({
     tone: resSemanaAtual >= 0 ? C.greenMid : C.red,
     bg: resSemanaAtual >= 0 ? C.greenSoft : C.redSoft,
     label: "Resultado da semana",
-    value: fmt(resSemanaAtual),
-    sub: resSemanaAtual === 0 && !daily.some(e => weekEnding(e.entry_date) === CURWK) ? `semana começando · ${weekLabel(CURWK)}` : weekLabel(CURWK)
+    value: resSemanaAtual === 0 ? fmt(0) : fmtSinal(resSemanaAtual),
+    sub: !daily.some(e => weekEnding(e.entry_date) === CURWK) ? todayISO() === iniSemana ? `semana começando · ${weekLabel(CURWK)}` : `nada lançado nesta semana · ${weekLabel(CURWK)}` : weekLabel(CURWK)
   }), !solo && /*#__PURE__*/React.createElement(Stat, {
     Icon: IcoAlert,
     tone: makeUpTotal > 0 ? C.gold : C.greenMid,
@@ -17278,9 +18579,9 @@ function Dashboard({
     Icon: IcoChip,
     tone: C.green,
     bg: C.greenSoft,
-    label: solo ? 'Lucro acumulado' : 'Lucro da pool (acum.)',
-    value: fmt(solo ? resTotalGeral : lucroPoolAcum),
-    sub: solo ? 'desde o começo' : `pago em saques: ${fmt(totalPago)}`
+    label: solo ? 'Resultado dos jogos' : 'Lucro da pool (acum.)',
+    value: solo ? resTotalGeral === 0 ? fmt(0) : fmtSinal(resTotalGeral) : fmt(lucroPoolAcum),
+    sub: solo ? modoTime ? 'soma dos torneios lançados (não é o lifetime do contrato)' : 'soma dos torneios desde o começo' : `pago em saques: ${fmt(totalPago)}`
   })), !solo && /*#__PURE__*/React.createElement(Recolhivel, {
     titulo: "Divis\xE3o do dinheiro",
     sub: "Acumulado autorizado e ainda n\xE3o sacado",
@@ -17363,13 +18664,13 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Lucro acumulado por jogador"), /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Resultado acumulado' : 'Lucro acumulado por jogador'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
       marginBottom: 12
     }
-  }, "Passe o dedo pra ver os valores."), /*#__PURE__*/React.createElement(MultiLineChart, {
+  }, toque ? 'Passe o dedo' : 'Passe o mouse', " pra ver os valores."), /*#__PURE__*/React.createElement(MultiLineChart, {
     labels: lucroLabels,
     series: lucroSeries
   })), /*#__PURE__*/React.createElement("div", {
@@ -17596,7 +18897,7 @@ function Dashboard({
       key: i
     }, "\u2022 ", x))))), /*#__PURE__*/React.createElement(Recolhivel, {
       titulo: "Onde pego esse arquivo?",
-      sub: "GG \xB7 WPT \xB7 PokerStars"
+      sub: ['GG', ...(temWpt ? ['WPT'] : []), 'PokerStars'].join(' · ')
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
@@ -17607,7 +18908,7 @@ function Dashboard({
       style: {
         color: C.ink
       }
-    }, "GG e WPT:"), " PokerCraft \u2192 o ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " do torneio (o resultado, n\xE3o as m\xE3os). Pode mandar a pasta toda ou o .zip.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
+    }, temWpt ? 'GG e WPT:' : 'GG:'), " PokerCraft \u2192 o ", /*#__PURE__*/React.createElement("b", null, "Tournament Summary"), " do torneio (o resultado, n\xE3o as m\xE3os). Pode mandar a pasta toda ou o .zip.", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("b", {
       style: {
         color: C.ink
       }
@@ -17655,7 +18956,7 @@ function Dashboard({
       color: C.inkSoft,
       fontWeight: 600
     }
-  }, "Resumo por jogador e dia \u2014 monta sozinho dos torneios. Toque num dia pra conferir/corrigir."), /*#__PURE__*/React.createElement("div", {
+  }, "Resumo por jogador e dia \u2014 monta sozinho dos torneios. ", somenteLeitura ? toque ? 'Toque num dia para ver os torneios.' : 'Clique num dia para ver os torneios.' : toque ? 'Toque num dia pra conferir ou corrigir.' : 'Clique num dia pra conferir ou corrigir.'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontFamily: "'Space Grotesk',sans-serif",
       fontSize: 24,
@@ -17675,7 +18976,7 @@ function Dashboard({
       gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
       gap: 12
     }
-  }, /*#__PURE__*/React.createElement(Seg, {
+  }, !solo && /*#__PURE__*/React.createElement(Seg, {
     label: "Jogador",
     value: diF.player,
     options: ['Todos', ...players],
@@ -17881,7 +19182,32 @@ function Dashboard({
       flexDirection: 'column',
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement(Card, {
+  }, modoTime && /*#__PURE__*/React.createElement(Card, {
+    "data-contrato-semana": true,
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 20,
+      fontWeight: 600,
+      margin: '0 0 4px'
+    }
+  }, "Contrato do time"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.inkSoft,
+      lineHeight: 1.55
+    }
+  }, sitSel && sitSel.contrato ? faixasTexto(sitSel.contrato) : 'Sem contrato definido pelo time ainda.'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 6,
+      lineHeight: 1.5
+    }
+  }, "A divis\xE3o vale no saque: o cashout \xE9 dividido pela faixa do lifetime (o que j\xE1 foi sacado + o profit). As semanas abaixo mostram s\xF3 o resultado dos jogos.")), !solo && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -18073,7 +19399,7 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 12px'
     }
-  }, "Por jogador"), perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Resumo do mês' : 'Por jogador'), perPlayerMonth.map(pm => /*#__PURE__*/React.createElement("div", {
     key: pm.p,
     style: {
       padding: '12px 0',
@@ -18151,7 +19477,7 @@ function Dashboard({
       gap: 12,
       marginTop: 14
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12,
       borderRadius: 12,
@@ -18168,7 +19494,7 @@ function Dashboard({
       fontWeight: 700,
       marginTop: 2
     }
-  }, maisLucrativo ? `${maisLucrativo.p} (${fmt(maisLucrativo.res)})` : '—')), /*#__PURE__*/React.createElement("div", {
+  }, maisLucrativo ? `${maisLucrativo.p} (${fmt(maisLucrativo.res)})` : '—')), !solo && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12,
       borderRadius: 12,
@@ -18238,7 +19564,7 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, solo ? 'Onde você lucra' : 'Onde vocês lucram'), /*#__PURE__*/React.createElement("div", {
+  }, somenteLeitura ? `Onde ${alunoAberto} lucra` : solo ? 'Onde você lucra' : 'Onde vocês lucram'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -19769,7 +21095,7 @@ function Dashboard({
         color: C.inkSoft,
         marginTop: 1
       }
-    }, x.tipo === 'ok' && `Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${x.hh.hands} mão(s) no arquivo`, x.tipo === 'buyin' && `Lançado ${fmt(x.t.buyin)} mas as mãos mostram ${fmt(x.hh.buyin)} — confere qual está certo e corrige o lançamento`, x.tipo === 'semlanc' && `As mãos provam que esse torneio foi jogado (${x.hh.hands} mão(s), buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`, x.tipo === 'semhh' && `Lançado ${fmt(x.t.buyin)}${num(x.t.prize) > 0 ? ` · prêmio ${fmt(x.t.prize)}` : ''} — sem hand history importado pra comprovar (importe as mãos na aba Stats)`))))));
+    }, x.tipo === 'ok' && `Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${pl(x.hh.hands, 'mão', 'mãos')} no arquivo`, x.tipo === 'buyin' && `Lançado ${fmt(x.t.buyin)} mas as mãos mostram ${fmt(x.hh.buyin)} — confere qual está certo e corrige o lançamento`, x.tipo === 'semlanc' && `As mãos provam que esse torneio foi jogado (${pl(x.hh.hands, 'mão', 'mãos')}, buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`, x.tipo === 'semhh' && `Lançado ${fmt(x.t.buyin)}${num(x.t.prize) > 0 ? ` · prêmio ${fmt(x.t.prize)}` : ''} — sem hand history importado pra comprovar (importe as mãos na aba Stats)`))))));
   })(), view === 'saques' && /*#__PURE__*/React.createElement("div", {
     className: "ftfade",
     style: {
@@ -20011,7 +21337,7 @@ function Dashboard({
       fontSize: 12.5,
       opacity: .85
     }
-  }, "Capital do time"), /*#__PURE__*/React.createElement("div", {
+  }, "Reload e capital do time"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 700,
       fontSize: 15
@@ -20079,7 +21405,66 @@ function Dashboard({
       fontWeight: 700,
       fontSize: 15
     }
-  }, "\u2212", fmt(sacadoTotal))))), modoTime ? /*#__PURE__*/React.createElement(Card, {
+  }, "\u2212", fmt(sacadoTotal))))), modoTime && !somenteLeitura && !gestaoAtiva && timeGente.joga && /*#__PURE__*/React.createElement(TimeApp, {
+    secao: "dinheiro",
+    session: session,
+    tours: toursRaw,
+    config: config,
+    banca: bancaAtual,
+    onIr: setView
+  }), modoTime && !semDinheiro && historicoTime.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    "data-historico-time": true,
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 19,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, "Reload, capital e saques"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      marginTop: 2,
+      marginBottom: 6,
+      lineHeight: 1.5
+    }
+  }, "O time lan\xE7a quando manda ou recebe dinheiro. S\xF3 leitura: j\xE1 est\xE1 na banca, n\xE3o lance de novo em Movimentos."), historicoTime.map(e => /*#__PURE__*/React.createElement("div", {
+    key: e.k,
+    "data-historico": e.tipo,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+      padding: '10px 0',
+      borderTop: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14
+    }
+  }, e.tipo, e.sala ? ` · ${e.sala}` : ''), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft
+    }
+  }, dataBR(e.data), e.texto ? ` · ${e.texto}` : '')), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 800,
+      fontSize: 15,
+      color: e.valor >= 0 ? C.greenMid : C.red,
+      flexShrink: 0
+    }
+  }, fmtSinal(e.valor))))), modoTime ? /*#__PURE__*/React.createElement(Card, {
     "data-salas-time": true,
     style: {
       padding: 20
@@ -20091,14 +21476,14 @@ function Dashboard({
       fontWeight: 600,
       margin: 0
     }
-  }, "Salas"), /*#__PURE__*/React.createElement("div", {
+  }, "Saldo de entrada (por sala)"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
       marginTop: 2,
       lineHeight: 1.5
     }
-  }, "Saldo de cada sala na foto: ", sitSel && sitSel.abertura === 'confirmada' ? 'o da planilha conferida' : 'o que você tinha quando entrou no time', ". Jogos, movimentos, reload e saques entram sozinhos na banca l\xE1 em cima."), /*#__PURE__*/React.createElement("div", {
+  }, "O que ", somenteLeitura ? `${alunoAberto} tinha` : 'você tinha', " em cada sala na entrada: ", sitSel && sitSel.abertura === 'confirmada' ? 'o da planilha conferida' : 'quando entrou no time', ". Jogos, movimentos, reload e saques entram sozinhos na banca l\xE1 em cima.", somenteLeitura ? ` Só leitura: só ${alunoAberto} muda.` : ''), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -20357,7 +21742,8 @@ function Dashboard({
     tours: toursRaw,
     config: config,
     banca: bancaAtual,
-    onIr: setView
+    onIr: setView,
+    onMarca: loadAll
   }), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
     secao: view,
     session: session,
@@ -20366,6 +21752,15 @@ function Dashboard({
     banca: bancaAtual,
     onVerJogador: abrirAluno,
     onIr: setView,
+    onPadrao: timeGente.podeConfigurar ? k => {
+      const row = PADRAO_TIME[k];
+      if (row) setQuickEdit({
+        label: `${row.label} · padrão do time`,
+        kind: row.kind,
+        current: config[row.key],
+        onSave: nv => askSaveConfig(row, nv)
+      });
+    } : null,
     marca: ws ? {
       nome: ws.marca_nome || '',
       logo: ws.marca_logo || null
@@ -20377,7 +21772,7 @@ function Dashboard({
     style: view === 'g_regras' ? {
       marginTop: 16
     } : undefined
-  }, !(gestaoAtiva && view === 'config') && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
+  }, !modoTime && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
@@ -20388,13 +21783,13 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, modoTime ? view === 'g_regras' ? 'Regras de jogo' : 'Configurações do time' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Configurações' : 'Configurações da pool'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginBottom: 12
     }
-  }, "Toque no l\xE1pis pra ajustar. Todos veem a mesma configura\xE7\xE3o."), modoTime && /*#__PURE__*/React.createElement("div", {
+  }, toque ? 'Toque no lápis' : 'Clique no lápis', " pra ajustar.", solo ? '' : ' Todos veem a mesma configuração.'), modoTime && /*#__PURE__*/React.createElement("div", {
     "data-ajustes-time": true,
     style: {
       fontSize: 12.5,
@@ -20436,7 +21831,7 @@ function Dashboard({
     val: config.week_start_date,
     kind: 'date',
     key: 'week_start_date',
-    show: config.week_start_date
+    show: dataBR(config.week_start_date)
   }, {
     label: 'Sites permitidos',
     val: config.sites_permitidos,
@@ -20524,7 +21919,7 @@ function Dashboard({
     val: config.week_start_date,
     kind: 'date',
     key: 'week_start_date',
-    show: config.week_start_date
+    show: dataBR(config.week_start_date)
   }, {
     label: 'Sites permitidos',
     val: config.sites_permitidos,
@@ -20565,6 +21960,7 @@ function Dashboard({
       textOverflow: 'ellipsis'
     }
   }, row.show != null ? row.show : String(row.val))), (!modoTime || timeGente.podeConfigurar) && /*#__PURE__*/React.createElement("button", {
+    "aria-label": `Mudar ${row.label}`,
     onClick: () => setQuickEdit({
       label: row.label,
       kind: row.kind,
@@ -20849,13 +22245,33 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Sua conta"), /*#__PURE__*/React.createElement("div", {
+  }, "Minha conta"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.inkSoft,
       marginBottom: 14
     }
-  }, "Troca a tua senha quando quiser. S\xF3 afeta o teu login."), /*#__PURE__*/React.createElement("div", {
+  }, "Troque sua senha quando quiser."), /*#__PURE__*/React.createElement("button", {
+    className: "mobile-only",
+    "data-sair-conta": true,
+    onClick: sair,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      padding: '11px 16px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer',
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(IcoLogout, {
+    s: 16
+  }), "Sair da conta"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -20977,23 +22393,27 @@ function Dashboard({
       boxShadow: '0 -8px 24px -16px rgba(0,0,0,.25)',
       zIndex: 20
     }
-  }, nav.filter(n => MAIN_TABS.includes(n.id)).map(n => /*#__PURE__*/React.createElement(NavBtn, {
-    key: n.id,
-    Icon: n.Icon,
-    label: n.label,
-    active: navAtiva(n.id),
-    onClick: () => {
-      setView(n.id);
-      setMenuOpen(false);
-    },
-    mobile: true
-  })), /*#__PURE__*/React.createElement(NavBtn, {
-    Icon: IcoMenu,
-    label: "Mais",
-    active: menuOpen || !nav.filter(n => MAIN_TABS.includes(n.id)).some(n => navAtiva(n.id)),
-    onClick: () => setMenuOpen(true),
-    mobile: true
-  })), menuOpen && /*#__PURE__*/React.createElement("div", {
+  }, (() => {
+    const fora = nav.filter(n => !MAIN_TABS.includes(n.id)),
+      barra = fora.length === 1 ? [...nav.filter(n => MAIN_TABS.includes(n.id)), fora[0]] : nav.filter(n => MAIN_TABS.includes(n.id));
+    return /*#__PURE__*/React.createElement(React.Fragment, null, barra.map(n => /*#__PURE__*/React.createElement(NavBtn, {
+      key: n.id,
+      Icon: n.Icon,
+      label: n.label,
+      active: navAtiva(n.id),
+      onClick: () => {
+        setView(n.id);
+        setMenuOpen(false);
+      },
+      mobile: true
+    })), fora.length > 1 && /*#__PURE__*/React.createElement(NavBtn, {
+      Icon: IcoMenu,
+      label: "Mais",
+      active: menuOpen || !barra.some(n => navAtiva(n.id)),
+      onClick: () => setMenuOpen(true),
+      mobile: true
+    }));
+  })()), menuOpen && /*#__PURE__*/React.createElement("div", {
     onClick: () => setMenuOpen(false),
     style: {
       position: 'fixed',
@@ -21059,6 +22479,8 @@ function Dashboard({
     style: {
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'flex-start',
+      textAlign: 'left',
       gap: 10,
       padding: '16px 14px',
       borderRadius: 14,
@@ -21067,11 +22489,42 @@ function Dashboard({
       color: view === n.id ? P : C.ink,
       fontWeight: 700,
       fontSize: 15,
-      cursor: 'pointer'
+      cursor: 'pointer',
+      lineHeight: 1.25
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      flexShrink: 0,
+      display: 'grid'
     }
   }, /*#__PURE__*/React.createElement(n.Icon, {
     s: 20
-  }), n.label))))), report && (() => {
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      minWidth: 0
+    }
+  }, n.label)))), /*#__PURE__*/React.createElement("button", {
+    "data-sair-mais": true,
+    onClick: sair,
+    style: {
+      marginTop: 14,
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      padding: '12px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, /*#__PURE__*/React.createElement(IcoLogout, {
+    s: 16
+  }), "Sair da conta"))), report && (() => {
     const hoje = todayISO();
     const Hdr = ({
       title,
@@ -21582,6 +23035,7 @@ function Dashboard({
       fields: FIELDS[type],
       initial: initial,
       onClose: () => setModal(null),
+      aviso: type === 'tour' ? stopBatido : null,
       onSave: d => add(MODAL_TABLE[type], normalizeRow(type, d), setter, list)
     });
   })(), editing && (() => {
@@ -22244,6 +23698,7 @@ function Dashboard({
     s: 20
   })), "Fora da grade"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setAlertDetail(null),
+    "aria-label": "Fechar",
     style: {
       width: 38,
       height: 38,
@@ -22264,7 +23719,7 @@ function Dashboard({
       marginBottom: 12,
       lineHeight: 1.5
     }
-  }, "Torneios desta semana fora da grade.", somenteLeitura ? '' : ' Toque no lápis pra corrigir.'), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
+  }, "Torneios desta semana (desde ", dataBR(iniSemana), ") fora da grade.", somenteLeitura ? '' : ` ${toque ? 'Toque' : 'Clique'} no lápis pra corrigir.`), sortByCreated(alertDetail.items || []).map(t => /*#__PURE__*/React.createElement(Row, {
     key: t.id,
     onEdit: somenteLeitura ? null : () => {
       setAlertDetail(null);
@@ -22796,7 +24251,7 @@ function App() {
     });
     // veio do link do e-mail: confirma o código (cadastro entra logado; senha abre a troca)
     if (LINK_EMAIL) {
-      const aviso = 'Esse link do e-mail venceu ou já foi usado. Entra com teu e-mail e senha — ou, se foi pra trocar a senha, pede outro em "Esqueci minha senha".';
+      const aviso = 'Esse link do e-mail venceu ou já foi usado. Entre com seu e-mail e senha. Se era pra trocar a senha, peça outro em "Esqueci minha senha".';
       if (LINK_EMAIL.invalido) setLinkAviso(aviso);else sb.auth.verifyOtp(LINK_EMAIL).then(({
         error
       }) => {

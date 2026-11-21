@@ -53,25 +53,25 @@ test('garantido pelo nome, sala e tipo do torneio', () => {
 
 test('dentro: teto, degrau com garantido no nome, liberado pelo nome, apelido Bh, domingo e SNG', () => {
   const casos = [
-    [T('Daily Main', 'GG Poker', 2.5, QUA), /semanal Regular: até \$2,50/],
-    [T('Daily $3K', 'GG Poker', 3, QUA), /\$3,00 com garantido 2k\+/],
+    [T('Daily Main', 'GG Poker', 2.5, QUA), /semanal Regular: até US\$ 2,50/],
+    [T('Daily $3K', 'GG Poker', 3, QUA), /US\$ 3,00 com garantido 2k\+/],
     [T('Bounty Builder $3.30', 'PokerStars', 3.3, QUA), /liberado: Bounty Builder/],
     [T('Bounty Hunters Mini Main', 'GG Poker', 5.4, QUA), /^extra: liberado: Bounty Hunters Mini Main/],
     [T('Bounty Hunters Sunday Special', 'GG Poker', 2.5, QUA), /liberado: Bh Sunday Special/],
     [T('Sunday Storm', 'PokerStars', 11, DOM), /liberado: sunday storm/i],
-    [T('Bounty Hunters Sunday $100K', 'GG Poker', 10.8, DOM), /domingo Prog KO: \$10,80 com garantido 100k\+/],
-    [T('Daily Main', 'GG Poker', 3.3, DOM), /domingo Regular: até \$3,30/],
+    [T('Bounty Hunters Sunday $100K', 'GG Poker', 10.8, DOM), /domingo Prog KO: US\$ 10,80 com garantido 100k\+/],
+    [T('Daily Main', 'GG Poker', 3.3, DOM), /domingo Regular: até US\$ 3,30/],
     [T('Daily Main', 'GG Poker', 2.5, DOM, { reentries: 1 }), /domingo Regular/],
     [T('Sit & Go', 'PokerStars', 1, QUA, { modality: 'Sit & Go' }), /SNG Regular/],
-    [T('Daily Hyper', 'GG Poker', 2, QUA), /semanal Hyper: até \$2,00/],
+    [T('Daily Hyper', 'GG Poker', 2, QUA), /semanal Hyper: até US\$ 2,00/],
   ];
   for (const [t, re] of casos) { const r = C(t); assert.strictEqual(r.status, 'dentro', t.tournament_name + ': ' + r.motivo); assert.match(r.motivo, re); }
 });
 
 test('fora: acima do teto, sala fora da grade, proibições, reentry, hyper com bounty', () => {
   const casos = [
-    [T('Hot $44', 'GG Poker', 44, QUA), /semanal Regular: buy-in \$44,00 acima do teto/],
-    [T('Daily Main', 'GG Poker', 3.3, QUA), /acima do teto \$3,00/],
+    [T('Hot $44', 'GG Poker', 44, QUA), /semanal Regular: buy-in US\$ 44,00 acima do teto/],
+    [T('Daily Main', 'GG Poker', 3.3, QUA), /acima do teto US\$ 3,00/],
     [T('Party Main', 'Party Poker', 1, QUA), /não está na grade/],
     [T('$1 Satellite to Sunday', 'PokerStars', 1, QUA), /satélite/],
     [T('Rebuy Madness', 'PokerStars', 1, QUA), /rebuy/],
@@ -81,7 +81,7 @@ test('fora: acima do teto, sala fora da grade, proibições, reentry, hyper com 
     [T('Daily Main', 'PokerStars', 3.3, QUA, { reentries: 2 }), /2 reentries: a regra é no máximo 1/],
     [T('Bounty Hyper', 'GG Poker', 2, QUA), /hyper com bounty/],
     [T('Daily Hyper', 'GG Poker', 2, DOM), /domingo Hyper: não liberado/],
-    [T('Bounty Hunters Sunday $25K', 'GG Poker', 5.4, DOM), /domingo Prog KO: \$5,40 só com garantido 100k\+ \(este tem 25k\)/],
+    [T('Bounty Hunters Sunday $25K', 'GG Poker', 5.4, DOM), /domingo Prog KO: US\$ 5,40 só com garantido 100k\+ \(este tem 25k\)/],
     [T('Bounty Turbo', 'GG Poker', 1, QUA), /turbo Prog KO: não liberado/],
   ];
   for (const [t, re] of casos) { const r = C(t); assert.strictEqual(r.status, 'fora', t.tournament_name + ': ' + r.motivo); assert.match(r.motivo, re); }

@@ -33,7 +33,7 @@ const estrutura = (extra = {}) => dbBase({
   ...extra,
 });
 const aba = async (page, nome) => { await page.getByRole('button', { name: new RegExp('^' + nome + '$') }).first().click({ timeout: 15000 }); await page.waitForTimeout(400); };
-const abrirTime = async (page) => { await aba(page, 'Meu time'); await page.getByText('Minha conta no time').waitFor({ timeout: 10000 }); };
+const abrirTime = async (page) => { await aba(page, 'Banca'); await page.getByText('Seu dinheiro no time').waitFor({ timeout: 10000 }); };
 
 // 1) jogador: vê MU, contrato e pede saque com a prévia do servidor
 await cenario('jogador', estrutura({ __rpc: {
@@ -43,7 +43,7 @@ await cenario('jogador', estrutura({ __rpc: {
   solicitar_saque: 'novo-saque' } }), async (page, escritas) => {
   await abrirTime(page);
   const t = await page.locator('body').innerText();
-  ok(/Minha conta no time/.test(t) && /\$\s?310[.,]00/.test(await page.locator('[data-mu]').innerText()), 'mostra o MU');
+  ok(/Seu dinheiro no time/.test(t) && /\$\s?310[.,]00/.test(await page.locator('[data-mu]').innerText()), 'mostra o MU');
   ok(/35% pro jogador/.test(t) && /40% pro jogador/.test(t), 'mostra o contrato');
   ok(!/Para resolver/.test(t) && await page.getByRole('button', { name: /^Financeiro$/ }).count() === 0, 'jogador não vê saques dos outros nem a aba Financeiro');
   ok(await page.locator('[data-convidar]').count() === 0 && await page.getByRole('button', { name: /^Equipe e convites$/ }).count() === 0, 'jogador não convida');
@@ -85,7 +85,8 @@ await cenario('admin', estrutura({
   await aba(page, 'Jogadores');
   await page.locator('[data-acoes="João"]').click();
   ok(await page.getByRole('menuitem', { name: 'Link pessoal' }).count() === 1, 'jogador sem conta tem link pessoal no menu');
-  await page.locator('[data-acoes="João"]').click();
+  await page.keyboard.press('Escape');
+  ok(await page.locator('[data-acoes-modal]').count() === 0, 'Esc fecha o painel de ações');
   await aba(page, 'Equipe e convites');
   await page.locator('[data-convidar]').first().click();
   await page.locator('[data-link-aberto]').check();
@@ -127,8 +128,9 @@ await cenario('conferir planilha', estrutura({
   ok(c && c.p_pessoa === 'p3' && c.p_mu === 200 && c.p_cashout === 500, 'confere com os valores da planilha');
   await page.locator('[data-modo-btn="jogo"]').first().click();
   await abrirTime(page);
-  ok(/até \$3,20/.test(await page.locator('[data-grade]').innerText()), 'em Meu jogo, vê a própria grade');
-  ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida');
+  ok(await page.locator('[data-abertura="confirmada"]').count() === 1, 'mostra que a própria planilha já foi conferida (Banca)');
+  await aba(page, 'Meu time');
+  ok(/até US\$\s3,20/.test(await page.locator('[data-grade]').innerText()), 'em Meu jogo, vê a própria grade (Meu time)');
 });
 
 // 5) gestor: visão do time por bloco (ROI ponderado, aluno parado), reloads e sininho

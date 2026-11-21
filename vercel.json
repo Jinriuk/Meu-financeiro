@@ -4,6 +4,11 @@
   "installCommand": "echo skip-install",
   "buildCommand": "echo skip-build",
   "outputDirectory": ".",
+  "git": {
+    "deploymentEnabled": {
+      "claude/*": false
+    }
+  },
   "redirects": [
     {
       "source": "/:path*",

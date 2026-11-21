@@ -12,7 +12,8 @@ async function cenario(nome, db, fn) {
 }
 const aba = async (page, nome) => { await page.getByRole('button', { name: new RegExp('^' + nome + '$') }).first().click({ timeout: 15000 }); await page.waitForTimeout(400); };
 const gravacoes = escritas => escritas.filter(e => !e.tabela.startsWith('rpc.') && !e.tabela.startsWith('auth.') && e.metodo !== 'GET');
-const abreTodos = async page => { for (const b of await page.getByRole('button', { name: /^\d\d\/\d\d .*torneio/ }).all()) await b.click({ timeout: 4000 }); await page.waitForTimeout(300); };
+// dia vazio no painel só leitura não abre (não tem o que mostrar): fica desligado (A-031)
+const abreTodos = async page => { for (const b of await page.getByRole('button', { name: /^\d\d\/\d\d .*torneio/ }).all()) if (await b.isEnabled()) await b.click({ timeout: 4000 }); await page.waitForTimeout(300); };
 const comBanca = papel => samba(papel, { bankroll_ledger: [{ id: 'l1', workspace_id: 'w1', entry_date: D(3), wallet: 'GG Poker', entrada: 20, saida: 0, player: 'Caio R.', pessoa_id: 'p2', unidade_id: 'u2', observacao: 'rakeback' }] });
 
 for (const [papel, rot] of [['admin', 'admin'], ['prof', 'professor'], ['fin', 'financeiro']]) {
