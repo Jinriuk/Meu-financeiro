@@ -68,7 +68,7 @@ const esquecerCodigo = () => {
     localStorage.removeItem(CODIGO_KEY);
   } catch (e) {}
 };
-// "samba 36510", "SAMBA36510" e "Samba-36510" viram SAMBA-36510
+// "time 12345", "TIME12345" e "Time-12345" viram TIME-12345
 const normCodigo = c => String(c || '').toUpperCase().replace(/\s+/g, '').replace(/^([A-Z0-9]+?)-?(\d{5})$/, '$1-$2');
 const codigoValido = c => /^[A-Z0-9]{2,10}-\d{5}$/.test(c);
 (() => {
@@ -2735,7 +2735,8 @@ const Empty = ({
 const Brand = ({
   small,
   team,
-  marca
+  marca,
+  sub
 }) => {
   const lado = small ? 34 : 38,
     nome = team ? marca && marca.nome || 'Time' : 'GrinderBank';
@@ -2811,7 +2812,7 @@ const Brand = ({
       fontWeight: 600,
       letterSpacing: '.01em'
     }
-  }, team ? 'por GrinderBank' : 'seu grind sob controle')));
+  }, team ? 'por GrinderBank' : sub || 'seu grind sob controle')));
 };
 function Badge({
   text
@@ -4744,7 +4745,7 @@ function Login({
     }
     if (nP1 !== nP2) return setErr('As duas senhas não conferem.');
     const cod = normCodigo(nCod);
-    if (nCod.trim() && !codigoValido(cod)) return setErr('Código do time inválido: é tipo SAMBA-36510 (confira com o time).');
+    if (nCod.trim() && !codigoValido(cod)) return setErr('Código do time inválido: é tipo TIME-12345 (confira com o time).');
     setBusy(true);
     if (cod) guardarCodigo(cod); // o pedido de entrada vai assim que a conta existir (o painel manda ao carregar)
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
@@ -5172,7 +5173,7 @@ function Login({
     "data-cadastro-codigo": true,
     style: inputStyle,
     autoCapitalize: "characters",
-    placeholder: "Ex: SAMBA-36510, se o seu time te passou",
+    placeholder: "Ex: TIME-12345, se o seu time te passou",
     value: nCod,
     onChange: e => setNCod(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -8429,38 +8430,101 @@ function MarcaEditor({
   }, "Salvar marca"));
 }
 
-// gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
-// registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
+// conta central = gestor geral da plataforma (plano 3.4, 4.2 e 8): um console só de administração, sem nada de jogador.
+// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão, erros), contas individuais (plano e
+// teste) e o registro de cada ação. O servidor confere tudo e não deixa o gestor geral ver os dados de dentro de um time.
 const ACAO_ROTULO = {
   criar_time: 'criou o time',
   mudar_assentos: 'mudou os assentos',
   novo_link_admin: 'gerou link novo do admin',
-  marca: 'mudou a marca'
+  marca: 'mudou a marca',
+  suspender: 'suspendeu o time',
+  reativar: 'reativou o time',
+  vencimento: 'mudou o vencimento do contrato',
+  convidar_admin: 'convidou um admin',
+  acesso_conta: 'mudou o acesso da conta'
+};
+const ACESSO_ROTULO = {
+  estender: 'estendeu o teste',
+  sem_prazo: 'liberou sem prazo',
+  encerrar: 'encerrou o acesso'
 };
 const PRECO_JOGADOR_USD = 5; // mensalidade por jogador ativo (preço do dono, 20/11); a cobrança é por fora, aqui é só a conta
-function PlataformaApp() {
+const detalheAcao = a => {
+  const d = a.detalhes || {};
+  if (a.acao === 'mudar_assentos') return ` (${d.antes ?? 'sem limite'} → ${d.depois ?? 'sem limite'})`;
+  if (a.acao === 'suspender') return d.motivo ? `: ${d.motivo}` : '';
+  if (a.acao === 'vencimento') return ` (${d.antes ? dataBR(d.antes) : 'sem data'} → ${d.depois ? dataBR(d.depois) : 'sem data'})`;
+  if (a.acao === 'convidar_admin') return d.nome ? `: ${d.nome}` : '';
+  if (a.acao === 'acesso_conta') return `: ${ACESSO_ROTULO[d.acao] || d.acao}${d.acao === 'estender' && d.dias ? ` (${d.dias} dias)` : ''}`;
+  return '';
+};
+// conta individual: sem prazo, em teste (quantos dias faltam) ou vencida
+const situacaoConta = c => {
+  if (!c.teste_ate) return {
+    tom: 'ok',
+    txt: 'sem prazo',
+    tipo: 'sem_prazo'
+  };
+  const dias = Math.ceil((Date.parse(c.teste_ate) - Date.now()) / 86400000);
+  return dias > 0 ? {
+    tom: dias <= 3 ? 'warn' : 'plum',
+    txt: `em teste · ${dias} dia${dias === 1 ? '' : 's'}`,
+    tipo: 'teste',
+    dias
+  } : {
+    tom: 'bad',
+    txt: `vencida em ${dataBR(c.teste_ate)}`,
+    tipo: 'vencida'
+  };
+};
+// contrato do time: vencido, vencendo (7 dias) ou em dia
+const situacaoContrato = t => {
+  if (!t.contrato_fim) return null;
+  const dias = diasDesde(t.contrato_fim);
+  return dias > 0 ? {
+    tom: 'bad',
+    txt: `vencido há ${dias} dia${dias === 1 ? '' : 's'}`
+  } : dias >= -7 ? {
+    tom: 'warn',
+    txt: `vence ${dataBR(t.contrato_fim)}`
+  } : {
+    tom: 'neutro',
+    txt: `até ${dataBR(t.contrato_fim)}`
+  };
+};
+const papeisDe = t => [['admin', t.n_admins], ['professor', t.n_professores], ['financeiro', t.n_financeiros], ['outro', t.n_outros]].filter(([, n]) => n > 0).map(([p, n]) => `${n} ${p}${n > 1 ? p === 'professor' ? 'es' : 's' : ''}`).join(' · ') || '—';
+function ConsolePlataforma({
+  session
+}) {
+  const [aba, setAba] = useState('visao');
   const [times, setTimes] = useState(null);
+  const [contas, setContas] = useState(null);
   const [acoes, setAcoes] = useState([]);
   const [aviso, setAviso] = useState(null);
+  const [link, setLink] = useState(null);
+  const [perg, setPerg] = useState(null);
+  const [marcaDe, setMarcaDe] = useState(null);
+  const [acoesDe, setAcoesDe] = useState(null);
+  const [erros, setErros] = useState(null);
+  const [confirma, setConfirma] = useState(null);
+  const [criando, setCriando] = useState(false);
+  const [filtro, setFiltro] = useState('todas');
   const [novo, setNovo] = useState({
     nome: '',
     assentos: '',
     admin: ''
   });
-  const [link, setLink] = useState(null);
-  const [perg, setPerg] = useState(null);
-  const [marcaDe, setMarcaDe] = useState(null);
   const carregar = async () => {
-    const [t, a] = await Promise.all([sb.rpc('times_da_plataforma'), sb.rpc('acoes_plataforma', {
-      p_limite: 30
+    const [t, c, a] = await Promise.all([sb.rpc('times_da_plataforma'), sb.rpc('contas_da_plataforma'), sb.rpc('acoes_plataforma', {
+      p_limite: 60
     })]);
-    if (t.error) {
-      setAviso({
-        erro: true,
-        texto: t.error.message || 'Não consegui carregar os times.'
-      });
-      setTimes([]);
-    } else setTimes(t.data || []);
+    if (t.error || c.error) setAviso({
+      erro: true,
+      texto: (t.error || c.error).message || 'Não consegui carregar os dados da plataforma.'
+    });
+    setTimes(t.error ? [] : t.data || []);
+    setContas(c.error ? [] : c.data || []);
     setAcoes(a.error ? [] : a.data || []);
   };
   useEffect(() => {
@@ -8487,6 +8551,11 @@ function PlataformaApp() {
     return data ?? true;
   };
   const url = t => `${window.location.origin}/?convite=${t}`;
+  const sair = async () => {
+    try {
+      await sb.auth.signOut();
+    } catch (e) {}
+  };
   const nomeOk = novo.nome.trim().length > 0 && novo.admin.trim().length > 0;
   const criar = async () => {
     const n = novo.nome.trim(),
@@ -8508,50 +8577,389 @@ function PlataformaApp() {
         assentos: '',
         admin: ''
       });
+      setCriando(false);
     }
   };
-  return /*#__PURE__*/React.createElement("div", {
-    className: "ftfade",
+
+  // ---------- números ----------
+  const ts = times || [],
+    cs = contas || [];
+  const soma = (l, k) => l.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+  const naoSusp = ts.filter(t => !t.suspenso_em),
+    susp = ts.length - naoSusp.length;
+  const jogAtivos = soma(naoSusp, 'jogadores'),
+    jogando = soma(naoSusp, 'jogando_7d'),
+    mensal = jogAtivos * PRECO_JOGADOR_USD;
+  const sits = cs.map(situacaoConta),
+    nTeste = sits.filter(s => s.tipo === 'teste').length,
+    nVenc = sits.filter(s => s.tipo === 'vencida').length,
+    nSem = sits.filter(s => s.tipo === 'sem_prazo').length;
+  const erros7 = soma(ts, 'erros_7d') + soma(cs, 'erros_7d');
+  const atencao = [...ts.filter(t => t.suspenso_em).map(t => ({
+    k: 's' + t.id,
+    tom: 'bad',
+    txt: `${t.nome} está suspenso desde ${dataBR(t.suspenso_em)}${t.suspenso_motivo ? `: ${t.suspenso_motivo}` : ''}`
+  })), ...ts.filter(t => !t.tem_dono || t.admin_pendente).map(t => ({
+    k: 'a' + t.id,
+    tom: 'warn',
+    txt: `${t.nome}: ${!t.tem_dono ? 'ainda sem dono' : 'admin convidado ainda não entrou'}`
+  })), ...ts.map(t => ({
+    t,
+    c: situacaoContrato(t)
+  })).filter(x => x.c && x.c.tom !== 'neutro').map(x => ({
+    k: 'c' + x.t.id,
+    tom: x.c.tom,
+    txt: `${x.t.nome}: contrato ${x.c.txt}`
+  })), ...ts.filter(t => t.erros_7d > 0).map(t => ({
+    k: 'e' + t.id,
+    tom: 'warn',
+    txt: `${t.nome}: ${t.erros_7d} erro${t.erros_7d > 1 ? 's' : ''} do app em 7 dias`
+  })), ...cs.map(c => ({
+    c,
+    s: situacaoConta(c)
+  })).filter(x => x.s.tipo === 'teste' && x.s.dias <= 3).map(x => ({
+    k: 't' + x.c.id,
+    tom: 'warn',
+    txt: `Conta ${x.c.apelido || x.c.nome}: o teste acaba em ${x.s.dias} dia${x.s.dias === 1 ? '' : 's'}`
+  }))];
+  const contasVis = cs.filter((c, i) => filtro === 'todas' || sits[i].tipo === filtro);
+
+  // ---------- ações ----------
+  const acoesTime = t => {
+    const l = [];
+    l.push(['Convidar admin', () => setPerg({
+      label: `Convidar admin pro ${t.nome}`,
+      kind: 'text',
+      valor: '',
+      hint: 'Nome de quem vai administrar o time. Você recebe um link de uso único (vale 7 dias) pra mandar pra pessoa.',
+      onSave: async v => {
+        if (!v) return;
+        setPerg(null);
+        const tok = await rodar('convidar_admin_plataforma', {
+          p_ws: t.id,
+          p_nome: v
+        }, null);
+        if (tok && typeof tok === 'string') setLink({
+          titulo: `Link de admin do ${t.nome}`,
+          url: url(tok),
+          texto: `${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`
+        });
+      }
+    })]);
+    if (t.admin_pendente) l.push(['Link novo do admin convidado', async () => {
+      const tok = await rodar('novo_link_admin', {
+        p_ws: t.id
+      }, null);
+      if (tok && typeof tok === 'string') setLink({
+        titulo: `Link novo de admin do ${t.nome}`,
+        url: url(tok),
+        texto: `Teu acesso de admin ao time ${t.nome} no GrinderBank:`
+      });
+    }]);
+    l.push(['Marca (logo e nome)', () => setMarcaDe(t)]);
+    l.push(['Assentos', () => setPerg({
+      label: `Assentos do ${t.nome}`,
+      hint: 'Convite além disso é recusado no servidor. 0 = sem limite.',
+      kind: 'money',
+      valor: t.assentos ?? 0,
+      onSave: async v => {
+        setPerg(null);
+        const n = Math.round(Number(v) || 0);
+        await rodar('mudar_assentos', {
+          p_ws: t.id,
+          p_assentos: n > 0 ? n : null
+        }, `Assentos do ${t.nome}: ${n > 0 ? n : 'sem limite'}.`);
+      }
+    })]);
+    l.push(['Vencimento do contrato', () => setPerg({
+      label: `Vencimento do contrato do ${t.nome}`,
+      kind: 'date',
+      valor: t.contrato_fim || '',
+      hint: 'Até quando o time está pago. Em branco: sem data. Não trava nada sozinho: quem decide suspender é você.',
+      onSave: async v => {
+        setPerg(null);
+        await rodar('definir_vencimento', {
+          p_ws: t.id,
+          p_data: v || null
+        }, v ? `Contrato do ${t.nome} até ${dataBR(v)}.` : `Contrato do ${t.nome} sem data.`);
+      }
+    })]);
+    l.push(['Erros do app', async () => {
+      const {
+        data,
+        error
+      } = await sb.rpc('erros_do_time', {
+        p_ws: t.id,
+        p_limite: 30
+      });
+      setErros({
+        nome: t.nome,
+        lista: error ? [] : data || [],
+        erro: error?.message
+      });
+    }]);
+    if (t.suspenso_em) l.push(['Reativar o time', () => setConfirma({
+      titulo: `Reativar o ${t.nome}?`,
+      texto: 'O app volta a funcionar na hora pra todo mundo do time.',
+      ok: async () => {
+        setConfirma(null);
+        await rodar('suspender_time', {
+          p_ws: t.id,
+          p_suspender: false,
+          p_motivo: null
+        }, `${t.nome} reativado.`);
+      }
+    })]);else l.push(['Suspender o time', () => setPerg({
+      label: `Suspender o ${t.nome}`,
+      kind: 'text',
+      valor: '',
+      hint: 'O app de todo mundo do time trava com um aviso; os dados ficam guardados e dá pra reativar. Diga o motivo: ele fica só aqui na plataforma.',
+      onSave: async v => {
+        if (!v) return;
+        setPerg(null);
+        await rodar('suspender_time', {
+          p_ws: t.id,
+          p_suspender: true,
+          p_motivo: v
+        }, `${t.nome} suspenso.`);
+      }
+    }), true]);
+    return l;
+  };
+  const acoesConta = c => {
+    const s = situacaoConta(c),
+      nome = c.apelido || c.nome,
+      l = [];
+    l.push(['Estender o teste', () => setPerg({
+      label: `Estender o teste de ${nome}`,
+      kind: 'money',
+      valor: 15,
+      hint: 'Quantos dias a mais. Conta a partir do fim do teste (ou de hoje, se já venceu ou se a conta não tinha prazo).',
+      onSave: async v => {
+        const d = Math.round(Number(v) || 0);
+        if (d < 1) return;
+        setPerg(null);
+        await rodar('acesso_conta_plataforma', {
+          p_ws: c.id,
+          p_acao: 'estender',
+          p_dias: d
+        }, `Teste de ${nome}: mais ${d} dias.`);
+      }
+    })]);
+    if (s.tipo !== 'sem_prazo') l.push(['Liberar sem prazo', () => setConfirma({
+      titulo: `Liberar ${nome} sem prazo?`,
+      texto: 'A conta para de ter data pra acabar (como uma assinatura ativa).',
+      ok: async () => {
+        setConfirma(null);
+        await rodar('acesso_conta_plataforma', {
+          p_ws: c.id,
+          p_acao: 'sem_prazo',
+          p_dias: null
+        }, `${nome}: liberada sem prazo.`);
+      }
+    })]);
+    if (s.tipo !== 'vencida') l.push(['Encerrar o acesso', () => setConfirma({
+      titulo: `Encerrar o acesso de ${nome}?`,
+      perigo: true,
+      texto: 'A conta trava na hora, com a tela de assinar. Os dados ficam guardados e dá pra liberar de novo. A assinatura na Kiwify/Hotmart, se houver, é cancelada lá.',
+      ok: async () => {
+        setConfirma(null);
+        await rodar('acesso_conta_plataforma', {
+          p_ws: c.id,
+          p_acao: 'encerrar',
+          p_dias: null
+        }, `Acesso de ${nome} encerrado.`);
+      }
+    }), true]);
+    return l;
+  };
+
+  // ---------- telas ----------
+  const NAV = [{
+    id: 'visao',
+    label: 'Visão geral',
+    Icon: IcoPanel
+  }, {
+    id: 'times',
+    label: 'Times',
+    Icon: IcoUsers
+  }, {
+    id: 'contas',
+    label: 'Contas',
+    Icon: IcoUser
+  }, {
+    id: 'registro',
+    label: 'Registro',
+    Icon: IcoDaily
+  }];
+  const titulo = {
+    visao: 'Visão geral',
+    times: 'Times',
+    contas: 'Contas individuais',
+    registro: 'Registro'
+  }[aba];
+  const Kpi = ({
+    rotulo,
+    valor,
+    sub,
+    dataK
+  }) => /*#__PURE__*/React.createElement(Card, {
+    "data-kpi-plataforma": dataK,
+    style: {
+      padding: '16px 18px'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 700,
+      letterSpacing: '.05em',
+      textTransform: 'uppercase',
+      color: C.inkSoft
+    }
+  }, rotulo), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 24,
+      fontWeight: 700,
+      margin: '4px 0 2px',
+      whiteSpace: 'nowrap'
+    }
+  }, valor), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.4
+    }
+  }, sub));
+  const botaoAcoes = (rot, dataA, itens) => /*#__PURE__*/React.createElement("button", _extends({
+    "aria-label": `Ações de ${rot}`
+  }, dataA, {
+    onClick: () => setAcoesDe({
+      titulo: rot,
+      itens
+    }),
+    style: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      border: `1.5px solid ${C.border}`,
+      background: C.surface,
+      color: C.inkSoft,
+      fontWeight: 800,
+      cursor: 'pointer'
+    }
+  }), "\u22EF");
+  const carregando = times == null || contas == null;
+  const visao = /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
       gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+  }, /*#__PURE__*/React.createElement("div", {
+    "data-kpis-plataforma": true,
     style: {
-      fontFamily: "'Space Grotesk',sans-serif",
-      fontSize: 24,
-      fontWeight: 600,
-      margin: 0
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))',
+      gap: 12
     }
-  }, "Plataforma"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(Kpi, {
+    dataK: "times",
+    rotulo: "Times",
+    valor: naoSusp.length,
+    sub: susp ? `${susp} suspenso${susp > 1 ? 's' : ''}` : 'nenhum suspenso'
+  }), /*#__PURE__*/React.createElement(Kpi, {
+    dataK: "jogadores",
+    rotulo: "Jogadores ativos",
+    valor: jogAtivos,
+    sub: `${jogando} jogaram nos últimos 7 dias`
+  }), /*#__PURE__*/React.createElement(Kpi, {
+    dataK: "mensalidade",
+    rotulo: "Mensalidade estimada",
+    valor: /*#__PURE__*/React.createElement(React.Fragment, null, "US$ ", mensal.toLocaleString('pt-BR'), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        color: C.inkSoft
+      }
+    }, "/m\xEAs")),
+    sub: `US$ ${PRECO_JOGADOR_USD} × jogadores ativos dos times não suspensos`
+  }), /*#__PURE__*/React.createElement(Kpi, {
+    dataK: "contas",
+    rotulo: "Contas individuais",
+    valor: cs.length,
+    sub: `${nTeste} em teste · ${nVenc} vencida${nVenc === 1 ? '' : 's'} · ${nSem} sem prazo`
+  }), /*#__PURE__*/React.createElement(Kpi, {
+    dataK: "erros",
+    rotulo: "Erros do app",
+    valor: erros7,
+    sub: "nos \xFAltimos 7 dias"
+  })), /*#__PURE__*/React.createElement(Card, {
     style: {
-      fontSize: 13,
-      color: C.inkSoft,
-      marginTop: 4
+      padding: 20
+    },
+    "data-atencao": true
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tituloS
+  }, "Precisa de aten\xE7\xE3o"), !atencao.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft
     }
-  }, "Voc\xEA v\xEA os times s\xF3 pelos n\xFAmeros. Os dados de cada time continuam s\xF3 com quem \xE9 do time.")), aviso && /*#__PURE__*/React.createElement("div", {
-    "data-aviso-plataforma": true,
+  }, "Nada pendente.") : atencao.map(a => /*#__PURE__*/React.createElement("div", {
+    key: a.k,
     style: {
-      padding: '11px 14px',
-      borderRadius: 13,
-      background: aviso.erro ? C.redSoft : C.greenSoft,
-      color: aviso.erro ? C.red : C.greenMid,
-      fontWeight: 600,
+      display: 'flex',
+      gap: 10,
+      alignItems: 'center',
+      padding: '8px 0',
+      borderTop: `1px solid ${C.border}`,
       fontSize: 13.5
     }
-  }, aviso.texto), link && /*#__PURE__*/React.createElement(LinkPronto, {
-    titulo: link.titulo,
-    url: link.url,
-    texto: link.texto,
-    onFechar: () => setLink(null)
-  }), /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement(Tag, {
+    tom: a.tom
+  }, a.tom === 'bad' ? 'urgente' : 'atenção'), /*#__PURE__*/React.createElement("span", null, a.txt)))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    },
+    "data-por-papel": true
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: tituloS
+  }, "Pessoas por papel (todos os times)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 22,
+      flexWrap: 'wrap',
+      fontSize: 14
+    }
+  }, [['Admins', 'n_admins'], ['Professores', 'n_professores'], ['Financeiros', 'n_financeiros'], ['Outros papéis', 'n_outros'], ['Jogadores ativos', 'jogadores'], ['Convidados (ainda sem conta)', 'convidados']].map(([r, k]) => /*#__PURE__*/React.createElement("div", {
+    key: k
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      fontWeight: 600
+    }
+  }, r), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 22,
+      fontWeight: 700
+    }
+  }, soma(ts, k)))))));
+  const telaTimes = /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, criando ? /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
   }, /*#__PURE__*/React.createElement("h3", {
     style: tituloS
-  }, "Criar time"), /*#__PURE__*/React.createElement("div", {
+  }, "Novo time"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))',
@@ -8601,171 +9009,497 @@ function PlataformaApp() {
       margin: '8px 0 10px',
       lineHeight: 1.5
     }
-  }, "O time nasce com a raiz e a configura\xE7\xE3o padr\xE3o. Quem aceitar o link de admin vira o dono do time e monta a estrutura."), /*#__PURE__*/React.createElement("button", {
+  }, "O time nasce com a raiz e a configura\xE7\xE3o padr\xE3o. Quem aceitar o link de admin vira o dono do time e monta a estrutura."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
     disabled: !nomeOk,
     onClick: criar,
     style: {
       ...btnP,
       opacity: nomeOk ? 1 : .5
     }
-  }, "Criar time")), /*#__PURE__*/React.createElement(Card, {
+  }, "Criar time"), /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => setCriando(false)
+  }, "Cancelar"))) : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    "data-novo-time": true,
+    style: btnP,
+    onClick: () => setCriando(true)
+  }, "+ Novo time")), !ts.length ? /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
     }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tituloS
-  }, "Times ", times && /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
-      color: C.inkSoft,
-      fontWeight: 500
+      color: C.inkSoft
     }
-  }, times.length)), times && times.length > 0 && (() => {
-    const jog = times.reduce((s, t) => s + (t.jogadores || 0), 0);
-    return /*#__PURE__*/React.createElement("div", {
-      "data-mensalidade-total": true,
+  }, "Nenhum time ainda. Crie o primeiro em \"+ Novo time\".")) : /*#__PURE__*/React.createElement("div", {
+    "data-times": true,
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill,minmax(330px,1fr))',
+      gap: 12
+    }
+  }, ts.map(t => {
+    const ct = situacaoContrato(t);
+    return /*#__PURE__*/React.createElement(Card, {
+      key: t.id,
+      "data-time-plataforma": t.nome,
+      style: {
+        padding: 18,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
-        gap: 18,
-        flexWrap: 'wrap',
-        alignItems: 'baseline',
-        margin: '0 0 12px',
-        padding: '12px 14px',
-        borderRadius: 13,
-        background: C.greenSoft
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 10
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 16
+      }
+    }, t.nome, t.tipo !== 'time' ? /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 12,
         color: C.inkSoft,
-        fontWeight: 600
+        fontWeight: 500
       }
-    }, "Mensalidade de todos os times"), /*#__PURE__*/React.createElement("div", {
+    }, " \xB7 ", t.tipo === 'pool' ? 'pool' : 'formato antigo') : null), t.marca_nome && t.marca_nome !== t.nome || t.tem_logo ? /*#__PURE__*/React.createElement("div", {
       style: {
-        fontFamily: "'Space Grotesk',sans-serif",
-        fontSize: 22,
-        fontWeight: 700,
-        color: C.greenMid
+        fontSize: 12,
+        color: C.inkSoft
       }
-    }, "US$ ", jog * PRECO_JOGADOR_USD, "/m\xEAs")), /*#__PURE__*/React.createElement("div", {
+    }, [t.marca_nome && t.marca_nome !== t.nome ? `aparece como ${t.marca_nome}` : null, t.tem_logo ? 'com logo' : null].filter(Boolean).join(' · ')) : null), botaoAcoes(t.nome, {
+      'data-acoes-time': t.nome
+    }, acoesTime(t))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 4,
+        flexWrap: 'wrap'
+      },
+      "data-situacao": true
+    }, t.suspenso_em ? /*#__PURE__*/React.createElement(Tag, {
+      tom: "bad"
+    }, "suspenso") : /*#__PURE__*/React.createElement(Tag, {
+      tom: "ok"
+    }, "ativo"), ct && /*#__PURE__*/React.createElement(Tag, {
+      tom: ct.tom
+    }, "contrato ", ct.txt), !t.tem_dono ? /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, "sem dono") : t.admin_pendente ? /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, "admin convidado") : null, t.erros_7d > 0 && /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, t.erros_7d, " erro", t.erros_7d > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3,minmax(0,1fr))',
+        gap: '10px 12px'
+      }
+    }, [['Pessoas', t.pessoas, `${t.com_conta} com conta${t.convidados ? ` · ${t.convidados} convidado${t.convidados > 1 ? 's' : ''}` : ''}`, null], ['Jogadores', t.jogadores, `de ${t.jogadores_cadastrados} cadastrado${t.jogadores_cadastrados === 1 ? '' : 's'}`, 'data-jogadores'], ['Jogaram 7 dias', t.jogando_7d, null, null], ['Assentos', t.assentos == null ? `${t.pessoas} · sem limite` : `${t.pessoas} de ${t.assentos}`, null, null], ['Mensalidade', t.suspenso_em ? '—' : `US$ ${((t.jogadores || 0) * PRECO_JOGADOR_USD).toLocaleString('pt-BR')}`, null, 'data-mensalidade'], ['Último lançamento', t.ultimo_lancamento ? dataBR(t.ultimo_lancamento) : '—', null, null]].map(([r, v, sub, dk]) => /*#__PURE__*/React.createElement("div", {
+      key: r,
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        fontWeight: 700,
+        letterSpacing: '.04em',
+        textTransform: 'uppercase',
+        color: C.inkSoft
+      }
+    }, r), /*#__PURE__*/React.createElement("div", _extends({}, dk ? {
+      [dk]: true
+    } : {}, {
+      style: {
+        fontWeight: 700,
+        fontSize: 15
+      }
+    }), v), sub && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11.5,
+        color: C.inkSoft,
+        lineHeight: 1.35
+      }
+    }, sub)))), /*#__PURE__*/React.createElement("div", {
+      "data-papeis": true,
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        borderTop: `1px solid ${C.border}`,
+        paddingTop: 8
+      }
+    }, "Pap\xE9is: ", papeisDe(t)));
+  })));
+  const telaContas = /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, [['todas', `Todas (${cs.length})`], ['teste', `Em teste (${nTeste})`], ['vencida', `Vencidas (${nVenc})`], ['sem_prazo', `Sem prazo (${nSem})`]].map(([k, r]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    "data-filtro-conta": k,
+    onClick: () => setFiltro(k),
+    style: {
+      ...btnS,
+      background: filtro === k ? C.plumSoft : C.surface,
+      borderColor: filtro === k ? P : C.border
+    }
+  }, r))), !contasVis.length ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft
+    }
+  }, "Nenhuma conta aqui.")) : /*#__PURE__*/React.createElement("div", {
+    "data-contas": true,
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))',
+      gap: 12
+    }
+  }, contasVis.map(c => {
+    const s = situacaoConta(c),
+      nome = c.apelido || c.nome;
+    return /*#__PURE__*/React.createElement(Card, {
+      key: c.id,
+      "data-conta-plataforma": nome,
+      style: {
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        minWidth: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 800,
+        fontSize: 15
+      }
+    }, nome), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: C.inkSoft,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }
+    }, c.email || 'sem e-mail')), botaoAcoes(nome, {
+      'data-acoes-conta': nome
+    }, acoesConta(c))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: 4,
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement(Tag, {
+      tom: s.tom
+    }, s.txt), c.erros_7d > 0 && /*#__PURE__*/React.createElement(Tag, {
+      tom: "warn"
+    }, c.erros_7d, " erro", c.erros_7d > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft,
         lineHeight: 1.5
       }
-    }, jog, " jogador", jog === 1 ? '' : 'es', " ativo", jog === 1 ? '' : 's', " \xD7 US$ ", PRECO_JOGADOR_USD, ". Conta s\xF3 quem joga hoje (professor, financeiro e admin que n\xE3o jogam n\xE3o entram). A cobran\xE7a \xE9 por fora: aqui \xE9 s\xF3 a conta."));
-  })(), times == null ? /*#__PURE__*/React.createElement("div", {
-    className: "spin"
-  }) : !times.length ? /*#__PURE__*/React.createElement("div", {
+    }, "Plano ", c.plano || '—', " \xB7 criada em ", dataBR(c.criado_em), /*#__PURE__*/React.createElement("br", null), c.torneios, " torneio", c.torneios === 1 ? '' : 's', " \xB7 \xFAltimo lan\xE7amento ", c.ultimo_lancamento ? dataBR(c.ultimo_lancamento) : '—'));
+  })));
+  const telaRegistro = /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 20
+    }
+  }, !acoes.length ? /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
       color: C.inkSoft
     }
-  }, "Nenhum time ainda.") : /*#__PURE__*/React.createElement("div", {
-    style: {
-      overflowX: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    "data-times": true,
-    style: {
-      width: '100%',
-      borderCollapse: 'collapse'
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, ['Time', 'Pessoas', 'Jogadores', 'Mensalidade', 'Assentos', 'Admin', 'Último lançamento', ''].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: thS
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, times.map(t => /*#__PURE__*/React.createElement("tr", {
-    key: t.id,
-    "data-time-plataforma": t.nome
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      ...tdS,
-      fontWeight: 700
-    }
-  }, t.nome, t.tipo === 'pool' ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.inkSoft
-    }
-  }, " \xB7 pool") : null, t.marca_nome && t.marca_nome !== t.nome || t.tem_logo ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.inkSoft,
-      fontWeight: 500
-    }
-  }, t.marca_nome && t.marca_nome !== t.nome ? `aparece como ${t.marca_nome}` : '', t.marca_nome && t.marca_nome !== t.nome && t.tem_logo ? ' · ' : '', t.tem_logo ? 'com logo' : '') : null), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, t.pessoas, t.convidados ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.inkSoft
-    }
-  }, " (", t.convidados, " convidad", t.convidados > 1 ? 'os' : 'o', ")") : null), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, t.jogadores), /*#__PURE__*/React.createElement("td", {
-    style: tdS,
-    "data-mensalidade": true
-  }, "US$ ", (t.jogadores || 0) * PRECO_JOGADOR_USD), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, t.assentos == null ? 'sem limite' : t.assentos), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, t.admins || '—', !t.tem_dono ? /*#__PURE__*/React.createElement(React.Fragment, null, " ", /*#__PURE__*/React.createElement(Tag, {
-    tom: "warn"
-  }, "sem dono")) : null), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, t.ultimo_lancamento ? dataBR(t.ultimo_lancamento) : '—'), /*#__PURE__*/React.createElement("td", {
-    style: tdS
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    style: btnS,
-    onClick: () => setMarcaDe(t)
-  }, "Marca"), /*#__PURE__*/React.createElement("button", {
-    style: btnS,
-    onClick: () => setPerg({
-      label: `Assentos do ${t.nome}`,
-      hint: 'Convite além disso é recusado no servidor. 0 = sem limite.',
-      kind: 'money',
-      valor: t.assentos ?? 0,
-      onSave: async v => {
-        setPerg(null);
-        const n = Math.round(Number(v) || 0);
-        await rodar('mudar_assentos', {
-          p_ws: t.id,
-          p_assentos: n > 0 ? n : null
-        }, `Assentos do ${t.nome}: ${n > 0 ? n : 'sem limite'}.`);
-      }
-    })
-  }, "Assentos"), t.admin_pendente && /*#__PURE__*/React.createElement("button", {
-    style: btnS,
-    onClick: async () => {
-      const tok = await rodar('novo_link_admin', {
-        p_ws: t.id
-      }, null);
-      if (tok && typeof tok === 'string') setLink({
-        titulo: `Link novo de admin do ${t.nome}`,
-        url: url(tok),
-        texto: `Teu acesso de admin ao time ${t.nome} no GrinderBank:`
-      });
-    }
-  }, "Link do admin"))))))))), acoes.length > 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 20
-    }
-  }, /*#__PURE__*/React.createElement("h3", {
-    style: tituloS
-  }, "Registro"), acoes.map((a, i) => /*#__PURE__*/React.createElement("div", {
+  }, "Nenhuma a\xE7\xE3o ainda.") : acoes.map((a, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     "data-acao-plataforma": true,
     style: {
-      padding: '7px 0',
+      padding: '8px 0',
+      borderTop: i ? `1px solid ${C.border}` : 'none',
+      fontSize: 13.5
+    }
+  }, /*#__PURE__*/React.createElement("b", null, dataBR(a.criado_em)), " \xB7 ", ACAO_ROTULO[a.acao] || a.acao, a.time_nome ? ` · ${a.time_nome}` : '', detalheAcao(a))));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "wrap",
+    "data-console-plataforma": true
+  }, /*#__PURE__*/React.createElement("aside", {
+    className: "side",
+    style: {
+      flexDirection: 'column',
+      width: 238,
+      padding: 20,
+      borderRight: `1px solid ${C.border}`,
+      position: 'sticky',
+      top: 0,
+      height: '100vh',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Brand, {
+    sub: "gest\xE3o da plataforma"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      height: 6
+    }
+  }), NAV.map(n => /*#__PURE__*/React.createElement(NavBtn, {
+    key: n.id,
+    Icon: n.Icon,
+    label: n.label,
+    active: aba === n.id,
+    onClick: () => setAba(n.id)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 14,
+      borderRadius: 16,
+      background: C.plumSoft,
+      fontSize: 12.5,
+      color: P,
+      lineHeight: 1.45
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800
+    }
+  }, "Conta central"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.inkSoft,
+      marginTop: 2,
+      wordBreak: 'break-all'
+    }
+  }, session.user.email)), /*#__PURE__*/React.createElement("button", {
+    onClick: sair,
+    style: {
+      padding: '10px',
+      borderRadius: 12,
+      border: `1px solid ${C.border}`,
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 600,
+      cursor: 'pointer',
+      fontSize: 13.5
+    }
+  }, "Sair"))), /*#__PURE__*/React.createElement("main", {
+    style: {
+      flex: 1,
+      padding: '22px 16px calc(112px + env(safe-area-inset-bottom))',
+      maxWidth: '100%',
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bottomnav",
+    style: {
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement(Brand, {
+    small: true,
+    sub: "gest\xE3o da plataforma"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: sair,
+    style: {
+      ...btnS,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(IcoLogout, {
+    s: 16
+  }), "Sair")), /*#__PURE__*/React.createElement("div", {
+    className: "ftfade",
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 16,
+      maxWidth: 1180
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 24,
+      fontWeight: 600,
+      margin: 0
+    }
+  }, titulo), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "Voc\xEA v\xEA os times s\xF3 pelos n\xFAmeros. Os dados de cada time continuam s\xF3 com quem \xE9 do time.")), aviso && /*#__PURE__*/React.createElement("div", {
+    "data-aviso-plataforma": true,
+    style: {
+      padding: '11px 14px',
+      borderRadius: 13,
+      background: aviso.erro ? C.redSoft : C.greenSoft,
+      color: aviso.erro ? C.red : C.greenMid,
+      fontWeight: 600,
+      fontSize: 13.5
+    }
+  }, aviso.texto), link && /*#__PURE__*/React.createElement(LinkPronto, {
+    titulo: link.titulo,
+    url: link.url,
+    texto: link.texto,
+    onFechar: () => setLink(null)
+  }), carregando ? /*#__PURE__*/React.createElement("div", {
+    className: "spin"
+  }) : aba === 'visao' ? visao : aba === 'times' ? telaTimes : aba === 'contas' ? telaContas : telaRegistro)), /*#__PURE__*/React.createElement("nav", {
+    className: "bottomnav",
+    style: {
+      position: 'fixed',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      background: C.surface,
       borderTop: `1px solid ${C.border}`,
+      padding: '6px 8px calc(6px + env(safe-area-inset-bottom))',
+      gap: 2,
+      boxShadow: '0 -8px 24px -16px rgba(0,0,0,.25)',
+      zIndex: 20
+    }
+  }, NAV.map(n => /*#__PURE__*/React.createElement(NavBtn, {
+    key: n.id,
+    Icon: n.Icon,
+    label: n.label,
+    active: aba === n.id,
+    onClick: () => setAba(n.id),
+    mobile: true
+  }))), acoesDe && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setAcoesDe(null),
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-acoes-modal": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(acoesDe.titulo, () => setAcoesDe(null)), acoesDe.itens.map(([r, fn, perigo]) => /*#__PURE__*/React.createElement("button", {
+    key: r,
+    role: "menuitem",
+    onClick: () => {
+      setAcoesDe(null);
+      fn();
+    },
+    style: {
+      textAlign: 'left',
+      padding: '13px 14px',
+      borderRadius: 13,
+      border: `1.5px solid ${perigo ? C.redSoft : C.border}`,
+      background: C.surface,
+      color: perigo ? C.red : C.ink,
+      fontWeight: 700,
+      fontSize: 14.5,
+      cursor: 'pointer'
+    }
+  }, r)))), confirma && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setConfirma(null),
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-confirma": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(confirma.titulo, () => setConfirma(null)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.inkSoft,
+      lineHeight: 1.55
+    }
+  }, confirma.texto), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnP,
+      flex: 1,
+      ...(confirma.perigo ? {
+        background: C.red,
+        borderColor: C.red
+      } : {})
+    },
+    onClick: confirma.ok
+  }, "Confirmar"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...btnS,
+      flex: 1
+    },
+    onClick: () => setConfirma(null)
+  }, "Cancelar")))), erros && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setErros(null),
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-erros-modal": true,
+    className: "ftfade",
+    style: caixaModal
+  }, topoModal(`Erros do app · ${erros.nome}`, () => setErros(null)), erros.erro ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 13.5
+    }
+  }, erros.erro) : !erros.lista.length ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft
+    }
+  }, "Nenhum erro registrado desse time.") : erros.lista.map((e, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      padding: '8px 0',
+      borderTop: i ? `1px solid ${C.border}` : 'none',
       fontSize: 13
     }
-  }, /*#__PURE__*/React.createElement("b", null, dataBR(a.criado_em)), " \xB7 ", ACAO_ROTULO[a.acao] || a.acao, a.time_nome ? ` · ${a.time_nome}` : '', a.acao === 'mudar_assentos' && a.detalhes ? ` (${a.detalhes.antes ?? 'sem limite'} → ${a.detalhes.depois ?? 'sem limite'})` : ''))), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+  }, /*#__PURE__*/React.createElement("b", null, dataBR(e.criado_em), " ", String(e.criado_em || '').slice(11, 16)), " \xB7 ", e.origem, e.versao ? ` · versão ${e.versao}` : '', /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.inkSoft,
+      marginTop: 2,
+      wordBreak: 'break-word'
+    }
+  }, e.mensagem))))), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
     label: perg.label,
     hint: perg.hint,
     kind: perg.kind,
@@ -8801,6 +9535,75 @@ function PlataformaApp() {
       if (r) setMarcaDe(null);
     }
   }))));
+}
+
+// time suspenso pela plataforma (contrato): o app de todo mundo do time trava com o aviso; os dados ficam guardados
+function TimeSuspenso({
+  nome,
+  onLogout
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center',
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    "data-time-suspenso": true,
+    style: {
+      padding: 30,
+      width: '100%',
+      maxWidth: 430,
+      textAlign: 'center'
+    },
+    className: "ftfade"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(Brand, null)), /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontFamily: "'Space Grotesk',sans-serif",
+      fontSize: 22,
+      fontWeight: 700,
+      margin: '0 0 8px'
+    }
+  }, "O acesso ", nome ? `do ${nome}` : 'do seu time', " est\xE1 suspenso"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 14,
+      color: C.inkSoft,
+      lineHeight: 1.65,
+      margin: '0 0 18px'
+    }
+  }, "Os seus dados est\xE3o guardados. Se voc\xEA joga ou \xE9 da equipe, fale com o admin do time. Se voc\xEA \xE9 o admin, fale com o GrinderBank pra reativar."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => window.location.reload(),
+    style: {
+      width: '100%',
+      padding: '13px 0',
+      borderRadius: 13,
+      border: `1.5px solid ${C.border}`,
+      background: 'transparent',
+      color: P,
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: 'pointer'
+    }
+  }, "J\xE1 foi resolvido: atualizar"), /*#__PURE__*/React.createElement("button", {
+    onClick: onLogout,
+    style: {
+      marginTop: 12,
+      border: 'none',
+      background: 'transparent',
+      color: C.inkSoft,
+      fontWeight: 600,
+      fontSize: 13,
+      cursor: 'pointer',
+      textDecoration: 'underline'
+    }
+  }, "Sair")));
 }
 
 // escolhe a sala: uma das que o jogador já tem, ou outra pelo nome (capital, reload)
@@ -13580,7 +14383,6 @@ function Dashboard({
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws, setWs] = useState(null); // workspace da conta (team = pool · solo = cliente)
-  const [souGestorGeral, setSouGestorGeral] = useState(false); // gestor geral da plataforma (o servidor diz)
   const [srvStatus, setSrvStatus] = useState(null); // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup, setNeedsSetup] = useState(false); // solo sem config ainda -> onboarding de 3 passos
   const [conviteErro, setConviteErro] = useState(null); // convite de time recusado pelo servidor (vencido, conta em outro lugar…)
@@ -14045,12 +14847,6 @@ function Dashboard({
       });
       const myWs = wsr.data && wsr.data[0] || null;
       setWs(myWs);
-      try {
-        const {
-          data: gg
-        } = await sb.rpc('sou_gestor_geral');
-        setSouGestorGeral(gg === true);
-      } catch (e) {}
       // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
       if (myWs && myWs.kind === 'solo') {
         try {
@@ -15711,11 +16507,6 @@ function Dashboard({
       MAIN_TABS = alunoAberto ? ['painel', 'torneios', 'stats', ...(semDinheiro ? [] : ['banca'])] : ['painel', 'torneios', 'stats', 'time'];
     }
   }
-  if (souGestorGeral && !alunoAberto) nav = [...nav, {
-    id: 'plataforma',
-    label: 'Plataforma',
-    Icon: IcoGrid
-  }];
   const navAtiva = id => view === id || modoTime && !gestaoAtiva && id === 'torneios' && GRUPO_TORNEIOS.includes(view);
 
   /* ---------- mensal ---------- */
@@ -15857,6 +16648,10 @@ function Dashboard({
   })();
 
   // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
+  if (srvStatus && srvStatus.suspenso) return /*#__PURE__*/React.createElement(TimeSuspenso, {
+    nome: srvStatus.time,
+    onLogout: sair
+  });
   if (trialExpired) return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(TrialBlocked, {
     plan: plan,
     email: session.user.email,
@@ -19608,7 +20403,7 @@ function Dashboard({
     config: config,
     banca: bancaAtual,
     onIr: setView
-  }), view === 'plataforma' && souGestorGeral && /*#__PURE__*/React.createElement(PlataformaApp, null), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
+  }), gestaoAtiva && String(view).startsWith('g_') && /*#__PURE__*/React.createElement(TimeApp, {
     secao: view,
     session: session,
     tours: toursRaw,
@@ -19890,7 +20685,7 @@ function Dashboard({
       marginBottom: 12,
       lineHeight: 1.5
     }
-  }, "Seu time te passou um c\xF3digo (ex.: SAMBA-36510)? Pe\xE7a pra entrar. Quando a gest\xE3o aprovar, esta conta vira do time. O seu hist\xF3rico vai junto, e o que \xE9 de antes da entrada s\xF3 voc\xEA v\xEA."), (() => {
+  }, "Seu time te passou um c\xF3digo (ex.: TIME-12345)? Pe\xE7a pra entrar. Quando a gest\xE3o aprovar, esta conta vira do time. O seu hist\xF3rico vai junto, e o que \xE9 de antes da entrada s\xF3 voc\xEA v\xEA."), (() => {
     const pend = meusPedidos.find(x => x.status === 'pendente');
     const rec = !pend && meusPedidos[0] && meusPedidos[0].status === 'recusado' ? meusPedidos[0] : null;
     const recarregar = async () => {
@@ -19958,7 +20753,7 @@ function Dashboard({
         width: 'auto'
       },
       autoCapitalize: "characters",
-      placeholder: "SAMBA-36510",
+      placeholder: "TIME-12345",
       value: codTime,
       onChange: e => setCodTime(e.target.value)
     }), /*#__PURE__*/React.createElement("button", {
@@ -19968,7 +20763,7 @@ function Dashboard({
         if (!codigoValido(c)) {
           setAvisoPedido({
             erro: true,
-            texto: 'Código inválido: é tipo SAMBA-36510 (confira com o time).'
+            texto: 'Código inválido: é tipo TIME-12345 (confira com o time).'
           });
           return;
         }
@@ -22032,6 +22827,7 @@ function App() {
   const [profile, setProfile] = useState(undefined);
   const [recovery, setRecovery] = useState(false); // veio pelo link "esqueci minha senha"
   const [linkAviso, setLinkAviso] = useState(''); // link do e-mail vencido/usado
+  const [gg, setGg] = useState(undefined); // gestor geral da plataforma (o servidor diz): abre o console, sem nada de jogador
   useEffect(() => {
     if (!sb) return;
     sb.auth.getSession().then(({
@@ -22115,6 +22911,28 @@ function App() {
       on = false;
     };
   }, [session]);
+  // conta central: o servidor diz se é gestor geral (ninguém se promove pelo app)
+  useEffect(() => {
+    if (!session) {
+      setGg(undefined);
+      return;
+    }
+    let on = true;
+    (async () => {
+      try {
+        const {
+          data,
+          error
+        } = await sb.rpc('sou_gestor_geral');
+        if (on) setGg(!error && data === true);
+      } catch (e) {
+        if (on) setGg(false);
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [session]);
   if (!CONFIGURED) return /*#__PURE__*/React.createElement(NotConfigured, null);
   // veio do link "esqueci minha senha": trava TUDO até criar a senha nova (sem fechar, sem pular)
   if (recovery) return /*#__PURE__*/React.createElement(RecoveryReset, null);
@@ -22129,6 +22947,18 @@ function App() {
   }));
   if (!session) return /*#__PURE__*/React.createElement(Login, {
     aviso: linkAviso
+  });
+  if (gg === undefined) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "spin"
+  }));
+  if (gg) return /*#__PURE__*/React.createElement(ConsolePlataforma, {
+    session: session
   });
   if (profile === undefined) return /*#__PURE__*/React.createElement("div", {
     style: {

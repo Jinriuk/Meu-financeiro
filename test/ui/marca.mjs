@@ -77,22 +77,22 @@ await cenario('convite com a marca', dbBase({ __rpc: { ver_convite: { valido: tr
     ok(/Convite pro time Samba Poker Team/.test(await page.locator('body').innerText()) && await page.locator('[data-convite-logo]').count() === 1, 'o convite mostra o nome e a logo do time');
   }, { semSessao: true, caminho: '/?convite=' + 'ab'.repeat(32) });
 
-// 5) gestor geral: a mensalidade (US$ 5 por jogador) e a marca de um time sem ver a imagem
+// 5) gestor geral (console da conta central): a mensalidade (US$ 5 por jogador) e a marca de um time sem ver a imagem
+const extra = { com_conta: 0, jogadores_cadastrados: 0, jogando_7d: 0, n_admins: 1, n_professores: 0, n_financeiros: 0, n_outros: 0, contrato_fim: null, suspenso_em: null, suspenso_motivo: null, erros_7d: 0 };
 const db5 = samba('admin');
-db5.__rpc = { ...db5.__rpc, sou_gestor_geral: true, acoes_plataforma: [{ criado_em: '2026-11-20T11:00:00Z', acao: 'marca', time_nome: 'Samba', detalhes: { nome: 'Samba', logo: 'igual' } }], definir_marca: null,
+db5.__rpc = { ...db5.__rpc, sou_gestor_geral: true, contas_da_plataforma: [], acoes_plataforma: [{ criado_em: '2026-11-20T11:00:00Z', acao: 'marca', time_nome: 'Samba', detalhes: { nome: 'Samba', logo: 'igual' } }], definir_marca: null,
   times_da_plataforma: [
-    { id: 'w1', nome: 'Samba', tipo: 'time', criado_em: '2026-11-19T00:00:00Z', assentos: 30, pessoas: 25, jogadores: 20, convidados: 0, admins: 'Gabriel', tem_dono: true, admin_pendente: false, ultimo_lancamento: D(1), marca_nome: 'Samba Poker Team', tem_logo: true },
-    { id: 'w2', nome: 'Time Dois', tipo: 'time', criado_em: '2026-11-20T00:00:00Z', assentos: null, pessoas: 4, jogadores: 3, convidados: 0, admins: 'Ana', tem_dono: true, admin_pendente: false, ultimo_lancamento: null, marca_nome: null, tem_logo: false }] };
+    { ...extra, id: 'w1', nome: 'Samba', tipo: 'time', criado_em: '2026-11-19T00:00:00Z', assentos: 30, pessoas: 25, jogadores: 20, convidados: 0, admins: 'Gabriel', tem_dono: true, admin_pendente: false, ultimo_lancamento: D(1), marca_nome: 'Samba Poker Team', tem_logo: true },
+    { ...extra, id: 'w2', nome: 'Time Dois', tipo: 'time', criado_em: '2026-11-20T00:00:00Z', assentos: null, pessoas: 4, jogadores: 3, convidados: 0, admins: 'Ana', tem_dono: true, admin_pendente: false, ultimo_lancamento: null, marca_nome: null, tem_logo: false }] };
+const navC = async (page, nome) => { await page.locator('aside').getByRole('button', { name: new RegExp('^' + nome + '$') }).click({ timeout: 15000 }); await page.waitForTimeout(400); };
+const marcaDo = async (page, time) => { await page.locator(`[data-acoes-time="${time}"]`).click(); await page.locator('[data-acoes-modal]').getByRole('menuitem', { name: 'Marca (logo e nome)' }).click(); };
 await cenario('gestor geral: mensalidade e marca', db5, async (page, escritas) => {
-  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
-  await aba(page, 'Plataforma');
-  await page.locator('[data-times]').waitFor({ timeout: 8000 });
-  ok(/US\$ 115\/mês/.test(await page.locator('[data-mensalidade-total]').innerText()) && /23 jogadores ativos × US\$ 5/.test(await page.locator('[data-mensalidade-total]').innerText()),
-    'total: 23 jogadores × US$ 5 = US$ 115/mês');
+  await page.locator('[data-console-plataforma]').waitFor({ timeout: 15000 });
+  ok(/US\$ 115\/mês/.test(await page.locator('[data-kpi-plataforma="mensalidade"]').innerText()), 'total: 23 jogadores × US$ 5 = US$ 115/mês');
+  await navC(page, 'Times');
   ok(await page.locator('[data-time-plataforma="Samba"] [data-mensalidade]').innerText() === 'US$ 100' && await page.locator('[data-time-plataforma="Time Dois"] [data-mensalidade]').innerText() === 'US$ 15', 'por time: US$ 100 e US$ 15');
   ok(/aparece como Samba Poker Team · com logo/.test(await page.locator('[data-time-plataforma="Samba"]').innerText()), 'a linha diz o nome da marca e que tem logo');
-  ok(/mudou a marca · Samba/.test(await page.locator('main').innerText()), 'registro: mudou a marca');
-  await page.locator('[data-time-plataforma="Samba"]').getByRole('button', { name: 'Marca' }).click();
+  await marcaDo(page, 'Samba');
   const md = page.locator('[data-marca-modal]'); await md.waitFor({ timeout: 5000 });
   ok(await md.locator('[data-marca-sem-previa]').innerText() === 'tem logo' && await md.getByRole('button', { name: 'Tirar a logo' }).count() === 1, 'sem ver a imagem: "tem logo" e dá pra tirar');
   await md.locator('[data-marca-nome]').fill('Samba PT');
@@ -100,8 +100,11 @@ await cenario('gestor geral: mensalidade e marca', db5, async (page, escritas) =
   const m = rpc(escritas, 'definir_marca').pop();
   ok(m && m.p_ws === 'w1' && m.p_nome === 'Samba PT' && m.p_logo === null, 'só o nome: manda o time e deixa a logo como está (null)');
   ok(await page.locator('[data-marca-modal]').count() === 0 && /Marca do Samba salva/.test(await page.locator('main').innerText()), 'fecha e avisa');
-  await page.locator('[data-time-plataforma="Time Dois"]').getByRole('button', { name: 'Marca' }).click();
+  await marcaDo(page, 'Time Dois');
   ok(await page.locator('[data-marca-modal] [data-marca-sem-previa]').innerText() === 'sem logo' && await page.locator('[data-marca-modal]').getByRole('button', { name: 'Tirar a logo' }).count() === 0, 'time sem logo: "sem logo"');
+  await page.locator('[data-marca-modal]').getByRole('button', { name: 'Fechar' }).click();
+  await navC(page, 'Registro');
+  ok(/mudou a marca · Samba/.test(await page.locator('main').innerText()), 'registro: mudou a marca');
 });
 
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');

@@ -26,7 +26,7 @@ const CODIGO_KEY='gb_codigo_time';
 const codigoGuardado=()=>{ try{ return localStorage.getItem(CODIGO_KEY)||''; }catch(e){ return ''; } };
 const guardarCodigo=c=>{ try{ if(c) localStorage.setItem(CODIGO_KEY,c); }catch(e){} };
 const esquecerCodigo=()=>{ try{ localStorage.removeItem(CODIGO_KEY); }catch(e){} };
-// "samba 36510", "SAMBA36510" e "Samba-36510" viram SAMBA-36510
+// "time 12345", "TIME12345" e "Time-12345" viram TIME-12345
 const normCodigo=c=>String(c||'').toUpperCase().replace(/\s+/g,'').replace(/^([A-Z0-9]+?)-?(\d{5})$/,'$1-$2');
 const codigoValido=c=>/^[A-Z0-9]{2,10}-\d{5}$/.test(c);
 (()=>{ try{
@@ -1249,7 +1249,7 @@ function NavBtn({Icon,label,active,onClick,mobile}){
 const RoundBtn = ({children,onClick,disabled}) => <button onClick={onClick} disabled={disabled} style={{width:44,height:44,borderRadius:14,border:`1px solid ${C.border}`,background:disabled?C.bg:C.surface,color:disabled?'#C3BBA9':P,fontSize:24,lineHeight:1,cursor:disabled?'default':'pointer',fontWeight:700}}>{children}</button>;
 const Empty = ({children}) => <div style={{padding:'26px 0',textAlign:'center',color:C.inkSoft,fontSize:14}}>{children}</div>;
 // marca do topo: no time, a logo e o nome DELE, com o GrinderBank pequeno embaixo; fora de time, o GrinderBank
-const Brand = ({small,team,marca}) => { const lado=small?34:38, nome=team?((marca&&marca.nome)||'Time'):'GrinderBank';
+const Brand = ({small,team,marca,sub}) => { const lado=small?34:38, nome=team?((marca&&marca.nome)||'Time'):'GrinderBank';
   return <div data-marca={team?nome:undefined} style={{display:'flex',alignItems:'center',gap:10,minWidth:0}}>
   {team
     ? (marca&&marca.logo
@@ -1257,7 +1257,7 @@ const Brand = ({small,team,marca}) => { const lado=small?34:38, nome=team?((marc
       : <div style={{width:lado,height:lado,borderRadius:12,flexShrink:0,background:'linear-gradient(135deg,#5D4DAF 0%,#4C3E92 55%,#332A69 100%)',boxShadow:'inset 0 1px 0 rgba(255,255,255,.25), 0 4px 12px -6px rgba(76,62,146,.5)',display:'grid',placeItems:'center',color:'#fff',fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?16:18}}>{String(nome).trim().charAt(0).toUpperCase()||<IcoChip s={small?19:21}/>}</div>)
     : <img src="icon-192.png" alt="GrinderBank" width={lado} height={lado} style={{borderRadius:11,display:'block',boxShadow:'0 4px 12px -6px rgba(76,62,146,.5)'}}/>}
   <div style={{minWidth:0}}><div style={{fontFamily:"'Space Grotesk',sans-serif",fontWeight:700,fontSize:small?(nome.length>18?15:17):(nome.length>13?16:19),lineHeight:1.05,letterSpacing:'-0.02em',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:170}}>{nome}</div>
-    <div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'por GrinderBank':'seu grind sob controle'}</div></div>
+    <div style={{fontSize:11.5,color:C.inkSoft,fontWeight:600,letterSpacing:'.01em'}}>{team?'por GrinderBank':(sub||'seu grind sob controle')}</div></div>
 </div>; };
 function Badge({text}){
   const t=STATUS_TONE[text]||{tone:C.inkSoft,bg:C.bg};
@@ -1743,7 +1743,7 @@ function Login({aviso}){
     { const fr=senhaFraca(nP1,[nome,mail]); if(fr) return setErr(fr); }
     if(nP1!==nP2) return setErr('As duas senhas não conferem.');
     const cod=normCodigo(nCod);
-    if(nCod.trim()&&!codigoValido(cod)) return setErr('Código do time inválido: é tipo SAMBA-36510 (confira com o time).');
+    if(nCod.trim()&&!codigoValido(cod)) return setErr('Código do time inválido: é tipo TIME-12345 (confira com o time).');
     setBusy(true);
     if(cod) guardarCodigo(cod);   // o pedido de entrada vai assim que a conta existir (o painel manda ao carregar)
     // apelido é ÚNICO (como numa sala de poker — ele também serve pra fazer login)
@@ -1851,7 +1851,7 @@ function Login({aviso}){
         <div><label style={labelStyle}>Nome ou apelido</label><input style={inputStyle} value={nNome} autoCapitalize="none" placeholder="Ex: rafa_grinder" onChange={e=>setNNome(e.target.value)}/></div>
         <div><label style={labelStyle}>E-mail</label><input style={inputStyle} type="email" autoCapitalize="none" autoComplete="email" value={nMail} onChange={e=>setNMail(e.target.value)}/></div>
         <div><label style={labelStyle}>WhatsApp (opcional)</label><input style={inputStyle} inputMode="tel" placeholder="DDD + número" value={nZap} onChange={e=>setNZap(e.target.value)}/></div>
-        {!comConvite&&<div><label style={labelStyle}>Código do time (opcional)</label><input data-cadastro-codigo style={inputStyle} autoCapitalize="characters" placeholder="Ex: SAMBA-36510, se o seu time te passou" value={nCod} onChange={e=>setNCod(e.target.value)}/></div>}
+        {!comConvite&&<div><label style={labelStyle}>Código do time (opcional)</label><input data-cadastro-codigo style={inputStyle} autoCapitalize="characters" placeholder="Ex: TIME-12345, se o seu time te passou" value={nCod} onChange={e=>setNCod(e.target.value)}/></div>}
         <div><label style={labelStyle}>Senha</label><PassInput autoComplete="new-password" value={nP1} onChange={e=>setNP1(e.target.value)}/></div>
         <div><label style={labelStyle}>Confirmar senha</label><PassInput autoComplete="new-password" value={nP2} onChange={e=>setNP2(e.target.value)} onEnter={criar}/></div>
         {/* escolha de plano: o teste grátis de 15 dias é do plano escolhido (quem entra por convite usa o plano do time) */}
@@ -2535,73 +2535,241 @@ function MarcaEditor({nomeTime,atual,temLogo,onSalvar}){
   </div>;
 }
 
-// gestor geral da plataforma (plano 3.4 e 8): os times só pelos números, criar time com o link do admin, assentos e o
-// registro de cada ação. O servidor confere tudo (e não deixa o gestor geral ver os dados de um time).
-const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin',marca:'mudou a marca'};
+// conta central = gestor geral da plataforma (plano 3.4, 4.2 e 8): um console só de administração, sem nada de jogador.
+// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão, erros), contas individuais (plano e
+// teste) e o registro de cada ação. O servidor confere tudo e não deixa o gestor geral ver os dados de dentro de um time.
+const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin',marca:'mudou a marca',
+  suspender:'suspendeu o time',reativar:'reativou o time',vencimento:'mudou o vencimento do contrato',convidar_admin:'convidou um admin',
+  acesso_conta:'mudou o acesso da conta'};
+const ACESSO_ROTULO={estender:'estendeu o teste',sem_prazo:'liberou sem prazo',encerrar:'encerrou o acesso'};
 const PRECO_JOGADOR_USD=5;   // mensalidade por jogador ativo (preço do dono, 20/11); a cobrança é por fora, aqui é só a conta
-function PlataformaApp(){
-  const [times,setTimes]=useState(null); const [acoes,setAcoes]=useState([]); const [aviso,setAviso]=useState(null);
-  const [novo,setNovo]=useState({nome:'',assentos:'',admin:''}); const [link,setLink]=useState(null); const [perg,setPerg]=useState(null);
-  const [marcaDe,setMarcaDe]=useState(null);
-  const carregar=async()=>{ const [t,a]=await Promise.all([sb.rpc('times_da_plataforma'),sb.rpc('acoes_plataforma',{p_limite:30})]);
-    if(t.error){ setAviso({erro:true,texto:t.error.message||'Não consegui carregar os times.'}); setTimes([]); } else setTimes(t.data||[]);
-    setAcoes(a.error?[]:(a.data||[])); };
+const detalheAcao=a=>{ const d=a.detalhes||{};
+  if(a.acao==='mudar_assentos') return ` (${d.antes??'sem limite'} → ${d.depois??'sem limite'})`;
+  if(a.acao==='suspender') return d.motivo?`: ${d.motivo}`:'';
+  if(a.acao==='vencimento') return ` (${d.antes?dataBR(d.antes):'sem data'} → ${d.depois?dataBR(d.depois):'sem data'})`;
+  if(a.acao==='convidar_admin') return d.nome?`: ${d.nome}`:'';
+  if(a.acao==='acesso_conta') return `: ${ACESSO_ROTULO[d.acao]||d.acao}${d.acao==='estender'&&d.dias?` (${d.dias} dias)`:''}`;
+  return ''; };
+// conta individual: sem prazo, em teste (quantos dias faltam) ou vencida
+const situacaoConta=c=>{ if(!c.teste_ate) return {tom:'ok',txt:'sem prazo',tipo:'sem_prazo'};
+  const dias=Math.ceil((Date.parse(c.teste_ate)-Date.now())/86400000);
+  return dias>0?{tom:dias<=3?'warn':'plum',txt:`em teste · ${dias} dia${dias===1?'':'s'}`,tipo:'teste',dias}
+    :{tom:'bad',txt:`vencida em ${dataBR(c.teste_ate)}`,tipo:'vencida'}; };
+// contrato do time: vencido, vencendo (7 dias) ou em dia
+const situacaoContrato=t=>{ if(!t.contrato_fim) return null; const dias=diasDesde(t.contrato_fim);
+  return dias>0?{tom:'bad',txt:`vencido há ${dias} dia${dias===1?'':'s'}`}:dias>=-7?{tom:'warn',txt:`vence ${dataBR(t.contrato_fim)}`}:{tom:'neutro',txt:`até ${dataBR(t.contrato_fim)}`}; };
+const papeisDe=t=>[['admin',t.n_admins],['professor',t.n_professores],['financeiro',t.n_financeiros],['outro',t.n_outros]]
+  .filter(([,n])=>n>0).map(([p,n])=>`${n} ${p}${n>1?(p==='professor'?'es':'s'):''}`).join(' · ')||'—';
+
+function ConsolePlataforma({session}){
+  const [aba,setAba]=useState('visao');
+  const [times,setTimes]=useState(null); const [contas,setContas]=useState(null); const [acoes,setAcoes]=useState([]);
+  const [aviso,setAviso]=useState(null); const [link,setLink]=useState(null); const [perg,setPerg]=useState(null);
+  const [marcaDe,setMarcaDe]=useState(null); const [acoesDe,setAcoesDe]=useState(null); const [erros,setErros]=useState(null);
+  const [confirma,setConfirma]=useState(null); const [criando,setCriando]=useState(false); const [filtro,setFiltro]=useState('todas');
+  const [novo,setNovo]=useState({nome:'',assentos:'',admin:''});
+  const carregar=async()=>{ const [t,c,a]=await Promise.all([sb.rpc('times_da_plataforma'),sb.rpc('contas_da_plataforma'),sb.rpc('acoes_plataforma',{p_limite:60})]);
+    if(t.error||c.error) setAviso({erro:true,texto:(t.error||c.error).message||'Não consegui carregar os dados da plataforma.'});
+    setTimes(t.error?[]:(t.data||[])); setContas(c.error?[]:(c.data||[])); setAcoes(a.error?[]:(a.data||[])); };
   useEffect(()=>{ carregar(); },[]);
   const rodar=async(fn,args,okTexto)=>{ setAviso(null); const {data,error}=await sb.rpc(fn,args);
     if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); return null; }
     if(okTexto) setAviso({erro:false,texto:okTexto}); await carregar(); return data??true; };
   const url=t=>`${window.location.origin}/?convite=${t}`;
+  const sair=async()=>{ try{ await sb.auth.signOut(); }catch(e){} };
   const nomeOk=novo.nome.trim().length>0&&novo.admin.trim().length>0;
   const criar=async()=>{ const n=novo.nome.trim(), adm=novo.admin.trim(), as=parseInt(novo.assentos,10);
     const r=await rodar('criar_time_plataforma',{p_nome:n,p_assentos:as>0?as:null,p_admin_nome:adm},`Time ${n} criado. Mande o link pra ${adm}.`);
-    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, teu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); } };
-  return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-    <div><h2 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,margin:0}}>Plataforma</h2>
-      <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Você vê os times só pelos números. Os dados de cada time continuam só com quem é do time.</div></div>
-    {aviso&&<div data-aviso-plataforma style={{padding:'11px 14px',borderRadius:13,background:aviso.erro?C.redSoft:C.greenSoft,color:aviso.erro?C.red:C.greenMid,fontWeight:600,fontSize:13.5}}>{aviso.texto}</div>}
-    {link&&<LinkPronto titulo={link.titulo} url={link.url} texto={link.texto} onFechar={()=>setLink(null)}/>}
-    <Card style={{padding:20}}>
-      <h3 style={tituloS}>Criar time</h3>
+    if(r&&r.convite){ setLink({titulo:`Link de admin do ${n}`,url:url(r.convite),texto:`${adm}, teu acesso de admin ao time ${n} no GrinderBank:`}); setNovo({nome:'',assentos:'',admin:''}); setCriando(false); } };
+
+  // ---------- números ----------
+  const ts=times||[], cs=contas||[];
+  const soma=(l,k)=>l.reduce((s,x)=>s+(Number(x[k])||0),0);
+  const naoSusp=ts.filter(t=>!t.suspenso_em), susp=ts.length-naoSusp.length;
+  const jogAtivos=soma(naoSusp,'jogadores'), jogando=soma(naoSusp,'jogando_7d'), mensal=jogAtivos*PRECO_JOGADOR_USD;
+  const sits=cs.map(situacaoConta), nTeste=sits.filter(s=>s.tipo==='teste').length, nVenc=sits.filter(s=>s.tipo==='vencida').length, nSem=sits.filter(s=>s.tipo==='sem_prazo').length;
+  const erros7=soma(ts,'erros_7d')+soma(cs,'erros_7d');
+  const atencao=[
+    ...ts.filter(t=>t.suspenso_em).map(t=>({k:'s'+t.id,tom:'bad',txt:`${t.nome} está suspenso desde ${dataBR(t.suspenso_em)}${t.suspenso_motivo?`: ${t.suspenso_motivo}`:''}`})),
+    ...ts.filter(t=>!t.tem_dono||t.admin_pendente).map(t=>({k:'a'+t.id,tom:'warn',txt:`${t.nome}: ${!t.tem_dono?'ainda sem dono':'admin convidado ainda não entrou'}`})),
+    ...ts.map(t=>({t,c:situacaoContrato(t)})).filter(x=>x.c&&x.c.tom!=='neutro').map(x=>({k:'c'+x.t.id,tom:x.c.tom,txt:`${x.t.nome}: contrato ${x.c.txt}`})),
+    ...ts.filter(t=>t.erros_7d>0).map(t=>({k:'e'+t.id,tom:'warn',txt:`${t.nome}: ${t.erros_7d} erro${t.erros_7d>1?'s':''} do app em 7 dias`})),
+    ...cs.map(c=>({c,s:situacaoConta(c)})).filter(x=>x.s.tipo==='teste'&&x.s.dias<=3)
+      .map(x=>({k:'t'+x.c.id,tom:'warn',txt:`Conta ${x.c.apelido||x.c.nome}: o teste acaba em ${x.s.dias} dia${x.s.dias===1?'':'s'}`}))];
+  const contasVis=cs.filter((c,i)=>filtro==='todas'||sits[i].tipo===filtro);
+
+  // ---------- ações ----------
+  const acoesTime=t=>{ const l=[];
+    l.push(['Convidar admin',()=>setPerg({label:`Convidar admin pro ${t.nome}`,kind:'text',valor:'',
+      hint:'Nome de quem vai administrar o time. Você recebe um link de uso único (vale 7 dias) pra mandar pra pessoa.',
+      onSave:async v=>{ if(!v) return; setPerg(null); const tok=await rodar('convidar_admin_plataforma',{p_ws:t.id,p_nome:v},null);
+        if(tok&&typeof tok==='string') setLink({titulo:`Link de admin do ${t.nome}`,url:url(tok),texto:`${v}, teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }})]);
+    if(t.admin_pendente) l.push(['Link novo do admin convidado',async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null);
+      if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }]);
+    l.push(['Marca (logo e nome)',()=>setMarcaDe(t)]);
+    l.push(['Assentos',()=>setPerg({label:`Assentos do ${t.nome}`,hint:'Convite além disso é recusado no servidor. 0 = sem limite.',kind:'money',valor:t.assentos??0,
+      onSave:async v=>{ setPerg(null); const n=Math.round(Number(v)||0); await rodar('mudar_assentos',{p_ws:t.id,p_assentos:n>0?n:null},`Assentos do ${t.nome}: ${n>0?n:'sem limite'}.`); }})]);
+    l.push(['Vencimento do contrato',()=>setPerg({label:`Vencimento do contrato do ${t.nome}`,kind:'date',valor:t.contrato_fim||'',
+      hint:'Até quando o time está pago. Em branco: sem data. Não trava nada sozinho: quem decide suspender é você.',
+      onSave:async v=>{ setPerg(null); await rodar('definir_vencimento',{p_ws:t.id,p_data:v||null},v?`Contrato do ${t.nome} até ${dataBR(v)}.`:`Contrato do ${t.nome} sem data.`); }})]);
+    l.push(['Erros do app',async()=>{ const {data,error}=await sb.rpc('erros_do_time',{p_ws:t.id,p_limite:30}); setErros({nome:t.nome,lista:error?[]:(data||[]),erro:error?.message}); }]);
+    if(t.suspenso_em) l.push(['Reativar o time',()=>setConfirma({titulo:`Reativar o ${t.nome}?`,texto:'O app volta a funcionar na hora pra todo mundo do time.',
+      ok:async()=>{ setConfirma(null); await rodar('suspender_time',{p_ws:t.id,p_suspender:false,p_motivo:null},`${t.nome} reativado.`); }})]);
+    else l.push(['Suspender o time',()=>setPerg({label:`Suspender o ${t.nome}`,kind:'text',valor:'',
+      hint:'O app de todo mundo do time trava com um aviso; os dados ficam guardados e dá pra reativar. Diga o motivo: ele fica só aqui na plataforma.',
+      onSave:async v=>{ if(!v) return; setPerg(null); await rodar('suspender_time',{p_ws:t.id,p_suspender:true,p_motivo:v},`${t.nome} suspenso.`); }}),true]);
+    return l; };
+  const acoesConta=c=>{ const s=situacaoConta(c), nome=c.apelido||c.nome, l=[];
+    l.push(['Estender o teste',()=>setPerg({label:`Estender o teste de ${nome}`,kind:'money',valor:15,
+      hint:'Quantos dias a mais. Conta a partir do fim do teste (ou de hoje, se já venceu ou se a conta não tinha prazo).',
+      onSave:async v=>{ const d=Math.round(Number(v)||0); if(d<1) return; setPerg(null); await rodar('acesso_conta_plataforma',{p_ws:c.id,p_acao:'estender',p_dias:d},`Teste de ${nome}: mais ${d} dias.`); }})]);
+    if(s.tipo!=='sem_prazo') l.push(['Liberar sem prazo',()=>setConfirma({titulo:`Liberar ${nome} sem prazo?`,texto:'A conta para de ter data pra acabar (como uma assinatura ativa).',
+      ok:async()=>{ setConfirma(null); await rodar('acesso_conta_plataforma',{p_ws:c.id,p_acao:'sem_prazo',p_dias:null},`${nome}: liberada sem prazo.`); }})]);
+    if(s.tipo!=='vencida') l.push(['Encerrar o acesso',()=>setConfirma({titulo:`Encerrar o acesso de ${nome}?`,perigo:true,
+      texto:'A conta trava na hora, com a tela de assinar. Os dados ficam guardados e dá pra liberar de novo. A assinatura na Kiwify/Hotmart, se houver, é cancelada lá.',
+      ok:async()=>{ setConfirma(null); await rodar('acesso_conta_plataforma',{p_ws:c.id,p_acao:'encerrar',p_dias:null},`Acesso de ${nome} encerrado.`); }}),true]);
+    return l; };
+
+  // ---------- telas ----------
+  const NAV=[{id:'visao',label:'Visão geral',Icon:IcoPanel},{id:'times',label:'Times',Icon:IcoUsers},{id:'contas',label:'Contas',Icon:IcoUser},{id:'registro',label:'Registro',Icon:IcoDaily}];
+  const titulo={visao:'Visão geral',times:'Times',contas:'Contas individuais',registro:'Registro'}[aba];
+  const Kpi=({rotulo,valor,sub,dataK})=><Card data-kpi-plataforma={dataK} style={{padding:'16px 18px'}}>
+    <div style={{fontSize:11,fontWeight:700,letterSpacing:'.05em',textTransform:'uppercase',color:C.inkSoft}}>{rotulo}</div>
+    <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,margin:'4px 0 2px',whiteSpace:'nowrap'}}>{valor}</div>
+    <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.4}}>{sub}</div></Card>;
+  const botaoAcoes=(rot,dataA,itens)=><button aria-label={`Ações de ${rot}`} {...dataA} onClick={()=>setAcoesDe({titulo:rot,itens})}
+    style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>;
+  const carregando=times==null||contas==null;
+
+  const visao=<div style={{display:'flex',flexDirection:'column',gap:16}}>
+    <div data-kpis-plataforma style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',gap:12}}>
+      <Kpi dataK="times" rotulo="Times" valor={naoSusp.length} sub={susp?`${susp} suspenso${susp>1?'s':''}`:'nenhum suspenso'}/>
+      <Kpi dataK="jogadores" rotulo="Jogadores ativos" valor={jogAtivos} sub={`${jogando} jogaram nos últimos 7 dias`}/>
+      <Kpi dataK="mensalidade" rotulo="Mensalidade estimada" valor={<>US$ {mensal.toLocaleString('pt-BR')}<span style={{fontSize:14,fontWeight:600,color:C.inkSoft}}>/mês</span></>} sub={`US$ ${PRECO_JOGADOR_USD} × jogadores ativos dos times não suspensos`}/>
+      <Kpi dataK="contas" rotulo="Contas individuais" valor={cs.length} sub={`${nTeste} em teste · ${nVenc} vencida${nVenc===1?'':'s'} · ${nSem} sem prazo`}/>
+      <Kpi dataK="erros" rotulo="Erros do app" valor={erros7} sub="nos últimos 7 dias"/>
+    </div>
+    <Card style={{padding:20}} data-atencao>
+      <h3 style={tituloS}>Precisa de atenção</h3>
+      {!atencao.length?<div style={{fontSize:14,color:C.inkSoft}}>Nada pendente.</div>:atencao.map(a=><div key={a.k} style={{display:'flex',gap:10,alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+        <Tag tom={a.tom}>{a.tom==='bad'?'urgente':'atenção'}</Tag><span>{a.txt}</span></div>)}
+    </Card>
+    <Card style={{padding:20}} data-por-papel>
+      <h3 style={tituloS}>Pessoas por papel (todos os times)</h3>
+      <div style={{display:'flex',gap:22,flexWrap:'wrap',fontSize:14}}>
+        {[['Admins','n_admins'],['Professores','n_professores'],['Financeiros','n_financeiros'],['Outros papéis','n_outros'],['Jogadores ativos','jogadores'],['Convidados (ainda sem conta)','convidados']]
+          .map(([r,k])=><div key={k}><div style={{fontSize:12,color:C.inkSoft,fontWeight:600}}>{r}</div><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700}}>{soma(ts,k)}</div></div>)}
+      </div>
+    </Card>
+  </div>;
+
+  const telaTimes=<div style={{display:'flex',flexDirection:'column',gap:16}}>
+    {criando?<Card style={{padding:20}}>
+      <h3 style={tituloS}>Novo time</h3>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:10}}>
         <div><label style={labelStyle} htmlFor="pl-nome">Nome do time</label><input id="pl-nome" data-novo-time-nome style={inputStyle} value={novo.nome} onChange={e=>setNovo(x=>({...x,nome:e.target.value}))}/></div>
         <div><label style={labelStyle} htmlFor="pl-adm">Nome de quem vai administrar</label><input id="pl-adm" data-novo-time-admin style={inputStyle} value={novo.admin} onChange={e=>setNovo(x=>({...x,admin:e.target.value}))}/></div>
         <div><label style={labelStyle} htmlFor="pl-ass">Assentos (em branco: sem limite)</label><input id="pl-ass" data-novo-time-assentos style={inputStyle} inputMode="numeric" value={novo.assentos} onChange={e=>setNovo(x=>({...x,assentos:e.target.value.replace(/\D/g,'')}))}/></div>
       </div>
       <div style={{fontSize:12.5,color:C.inkSoft,margin:'8px 0 10px',lineHeight:1.5}}>O time nasce com a raiz e a configuração padrão. Quem aceitar o link de admin vira o dono do time e monta a estrutura.</div>
-      <button disabled={!nomeOk} onClick={criar} style={{...btnP,opacity:nomeOk?1:.5}}>Criar time</button>
-    </Card>
-    <Card style={{padding:20}}>
-      <h3 style={tituloS}>Times {times&&<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}>{times.length}</span>}</h3>
-      {times&&times.length>0&&(()=>{ const jog=times.reduce((s,t)=>s+(t.jogadores||0),0);
-        return <div data-mensalidade-total style={{display:'flex',gap:18,flexWrap:'wrap',alignItems:'baseline',margin:'0 0 12px',padding:'12px 14px',borderRadius:13,background:C.greenSoft}}>
-          <div><div style={{fontSize:12,color:C.inkSoft,fontWeight:600}}>Mensalidade de todos os times</div>
-            <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,color:C.greenMid}}>US$ {jog*PRECO_JOGADOR_USD}/mês</div></div>
-          <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>{jog} jogador{jog===1?'':'es'} ativo{jog===1?'':'s'} × US$ {PRECO_JOGADOR_USD}. Conta só quem joga hoje (professor, financeiro e admin que não jogam não entram). A cobrança é por fora: aqui é só a conta.</div>
-        </div>; })()}
-      {times==null?<div className="spin"/>:!times.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhum time ainda.</div>:
-      <div style={{overflowX:'auto'}}><table data-times style={{width:'100%',borderCollapse:'collapse'}}>
-        <thead><tr>{['Time','Pessoas','Jogadores','Mensalidade','Assentos','Admin','Último lançamento',''].map(h=><th key={h} style={thS}>{h}</th>)}</tr></thead>
-        <tbody>{times.map(t=><tr key={t.id} data-time-plataforma={t.nome}>
-          <td style={{...tdS,fontWeight:700}}>{t.nome}{t.tipo==='pool'?<span style={{fontSize:12,color:C.inkSoft}}> · pool</span>:null}
-            {(t.marca_nome&&t.marca_nome!==t.nome)||t.tem_logo?<div style={{fontSize:12,color:C.inkSoft,fontWeight:500}}>{t.marca_nome&&t.marca_nome!==t.nome?`aparece como ${t.marca_nome}`:''}{t.marca_nome&&t.marca_nome!==t.nome&&t.tem_logo?' · ':''}{t.tem_logo?'com logo':''}</div>:null}</td>
-          <td style={tdS}>{t.pessoas}{t.convidados?<span style={{fontSize:12,color:C.inkSoft}}> ({t.convidados} convidad{t.convidados>1?'os':'o'})</span>:null}</td>
-          <td style={tdS}>{t.jogadores}</td>
-          <td style={tdS} data-mensalidade>US$ {(t.jogadores||0)*PRECO_JOGADOR_USD}</td>
-          <td style={tdS}>{t.assentos==null?'sem limite':t.assentos}</td>
-          <td style={tdS}>{t.admins||'—'}{!t.tem_dono?<> <Tag tom="warn">sem dono</Tag></>:null}</td>
-          <td style={tdS}>{t.ultimo_lancamento?dataBR(t.ultimo_lancamento):'—'}</td>
-          <td style={tdS}><div style={{display:'flex',gap:6}}>
-            <button style={btnS} onClick={()=>setMarcaDe(t)}>Marca</button>
-            <button style={btnS} onClick={()=>setPerg({label:`Assentos do ${t.nome}`,hint:'Convite além disso é recusado no servidor. 0 = sem limite.',kind:'money',valor:t.assentos??0,
-              onSave:async v=>{ setPerg(null); const n=Math.round(Number(v)||0); await rodar('mudar_assentos',{p_ws:t.id,p_assentos:n>0?n:null},`Assentos do ${t.nome}: ${n>0?n:'sem limite'}.`); }})}>Assentos</button>
-            {t.admin_pendente&&<button style={btnS} onClick={async()=>{ const tok=await rodar('novo_link_admin',{p_ws:t.id},null); if(tok&&typeof tok==='string') setLink({titulo:`Link novo de admin do ${t.nome}`,url:url(tok),texto:`Teu acesso de admin ao time ${t.nome} no GrinderBank:`}); }}>Link do admin</button>}
-          </div></td></tr>)}</tbody></table></div>}
-    </Card>
-    {acoes.length>0&&<Card style={{padding:20}}>
-      <h3 style={tituloS}>Registro</h3>
-      {acoes.map((a,i)=><div key={i} data-acao-plataforma style={{padding:'7px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
-        <b>{dataBR(a.criado_em)}</b> · {ACAO_ROTULO[a.acao]||a.acao}{a.time_nome?` · ${a.time_nome}`:''}{a.acao==='mudar_assentos'&&a.detalhes?` (${a.detalhes.antes??'sem limite'} → ${a.detalhes.depois??'sem limite'})`:''}</div>)}
-    </Card>}
+      <div style={{display:'flex',gap:8}}><button disabled={!nomeOk} onClick={criar} style={{...btnP,opacity:nomeOk?1:.5}}>Criar time</button>
+        <button style={btnS} onClick={()=>setCriando(false)}>Cancelar</button></div>
+    </Card>:<div><button data-novo-time style={btnP} onClick={()=>setCriando(true)}>+ Novo time</button></div>}
+    {!ts.length?<Card style={{padding:20}}><div style={{fontSize:14,color:C.inkSoft}}>Nenhum time ainda. Crie o primeiro em "+ Novo time".</div></Card>:
+    <div data-times style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(330px,1fr))',gap:12}}>
+      {ts.map(t=>{ const ct=situacaoContrato(t); return <Card key={t.id} data-time-plataforma={t.nome} style={{padding:18,display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+          <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:16}}>{t.nome}{t.tipo!=='time'?<span style={{fontSize:12,color:C.inkSoft,fontWeight:500}}> · {t.tipo==='pool'?'pool':'formato antigo'}</span>:null}</div>
+            {(t.marca_nome&&t.marca_nome!==t.nome)||t.tem_logo?<div style={{fontSize:12,color:C.inkSoft}}>{[t.marca_nome&&t.marca_nome!==t.nome?`aparece como ${t.marca_nome}`:null,t.tem_logo?'com logo':null].filter(Boolean).join(' · ')}</div>:null}</div>
+          {botaoAcoes(t.nome,{'data-acoes-time':t.nome},acoesTime(t))}</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}} data-situacao>
+          {t.suspenso_em?<Tag tom="bad">suspenso</Tag>:<Tag tom="ok">ativo</Tag>}
+          {ct&&<Tag tom={ct.tom}>contrato {ct.txt}</Tag>}
+          {!t.tem_dono?<Tag tom="warn">sem dono</Tag>:t.admin_pendente?<Tag tom="warn">admin convidado</Tag>:null}
+          {t.erros_7d>0&&<Tag tom="warn">{t.erros_7d} erro{t.erros_7d>1?'s':''}</Tag>}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:'10px 12px'}}>
+          {[['Pessoas',t.pessoas,`${t.com_conta} com conta${t.convidados?` · ${t.convidados} convidado${t.convidados>1?'s':''}`:''}`,null],
+            ['Jogadores',t.jogadores,`de ${t.jogadores_cadastrados} cadastrado${t.jogadores_cadastrados===1?'':'s'}`,'data-jogadores'],
+            ['Jogaram 7 dias',t.jogando_7d,null,null],
+            ['Assentos',t.assentos==null?`${t.pessoas} · sem limite`:`${t.pessoas} de ${t.assentos}`,null,null],
+            ['Mensalidade',t.suspenso_em?'—':`US$ ${((t.jogadores||0)*PRECO_JOGADOR_USD).toLocaleString('pt-BR')}`,null,'data-mensalidade'],
+            ['Último lançamento',t.ultimo_lancamento?dataBR(t.ultimo_lancamento):'—',null,null]].map(([r,v,sub,dk])=><div key={r} style={{minWidth:0}}>
+              <div style={{fontSize:10.5,fontWeight:700,letterSpacing:'.04em',textTransform:'uppercase',color:C.inkSoft}}>{r}</div>
+              <div {...(dk?{[dk]:true}:{})} style={{fontWeight:700,fontSize:15}}>{v}</div>
+              {sub&&<div style={{fontSize:11.5,color:C.inkSoft,lineHeight:1.35}}>{sub}</div>}</div>)}
+        </div>
+        <div data-papeis style={{fontSize:12.5,color:C.inkSoft,borderTop:`1px solid ${C.border}`,paddingTop:8}}>Papéis: {papeisDe(t)}</div>
+      </Card>; })}
+    </div>}
+  </div>;
+
+  const telaContas=<div style={{display:'flex',flexDirection:'column',gap:16}}>
+    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+      {[['todas',`Todas (${cs.length})`],['teste',`Em teste (${nTeste})`],['vencida',`Vencidas (${nVenc})`],['sem_prazo',`Sem prazo (${nSem})`]].map(([k,r])=>
+        <button key={k} data-filtro-conta={k} onClick={()=>setFiltro(k)} style={{...btnS,background:filtro===k?C.plumSoft:C.surface,borderColor:filtro===k?P:C.border}}>{r}</button>)}
+    </div>
+    {!contasVis.length?<Card style={{padding:20}}><div style={{fontSize:14,color:C.inkSoft}}>Nenhuma conta aqui.</div></Card>:
+    <div data-contas style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:12}}>
+      {contasVis.map(c=>{ const s=situacaoConta(c), nome=c.apelido||c.nome; return <Card key={c.id} data-conta-plataforma={nome} style={{padding:16,display:'flex',flexDirection:'column',gap:8}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+          <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:15}}>{nome}</div>
+            <div style={{fontSize:12.5,color:C.inkSoft,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email||'sem e-mail'}</div></div>
+          {botaoAcoes(nome,{'data-acoes-conta':nome},acoesConta(c))}</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}><Tag tom={s.tom}>{s.txt}</Tag>{c.erros_7d>0&&<Tag tom="warn">{c.erros_7d} erro{c.erros_7d>1?'s':''}</Tag>}</div>
+        <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Plano {c.plano||'—'} · criada em {dataBR(c.criado_em)}<br/>{c.torneios} torneio{c.torneios===1?'':'s'} · último lançamento {c.ultimo_lancamento?dataBR(c.ultimo_lancamento):'—'}</div>
+      </Card>; })}
+    </div>}
+  </div>;
+
+  const telaRegistro=<Card style={{padding:20}}>
+    {!acoes.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhuma ação ainda.</div>:acoes.map((a,i)=><div key={i} data-acao-plataforma style={{padding:'8px 0',borderTop:i?`1px solid ${C.border}`:'none',fontSize:13.5}}>
+      <b>{dataBR(a.criado_em)}</b> · {ACAO_ROTULO[a.acao]||a.acao}{a.time_nome?` · ${a.time_nome}`:''}{detalheAcao(a)}</div>)}
+  </Card>;
+
+  return <div className="wrap" data-console-plataforma>
+    <aside className="side" style={{flexDirection:'column',width:238,padding:20,borderRight:`1px solid ${C.border}`,position:'sticky',top:0,height:'100vh',gap:6}}>
+      <Brand sub="gestão da plataforma"/><div style={{height:6}}/>
+      {NAV.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={aba===n.id} onClick={()=>setAba(n.id)}/>)}
+      <div style={{marginTop:'auto',display:'flex',flexDirection:'column',gap:10}}>
+        <div style={{padding:14,borderRadius:16,background:C.plumSoft,fontSize:12.5,color:P,lineHeight:1.45}}>
+          <div style={{fontWeight:800}}>Conta central</div>
+          <div style={{color:C.inkSoft,marginTop:2,wordBreak:'break-all'}}>{session.user.email}</div></div>
+        <button onClick={sair} style={{padding:'10px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13.5}}>Sair</button>
+      </div>
+    </aside>
+    <main style={{flex:1,padding:'22px 16px calc(112px + env(safe-area-inset-bottom))',maxWidth:'100%',minWidth:0}}>
+      <div className="bottomnav" style={{alignItems:'center',justifyContent:'space-between',marginBottom:18}}>
+        <Brand small sub="gestão da plataforma"/>
+        <button onClick={sair} style={{...btnS,display:'flex',alignItems:'center',gap:6}}><IcoLogout s={16}/>Sair</button></div>
+      <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16,maxWidth:1180}}>
+        <div><h2 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:600,margin:0}}>{titulo}</h2>
+          <div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Você vê os times só pelos números. Os dados de cada time continuam só com quem é do time.</div></div>
+        {aviso&&<div data-aviso-plataforma style={{padding:'11px 14px',borderRadius:13,background:aviso.erro?C.redSoft:C.greenSoft,color:aviso.erro?C.red:C.greenMid,fontWeight:600,fontSize:13.5}}>{aviso.texto}</div>}
+        {link&&<LinkPronto titulo={link.titulo} url={link.url} texto={link.texto} onFechar={()=>setLink(null)}/>}
+        {carregando?<div className="spin"/>:aba==='visao'?visao:aba==='times'?telaTimes:aba==='contas'?telaContas:telaRegistro}
+      </div>
+    </main>
+    <nav className="bottomnav" style={{position:'fixed',bottom:0,left:0,right:0,background:C.surface,borderTop:`1px solid ${C.border}`,padding:'6px 8px calc(6px + env(safe-area-inset-bottom))',gap:2,boxShadow:'0 -8px 24px -16px rgba(0,0,0,.25)',zIndex:20}}>
+      {NAV.map(n=><NavBtn key={n.id} Icon={n.Icon} label={n.label} active={aba===n.id} onClick={()=>setAba(n.id)} mobile/>)}
+    </nav>
+
+    {acoesDe&&<div onClick={()=>setAcoesDe(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-acoes-modal className="ftfade" style={caixaModal}>
+      {topoModal(acoesDe.titulo,()=>setAcoesDe(null))}
+      {acoesDe.itens.map(([r,fn,perigo])=><button key={r} role="menuitem" onClick={()=>{ setAcoesDe(null); fn(); }}
+        style={{textAlign:'left',padding:'13px 14px',borderRadius:13,border:`1.5px solid ${perigo?C.redSoft:C.border}`,background:C.surface,color:perigo?C.red:C.ink,fontWeight:700,fontSize:14.5,cursor:'pointer'}}>{r}</button>)}
+    </div></div>}
+    {confirma&&<div onClick={()=>setConfirma(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-confirma className="ftfade" style={caixaModal}>
+      {topoModal(confirma.titulo,()=>setConfirma(null))}
+      <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>{confirma.texto}</div>
+      <div style={{display:'flex',gap:8}}><button style={{...btnP,flex:1,...(confirma.perigo?{background:C.red,borderColor:C.red}:{})}} onClick={confirma.ok}>Confirmar</button>
+        <button style={{...btnS,flex:1}} onClick={()=>setConfirma(null)}>Cancelar</button></div>
+    </div></div>}
+    {erros&&<div onClick={()=>setErros(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-erros-modal className="ftfade" style={caixaModal}>
+      {topoModal(`Erros do app · ${erros.nome}`,()=>setErros(null))}
+      {erros.erro?<div style={{color:C.red,fontSize:13.5}}>{erros.erro}</div>:!erros.lista.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhum erro registrado desse time.</div>
+        :erros.lista.map((e,i)=><div key={i} style={{padding:'8px 0',borderTop:i?`1px solid ${C.border}`:'none',fontSize:13}}>
+          <b>{dataBR(e.criado_em)} {String(e.criado_em||'').slice(11,16)}</b> · {e.origem}{e.versao?` · versão ${e.versao}`:''}<div style={{color:C.inkSoft,marginTop:2,wordBreak:'break-word'}}>{e.mensagem}</div></div>)}
+    </div></div>}
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
     {marcaDe&&<div onClick={()=>setMarcaDe(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-marca-modal className="ftfade" style={caixaModal}>
       {topoModal(`Marca do ${marcaDe.nome}`,()=>setMarcaDe(null))}
@@ -2609,6 +2777,19 @@ function PlataformaApp(){
       <MarcaEditor nomeTime={marcaDe.nome} atual={{nome:marcaDe.marca_nome||'',logo:null}} temLogo={!!marcaDe.tem_logo}
         onSalvar={async a=>{ const r=await rodar('definir_marca',{...a,p_ws:marcaDe.id},`Marca do ${marcaDe.nome} salva.`); if(r) setMarcaDe(null); }}/>
     </div></div>}
+  </div>;
+}
+
+// time suspenso pela plataforma (contrato): o app de todo mundo do time trava com o aviso; os dados ficam guardados
+function TimeSuspenso({nome,onLogout}){
+  return <div style={{minHeight:'100vh',display:'grid',placeItems:'center',padding:20}}>
+    <Card data-time-suspenso style={{padding:30,width:'100%',maxWidth:430,textAlign:'center'}} className="ftfade">
+      <div style={{display:'flex',justifyContent:'center',marginBottom:12}}><Brand/></div>
+      <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,margin:'0 0 8px'}}>O acesso {nome?`do ${nome}`:'do seu time'} está suspenso</h3>
+      <p style={{fontSize:14,color:C.inkSoft,lineHeight:1.65,margin:'0 0 18px'}}>Os seus dados estão guardados. Se você joga ou é da equipe, fale com o admin do time. Se você é o admin, fale com o GrinderBank pra reativar.</p>
+      <button onClick={()=>window.location.reload()} style={{width:'100%',padding:'13px 0',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Já foi resolvido: atualizar</button>
+      <button onClick={onLogout} style={{marginTop:12,border:'none',background:'transparent',color:C.inkSoft,fontWeight:600,fontSize:13,cursor:'pointer',textDecoration:'underline'}}>Sair</button>
+    </Card>
   </div>;
 }
 
@@ -3648,7 +3829,6 @@ function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
   const [ws,setWs]=useState(null);                 // workspace da conta (team = pool · solo = cliente)
-  const [souGestorGeral,setSouGestorGeral]=useState(false);   // gestor geral da plataforma (o servidor diz)
   const [srvStatus,setSrvStatus]=useState(null);   // F0.6: status do contrato calculado no SERVIDOR (meu_status)
   const [needsSetup,setNeedsSetup]=useState(false);// solo sem config ainda -> onboarding de 3 passos
   const [conviteErro,setConviteErro]=useState(null);// convite de time recusado pelo servidor (vencido, conta em outro lugar…)
@@ -3869,7 +4049,6 @@ function Dashboard({session,profile}){
       setErroCarga(falhas.length>0);
       if(falhas.length) registrarErro('carga','lista não carregou: '+falhas.map(([r])=>r.error.message).join(' | '),{tabelas:falhas.length});
       const myWs=(wsr.data&&wsr.data[0])||null; setWs(myWs);
-      try{ const {data:gg}=await sb.rpc('sou_gestor_geral'); setSouGestorGeral(gg===true); }catch(e){}
       // conta individual: pedidos pra entrar num time (o próprio pedido; a RLS só mostra os da pessoa)
       if(myWs&&myWs.kind==='solo'){ try{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); }catch(e){}
         try{ const {data:ms}=await sb.from('acerto_saida').select('id,time_nome,saida,banca,mu,mk_congelado,devolucao,parte_jogador,total_time').order('registrado_em',{ascending:false}).limit(1); setMinhasSaidas(ms||[]); }catch(e){} }
@@ -4557,7 +4736,6 @@ function Dashboard({session,profile}){
       MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','stats','time'];
     }
   }
-  if(souGestorGeral&&!alunoAberto) nav=[...nav,{id:'plataforma',label:'Plataforma',Icon:IcoGrid}];
   const navAtiva=id=>view===id||(modoTime&&!gestaoAtiva&&id==='torneios'&&GRUPO_TORNEIOS.includes(view));
 
   /* ---------- mensal ---------- */
@@ -4645,6 +4823,7 @@ function Dashboard({session,profile}){
   })();
 
   // teste grátis acabou: bloqueia o app inteiro até assinar (dados preservados no banco)
+  if(srvStatus&&srvStatus.suspenso) return <TimeSuspenso nome={srvStatus.time} onLogout={sair}/>;
   if(trialExpired) return <>
     <TrialBlocked plan={plan} email={session.user.email} onLogout={sair} onDelete={()=>setDelAcc(true)}/>
     {delAcc&&<DeleteAccountModal nickname={myName} onClose={()=>setDelAcc(false)}/>}
@@ -5464,7 +5643,6 @@ function Dashboard({session,profile}){
 
       {/* ---------------- CONFIG ---------------- */}
       {view==='time'&&modoTime&&!gestaoAtiva&&!somenteLeitura&&<TimeApp secao="meu" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
-      {view==='plataforma'&&souGestorGeral&&<PlataformaApp/>}
       {gestaoAtiva&&String(view).startsWith('g_')&&<TimeApp secao={view} session={session} tours={toursRaw} config={config} banca={bancaAtual} onVerJogador={abrirAluno} onIr={setView}
         marca={ws?{nome:ws.marca_nome||'',logo:ws.marca_logo||null}:null} nomeTime={ws?.name} onMarca={loadAll}/>}
       {(view==='config'||view==='g_regras')&&<div className="ftfade" style={view==='g_regras'?{marginTop:16}:undefined}>
@@ -5516,7 +5694,7 @@ function Dashboard({session,profile}){
         {view!=='g_regras'&&<>
         {soloConta&&<Card data-entrar-time style={{padding:20,marginTop:16}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Entrar num time</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Seu time te passou um código (ex.: SAMBA-36510)? Peça pra entrar. Quando a gestão aprovar, esta conta vira do time. O seu histórico vai junto, e o que é de antes da entrada só você vê.</div>
+          <div style={{fontSize:13,color:C.inkSoft,marginBottom:12,lineHeight:1.5}}>Seu time te passou um código (ex.: TIME-12345)? Peça pra entrar. Quando a gestão aprovar, esta conta vira do time. O seu histórico vai junto, e o que é de antes da entrada só você vê.</div>
           {(()=>{ const pend=meusPedidos.find(x=>x.status==='pendente'); const rec=!pend&&meusPedidos[0]&&meusPedidos[0].status==='recusado'?meusPedidos[0]:null;
             const recarregar=async()=>{ const {data:mp}=await sb.from('pedido_entrada').select('id,status,criado_em,motivo,time_nome').order('criado_em',{ascending:false}).limit(5); setMeusPedidos(mp||[]); };
             if(pend) return <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
@@ -5525,8 +5703,8 @@ function Dashboard({session,profile}){
                 style={{padding:'8px 13px',borderRadius:11,border:`1.5px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:13,cursor:'pointer'}}>Cancelar pedido</button></div>;
             return <>{rec&&<div style={{fontSize:13,color:C.red,fontWeight:600,marginBottom:8}}>O time {rec.time_nome} recusou o pedido{rec.motivo?`: ${rec.motivo}`:'.'}</div>}
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                <input data-codigo-time aria-label="Código do time" style={{...inputStyle,flex:'1 1 180px',width:'auto'}} autoCapitalize="characters" placeholder="SAMBA-36510" value={codTime} onChange={e=>setCodTime(e.target.value)}/>
-                <button data-pedir-entrada onClick={async()=>{ const c=normCodigo(codTime); if(!codigoValido(c)){ setAvisoPedido({erro:true,texto:'Código inválido: é tipo SAMBA-36510 (confira com o time).'}); return; }
+                <input data-codigo-time aria-label="Código do time" style={{...inputStyle,flex:'1 1 180px',width:'auto'}} autoCapitalize="characters" placeholder="TIME-12345" value={codTime} onChange={e=>setCodTime(e.target.value)}/>
+                <button data-pedir-entrada onClick={async()=>{ const c=normCodigo(codTime); if(!codigoValido(c)){ setAvisoPedido({erro:true,texto:'Código inválido: é tipo TIME-12345 (confira com o time).'}); return; }
                   const {error}=await sb.rpc('pedir_entrada_time',{p_codigo:c}); if(error){ setAvisoPedido({erro:true,texto:error.message}); return; } setAvisoPedido(null); setCodTime(''); await recarregar(); }}
                   style={{padding:'11px 16px',borderRadius:12,border:'none',background:P,color:'#fff',fontWeight:700,fontSize:14,cursor:'pointer'}}>Pedir pra entrar</button>
               </div></>; })()}
@@ -5984,6 +6162,7 @@ function App(){
   const [profile,setProfile]=useState(undefined);
   const [recovery,setRecovery]=useState(false);   // veio pelo link "esqueci minha senha"
   const [linkAviso,setLinkAviso]=useState('');     // link do e-mail vencido/usado
+  const [gg,setGg]=useState(undefined);            // gestor geral da plataforma (o servidor diz): abre o console, sem nada de jogador
   useEffect(()=>{
     if(!sb) return;
     sb.auth.getSession().then(({data})=>setSession(data.session));
@@ -6024,11 +6203,20 @@ function App(){
     })();
     return ()=>{on=false;};
   },[session]);
+  // conta central: o servidor diz se é gestor geral (ninguém se promove pelo app)
+  useEffect(()=>{
+    if(!session){ setGg(undefined); return; }
+    let on=true;
+    (async()=>{ try{ const {data,error}=await sb.rpc('sou_gestor_geral'); if(on) setGg(!error&&data===true); }catch(e){ if(on) setGg(false); } })();
+    return ()=>{on=false;};
+  },[session]);
   if(!CONFIGURED) return <NotConfigured/>;
   // veio do link "esqueci minha senha": trava TUDO até criar a senha nova (sem fechar, sem pular)
   if(recovery) return <RecoveryReset/>;
   if(session===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!session) return <Login aviso={linkAviso}/>;
+  if(gg===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
+  if(gg) return <ConsolePlataforma session={session}/>;
   if(profile===undefined) return <div style={{minHeight:'100vh',display:'grid',placeItems:'center'}}><div className="spin"/></div>;
   if(!profile || !profile.password_changed) return <Onboarding session={session} profile={profile} onDone={setProfile}/>;
   return <Dashboard session={session} profile={profile}/>;
