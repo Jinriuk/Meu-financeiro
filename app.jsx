@@ -2927,7 +2927,7 @@ function PlanilhaManualModal({nome,salas,onPronto,onClose}){
       <input data-manual-sala={i} style={inputStyle} value={l.sala} placeholder="Sala" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,sala:e.target.value}:y))}/>
       <input data-manual-saldo={i} style={inputStyle} inputMode="decimal" value={l.saldo} placeholder="Saldo" onChange={e=>setLs(x=>x.map((y,j)=>j===i?{...y,saldo:e.target.value}:y))}/></div>)}
     <button style={{...btnS,alignSelf:'flex-start'}} onClick={()=>setLs(x=>[...x,{sala:'',saldo:''}])}>+ sala</button>
-    <div><label style={labelStyle} htmlFor="pm-mk">MakeUp (capital do time com você)</label><input id="pm-mk" data-manual-makeup style={inputStyle} inputMode="decimal" value={mk} onChange={e=>setMk(e.target.value)}/></div>
+    <div><label style={labelStyle} htmlFor="pm-mk">MU: capital do time com você (na planilha, "MakeUp")</label><input id="pm-mk" data-manual-makeup style={inputStyle} inputMode="decimal" value={mk} onChange={e=>setMk(e.target.value)}/></div>
     <div><label style={labelStyle} htmlFor="pm-co">Cashout (lucro que você já sacou no time)</label><input id="pm-co" data-manual-cashout style={inputStyle} inputMode="decimal" value={co} onChange={e=>setCo(e.target.value)}/></div>
     <div><label style={labelStyle} htmlFor="pm-dt">Saldos de que dia</label><input id="pm-dt" type="date" style={inputStyle} value={data} max={todayISO()} onChange={e=>setData(e.target.value)}/></div>
     <div style={{fontSize:13.5}}>Banca (soma das salas): <b>{fmt(banca)}</b> · profit {fmtSinal(cent(banca-makeup))}</div>
@@ -3200,12 +3200,12 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <h3 style={tituloS}>Seu dinheiro no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
           <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
-          <div><div style={labelStyle}>{mk!=null&&mk<0?'Make-up':'Profit'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
+          <div><div style={labelStyle}>{mk!=null&&mk<0?'MK (quanto falta pro MU)':'Profit (passou do MU)'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
           {/* lifetime como na planilha do Samba: o que já sacou + o profit de agora (a relação total com o time) */}
           <div><div style={labelStyle}>Lifetime no time</div><div data-lifetime style={{fontWeight:800,fontSize:20}}>{mk==null?fmt(d.sit.lifetime):fmtSinal(cent(num(d.sit.lifetime)+mk))}</div>
             <div style={{fontSize:12,color:C.inkSoft}}>já sacado {fmt(d.sit.lifetime)}{mk!=null?` · profit agora ${fmtSinal(mk)}`:''}</div></div>
         </div>
-        {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: dá pra pedir saque.'}</div>}
+        {mk!=null&&<div style={{fontSize:12.5,color:mk<0?'#7a5a1f':C.greenMid,fontWeight:600,marginTop:6}}>{saqueAberto_?'Saque em andamento: veja abaixo.':mk<0?'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.':'Fora de MK: pode pedir saque.'}</div>}
         <div style={{fontSize:12.5,color:C.inkSoft,marginTop:8}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
         {minhaAbertura?.status==='confirmada'
           ?<div data-abertura="confirmada" style={{fontSize:12.5,color:C.greenMid,fontWeight:600,marginTop:6}}>Planilha conferida pelo time em {dataBR(minhaAbertura.confirmado_em)}.</div>
@@ -3817,11 +3817,13 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               {editavel&&proprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:rr.k},`${rr.rot}: ${selU.nome} volta a herdar.`)}>Herdar</button>}
               </span>
             </div>; })}
-          {!ehRaiz&&<div data-regra="contrato" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
-            <span style={{flex:1,minWidth:170,color:C.inkSoft}}>Contrato</span><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b>
-            <span data-regra-origem style={{fontSize:12,color:C.inkSoft}}>· {cProprio?'desta unidade':c&&c.unidade_id!==raiz?.id?`herdado de ${U[c.unidade_id]?.nome}`:'do time'}</span>
+          {!ehRaiz&&<div data-regra="contrato" style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
+            <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>Contrato</span>
+            <span style={{minWidth:0}}><b data-regra-valor>{faixasTexto((c||contratoRaiz)?.faixas)}</b><span data-regra-origem style={{fontSize:12,color:C.inkSoft}}> · {cProprio?'desta unidade':c&&c.unidade_id!==raiz?.id?`herdado de ${U[c.unidade_id]?.nome}`:'do time'}</span></span>
+            <span style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
             {podeSel&&<button style={btnS} onClick={()=>setContratoAberto(selU.id)}>Mudar</button>}
             {podeSel&&cProprio&&<button style={btnS} onClick={()=>rodar('limpar_regra',{p_unidade:selU.id,p_chave:'contrato'},`Contrato: ${selU.nome} volta a herdar.`)}>Herdar</button>}
+            </span>
           </div>}
         </Card>; })()}
       <div style={{fontSize:12.5,color:C.inkSoft}}>A grade de cada reta fica na aba <button onClick={()=>onIr('g_grades')} style={{border:'none',background:'transparent',color:P,fontWeight:700,padding:0,cursor:'pointer',font:'inherit'}}>Grades</button>.</div>
@@ -3863,7 +3865,7 @@ function PlanilhaModal({p,onClose,onEnviar}){
       <div>
         {(p.saldos||[]).filter(s=>s.saldo).map(s=><React.Fragment key={s.sala}>{linha(s.sala,fmt(s.saldo))}</React.Fragment>)}
         {linha('Banca (soma das salas)',fmt(p.banca),true)}
-        {linha('MakeUp (capital do time)',fmt(p.makeup),true)}
+        {linha('MU: capital do time (na planilha, "MakeUp")',fmt(p.makeup),true)}
         {linha('Lucro na banca',fmt(p.lucro))}
         {linha('Cashout (lucro já sacado)',fmt(p.cashout),true)}
         {linha('Lifetime',fmt(p.lifetime))}
@@ -4140,7 +4142,9 @@ function Dashboard({session,profile}){
   // cada tela tem endereço (#banca, #g_jogadores...): o voltar do navegador volta de tela, e a tela nova abre no topo (A-024)
   const viewRef=React.useRef(viewSel); viewRef.current=viewSel;
   const alunoRef=React.useRef(alunoAberto); alunoRef.current=alunoAberto;
-  useEffect(()=>{ try{ const h='#'+viewSel; if(window.location.hash!==h) window.history.pushState(null,'',h); }catch(e){} try{ window.scrollTo(0,0); }catch(e){} },[viewSel]);
+  const primeiraTela=React.useRef(true);
+  useEffect(()=>{ try{ const h='#'+viewSel; if(window.location.hash!==h){ if(primeiraTela.current) window.history.replaceState(null,'',h); else window.history.pushState(null,'',h); } }catch(e){}
+    primeiraTela.current=false; try{ window.scrollTo(0,0); }catch(e){} },[viewSel]);
   useEffect(()=>{ const f=()=>{ const v=decodeURIComponent(String(window.location.hash||'').slice(1)); if(!TELAS.has(v)||v===viewRef.current) return;
       if(alunoRef.current&&v.startsWith('g_')){ setAlunoAberto(null); setAlunoResumo(null); }
       setView(v); };
@@ -5293,7 +5297,7 @@ function Dashboard({session,profile}){
         <Recolhivel titulo="Gráficos" sub="curva de lucro, banca, semana a semana e volume" chip={`${solo?3:5} gráficos`}>
         <div style={{display:'flex',flexDirection:'column',gap:16}}>
         <Card style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>Lucro acumulado por jogador</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:18,fontWeight:600,margin:'0 0 4px'}}>{solo?'Resultado acumulado':'Lucro acumulado por jogador'}</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:12}}>{toque?'Passe o dedo':'Passe o mouse'} pra ver os valores.</div>
           <MultiLineChart labels={lucroLabels} series={lucroSeries}/>
         </Card>
@@ -5978,7 +5982,7 @@ function Dashboard({session,profile}){
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             ...(modoTime?[]:[{label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)}]),
-            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:dataBR(config.week_start_date)},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]:[
@@ -5994,7 +5998,7 @@ function Dashboard({session,profile}){
             {label:'Stop loss diário (buy-ins)',val:config.stoploss_daily_buyins,kind:'money',key:'stoploss_daily_buyins',show:String(num(config.stoploss_daily_buyins))},
             {label:'Stop loss semanal',val:config.stoploss_weekly_pct,kind:'percent',key:'stoploss_weekly_pct',show:pctFmt(num(config.stoploss_weekly_pct)*100)},
             {label:'Banca inicial',val:config.banca_inicial,kind:'money',key:'banca_inicial',show:fmt(config.banca_inicial)},
-            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:config.week_start_date},
+            {label:'Início da semana de referência',val:config.week_start_date,kind:'date',key:'week_start_date',show:dataBR(config.week_start_date)},
             {label:'Sites permitidos',val:config.sites_permitidos,kind:'list',key:'sites_permitidos',show:sitesTime.join(', ')},
             {label:'Modalidades permitidas',val:config.modalidades_permitidas,kind:'list',key:'modalidades_permitidas',show:modalidadesTime.join(', ')},
           ]).map(row=><div key={row.key} style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderBottom:`1px solid ${C.border}`}}>

@@ -10168,7 +10168,7 @@ function PlanilhaManualModal({
   }, "+ sala"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: labelStyle,
     htmlFor: "pm-mk"
-  }, "MakeUp (capital do time com voc\xEA)"), /*#__PURE__*/React.createElement("input", {
+  }, "MU: capital do time com voc\xEA (na planilha, \"MakeUp\")"), /*#__PURE__*/React.createElement("input", {
     id: "pm-mk",
     "data-manual-makeup": true,
     style: inputStyle,
@@ -11118,7 +11118,7 @@ function TimeApp({
       }
     }, fmt(d.sit.mu))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: labelStyle
-    }, mk != null && mk < 0 ? 'Make-up' : 'Profit'), /*#__PURE__*/React.createElement("div", {
+    }, mk != null && mk < 0 ? 'MK (quanto falta pro MU)' : 'Profit (passou do MU)'), /*#__PURE__*/React.createElement("div", {
       "data-meu-mk": true,
       style: {
         fontWeight: 800,
@@ -11145,7 +11145,7 @@ function TimeApp({
         fontWeight: 600,
         marginTop: 6
       }
-    }, mk < 0 ? 'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.' : 'Fora de MK: dá pra pedir saque.'), /*#__PURE__*/React.createElement("div", {
+    }, saqueAberto_ ? 'Saque em andamento: veja abaixo.' : mk < 0 ? 'Em MK: a banca está abaixo do capital do time. Saque de lucro só depois de sair do MK.' : 'Fora de MK: pode pedir saque.'), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft,
@@ -14277,21 +14277,24 @@ function TimeApp({
       }), !ehRaiz && /*#__PURE__*/React.createElement("div", {
         "data-regra": "contrato",
         style: {
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns: celular ? '1fr auto' : 'minmax(170px,1fr) auto auto',
           alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          padding: '8px 0',
+          gap: '4px 10px',
+          padding: '9px 0',
           borderTop: `1px solid ${C.border}`,
           fontSize: 13.5
         }
       }, /*#__PURE__*/React.createElement("span", {
         style: {
-          flex: 1,
-          minWidth: 170,
-          color: C.inkSoft
+          color: C.inkSoft,
+          gridColumn: celular ? '1 / -1' : undefined
         }
-      }, "Contrato"), /*#__PURE__*/React.createElement("b", {
+      }, "Contrato"), /*#__PURE__*/React.createElement("span", {
+        style: {
+          minWidth: 0
+        }
+      }, /*#__PURE__*/React.createElement("b", {
         "data-regra-valor": true
       }, faixasTexto((c || contratoRaiz)?.faixas)), /*#__PURE__*/React.createElement("span", {
         "data-regra-origem": true,
@@ -14299,7 +14302,13 @@ function TimeApp({
           fontSize: 12,
           color: C.inkSoft
         }
-      }, "\xB7 ", cProprio ? 'desta unidade' : c && c.unidade_id !== raiz?.id ? `herdado de ${U[c.unidade_id]?.nome}` : 'do time'), podeSel && /*#__PURE__*/React.createElement("button", {
+      }, " \xB7 ", cProprio ? 'desta unidade' : c && c.unidade_id !== raiz?.id ? `herdado de ${U[c.unidade_id]?.nome}` : 'do time')), /*#__PURE__*/React.createElement("span", {
+        style: {
+          display: 'flex',
+          gap: 6,
+          justifyContent: 'flex-end'
+        }
+      }, podeSel && /*#__PURE__*/React.createElement("button", {
         style: btnS,
         onClick: () => setContratoAberto(selU.id)
       }, "Mudar"), podeSel && cProprio && /*#__PURE__*/React.createElement("button", {
@@ -14308,7 +14317,7 @@ function TimeApp({
           p_unidade: selU.id,
           p_chave: 'contrato'
         }, `Contrato: ${selU.nome} volta a herdar.`)
-      }, "Herdar")));
+      }, "Herdar"))));
     })(), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
@@ -14537,7 +14546,7 @@ function PlanilhaModal({
     }
   }, p.nome, p.atualizado_em ? ` · planilha de ${dataBR(p.atualizado_em)}` : ''), /*#__PURE__*/React.createElement("div", null, (p.saldos || []).filter(s => s.saldo).map(s => /*#__PURE__*/React.createElement(React.Fragment, {
     key: s.sala
-  }, linha(s.sala, fmt(s.saldo)))), linha('Banca (soma das salas)', fmt(p.banca), true), linha('MakeUp (capital do time)', fmt(p.makeup), true), linha('Lucro na banca', fmt(p.lucro)), linha('Cashout (lucro já sacado)', fmt(p.cashout), true), linha('Lifetime', fmt(p.lifetime)), linha('Contrato', `${p.contrato_texto || '—'}${p.contrato_fim ? ` · até ${dataBR(p.contrato_fim)}` : ''}`), linha('Grade', `${(p.grade || []).length} linhas`)), (p.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
+  }, linha(s.sala, fmt(s.saldo)))), linha('Banca (soma das salas)', fmt(p.banca), true), linha('MU: capital do time (na planilha, "MakeUp")', fmt(p.makeup), true), linha('Lucro na banca', fmt(p.lucro)), linha('Cashout (lucro já sacado)', fmt(p.cashout), true), linha('Lifetime', fmt(p.lifetime)), linha('Contrato', `${p.contrato_texto || '—'}${p.contrato_fim ? ` · até ${dataBR(p.contrato_fim)}` : ''}`), linha('Grade', `${(p.grade || []).length} linhas`)), (p.avisos || []).map((t, i) => /*#__PURE__*/React.createElement("div", {
     key: i,
     style: {
       color: C.red,
@@ -15531,11 +15540,15 @@ function Dashboard({
   viewRef.current = viewSel;
   const alunoRef = React.useRef(alunoAberto);
   alunoRef.current = alunoAberto;
+  const primeiraTela = React.useRef(true);
   useEffect(() => {
     try {
       const h = '#' + viewSel;
-      if (window.location.hash !== h) window.history.pushState(null, '', h);
+      if (window.location.hash !== h) {
+        if (primeiraTela.current) window.history.replaceState(null, '', h);else window.history.pushState(null, '', h);
+      }
     } catch (e) {}
+    primeiraTela.current = false;
     try {
       window.scrollTo(0, 0);
     } catch (e) {}
@@ -18614,7 +18627,7 @@ function Dashboard({
       fontWeight: 600,
       margin: '0 0 4px'
     }
-  }, "Lucro acumulado por jogador"), /*#__PURE__*/React.createElement("div", {
+  }, solo ? 'Resultado acumulado' : 'Lucro acumulado por jogador'), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12.5,
       color: C.inkSoft,
@@ -21780,7 +21793,7 @@ function Dashboard({
     val: config.week_start_date,
     kind: 'date',
     key: 'week_start_date',
-    show: config.week_start_date
+    show: dataBR(config.week_start_date)
   }, {
     label: 'Sites permitidos',
     val: config.sites_permitidos,
@@ -21868,7 +21881,7 @@ function Dashboard({
     val: config.week_start_date,
     kind: 'date',
     key: 'week_start_date',
-    show: config.week_start_date
+    show: dataBR(config.week_start_date)
   }, {
     label: 'Sites permitidos',
     val: config.sites_permitidos,

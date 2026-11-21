@@ -56,8 +56,9 @@ select teste.ok('F registra 30 de capital na GG com data de 5 dias atrás e 20 h
 select teste.igual('…base da semana 170 (140 + 30); banca agora 185',
   $q$select (s->>'banca_inicio_semana') || ' / ' || (s->>'banca') from (select public.situacao_jogador('9f000000-0000-0000-0000-0000000000c1', current_date - 2) s) x$q$, '170.00 / 185.00');
 select teste.como('9e000000-0000-0000-0000-0000000000c1');
-select teste.igual('A-062: J foi avisado dos dois capitais', $q$select teste.avisos('capital')$q$,
-  'Capital recebido do time: US$ 30,00 na GG · entra no seu MU. | Capital recebido do time: US$ 20,00 · entra no seu MU.');
+-- os dois capitais entram na mesma transação (mesma hora): a ordem é pelo texto
+select teste.igual('A-062: J foi avisado dos dois capitais', $q$select string_agg(titulo || ': ' || texto, ' | ' order by texto) from public.aviso where tipo = 'capital'$q$,
+  'Capital recebido do time: US$ 20,00 · entra no seu MU. | Capital recebido do time: US$ 30,00 na GG · entra no seu MU.');
 reset role;
 select teste.igual('antes da foto, a banca do dia é a das salas (a entrada foi há 20 dias)', $q$select public.banca_na_data('9f000000-0000-0000-0000-0000000000c1', current_date - 25)::text$q$, '100.00');
 set role authenticated;
