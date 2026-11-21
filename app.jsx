@@ -650,6 +650,7 @@ const isZip=u=>u.length>3&&u[0]===0x50&&u[1]===0x4B&&u[2]<=8;   // "PK…" mesmo
    por arquivo e traz o resultado oficial do site — é a fonte da verdade do que aconteceu. */
 const TS_START=/^(?:PokerStars |GGPoker )?Tournament #\d+[,\s]/m;
 // "$9,815.75" -> 9815.75 (vírgula só é separador de milhar nesses arquivos, que são sempre en-US)
+const pl=(n,um,varios)=>`${n} ${n===1?um:varios}`;   // plural certo: "1 torneio", "2 torneios" (A-064)
 const tsMoney = s => { const n=parseFloat(String(s).replace(/[^\d.,-]/g,'').replace(/,(?=\d{3}(\D|$))/g,'').replace(',','.')); return isNaN(n)?0:n; };
 function parseSummaries(text){
   const rows=[];
@@ -835,7 +836,7 @@ function hhInsights(d){
   // então contar blinds no gap acusaria "passividade" injustamente
   const nb=['EP','MP','CO','BTN'].reduce((a,k)=>{const x=d.pos&&d.pos[k]; if(x){a.h+=num(x.h);a.v+=num(x.v);a.p+=num(x.p);} return a;},{h:0,v:0,p:0});
   const gapNB=nb.h>=200?(nb.v-nb.p)/nb.h*100:null;
-  if(d.hands<300) add('info','Amostra pequena',`Com ${d.hands} mão(s), as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
+  if(d.hands<300) add('info','Amostra pequena',`Com ${pl(d.hands,'mão','mãos')}, as leituras são preliminares — padrão de verdade aparece a partir de ~1.000 mãos (ideal 5.000+). Importe mais sessões antes de mudar o jogo por causa delas.`);
   if(d.hands>=200){
     if(p.vpip>29){
       const ep=pp('EP'), mp=pp('MP');
@@ -2284,10 +2285,11 @@ function SemanalPlayer({player,weeks,config,curMonth,makeUpAtual,solo}){
 /* ---------- sininho: avisos do time (saque, reload, planilha, entrada). Cada um apaga os seus. ---------- */
 function Sininho({avisos,onAbrir,onApagar,onLimpar,onIr}){
   const [aberto,setAberto]=useState(false);
+  useEsc(()=>setAberto(false),aberto);
   const novos=avisos.filter(a=>!a.lido_em).length;
   const quando=t=>{ const m=Math.round((Date.now()-Date.parse(t))/60000); return m<1?'agora':m<60?`há ${m} min`:m<1440?`há ${Math.round(m/60)} h`:dataBR(t); };
   return <div style={{position:'relative'}}>
-    <button data-sininho aria-label={`Avisos${novos?` (${novos} novos)`:''}`} onClick={()=>{ const v=!aberto; setAberto(v); if(v&&novos) onAbrir(); }}
+    <button data-sininho aria-label={`Avisos${novos?`: ${novos} ${novos===1?'aviso novo':'avisos novos'}`:''}`} aria-expanded={aberto} onClick={()=>{ const v=!aberto; setAberto(v); if(v&&novos) onAbrir(); }}
       style={{position:'relative',zIndex:aberto?42:'auto',width:40,height:40,borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:novos?P:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}>
       <IcoBell s={19}/>
       {novos>0&&<span data-sininho-novos style={{position:'absolute',top:-5,right:-5,minWidth:19,height:19,padding:'0 5px',borderRadius:99,background:C.red,color:'#fff',fontSize:11,fontWeight:800,display:'grid',placeItems:'center'}}>{novos>9?'9+':novos}</span>}
@@ -2296,16 +2298,17 @@ function Sininho({avisos,onAbrir,onApagar,onLimpar,onIr}){
       <div onClick={()=>setAberto(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
       <div data-avisos className="ftfade" style={{position:'fixed',right:16,top:72,zIndex:41,width:'min(360px, calc(100vw - 32px))',maxHeight:'70vh',overflowY:'auto',background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,boxShadow:'0 16px 40px -18px rgba(25,35,29,.45)'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px',borderBottom:`1px solid ${C.border}`}}>
-          <b style={{fontSize:14.5}}>Avisos</b>
-          {avisos.length>0&&<button onClick={onLimpar} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar tudo</button>}
+          <b style={{fontSize:14.5}}>Avisos{novos?<span style={{fontWeight:600,color:C.inkSoft,fontSize:12.5}}> · {novos} {novos===1?'novo':'novos'}</span>:null}</b>
+          <span style={{display:'flex',gap:4}}>{avisos.length>0&&<button onClick={onLimpar} style={{border:'none',background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:12.5,cursor:'pointer'}}>Limpar tudo</button>}
+            <button aria-label="Fechar avisos" onClick={()=>setAberto(false)} style={{width:28,height:28,borderRadius:8,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}><IcoX s={15}/></button></span>
         </div>
         {avisos.length===0&&<div style={{padding:'22px 14px',textAlign:'center',color:C.inkSoft,fontSize:13.5}}>Nenhum aviso.</div>}
         {avisos.map(a=><div key={a.id} data-aviso={a.tipo} style={{display:'flex',gap:8,padding:'11px 14px',borderBottom:`1px solid ${C.border}`,background:a.lido_em?'transparent':C.plumSoft}}>
-          <div onClick={()=>{ setAberto(false); onIr(a); }} style={{flex:1,minWidth:0,cursor:'pointer'}}>
-            <div style={{fontWeight:700,fontSize:13.5,color:a.tone===C.red?C.red:C.ink}}>{a.titulo}</div>
+          <button data-aviso-ir onClick={()=>{ setAberto(false); onIr(a); }} style={{flex:1,minWidth:0,cursor:'pointer',textAlign:'left',border:'none',background:'transparent',padding:0,font:'inherit',color:'inherit'}}>
+            <div style={{fontWeight:700,fontSize:13.5,color:a.tone===C.red?C.red:C.ink}}>{a.titulo}{a.vezes>1?<span style={{color:C.inkSoft,fontWeight:600}}> · {a.vezes}×</span>:null}</div>
             {a.texto&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.4}}>{a.texto}</div>}
-            <div style={{fontSize:11,color:C.inkSoft,marginTop:3}}>{a.criado_em?quando(a.criado_em):'situação atual da banca'}{a.items&&a.items.length?' · toque pra ver':''}</div>
-          </div>
+            <div style={{fontSize:11,color:C.inkSoft,marginTop:3}}>{a.criado_em?quando(a.criado_em):'situação atual da banca'} · <span style={{color:P,fontWeight:700}}>ver ›</span></div>
+          </button>
           <button aria-label="Apagar aviso" onClick={()=>onApagar(a)} style={{width:28,height:28,flexShrink:0,borderRadius:8,border:'none',background:'transparent',color:C.inkSoft,cursor:'pointer',display:'grid',placeItems:'center'}}><IcoX s={15}/></button>
         </div>)}
       </div>
@@ -3167,7 +3170,9 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   };
 
   /* ================= MEU TIME (jogador) ================= */
-  if(secao==='meu'){
+  // jogador: "meu" é a reta (regras, grade, contrato); "dinheiro" (dentro da Banca) é MU, planilha, saque, reload e salas (A-058)
+  if(secao==='meu'||secao==='dinheiro'){
+    const soDinheiro=secao==='dinheiro';
     const meusSaques=d.eu?d.saques.filter(s=>s.pessoa_id===d.eu.id):[];
     const meusReloads=d.eu?d.reloads.filter(r=>r.pessoa_id===d.eu.id):[];
     const minhaAbertura=d.eu?d.aberturas.find(a=>a.pessoa_id===d.eu.id):null;
@@ -3176,12 +3181,18 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const minhaGradeReta=minhaUnidade?gradeEf(minhaUnidade):null;
     const mk=d.sit?mkDe(banca,d.sit.mu):null;
     const saqueAberto_=meusSaques.some(s=>['solicitado','aprovado'].includes(s.status)), reloadAberto_=meusReloads.some(r=>['solicitado','aprovado'].includes(r.status));
-    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
-      {header('Meu time')}
+    return <div className={soDinheiro?undefined:'ftfade'} data-secao-time={secao} style={{display:'flex',flexDirection:'column',gap:16}}>
+      {!soDinheiro&&header('Meu time')}
       {avisoBox}
-      {!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
-      {d.sit&&<Card style={{padding:20}}>
-        <h3 style={tituloS}>Minha conta no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+      {!soDinheiro&&!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
+      {!soDinheiro&&d.sit&&<Card data-minha-reta style={{padding:20}}>
+        <h3 style={tituloS}>Sua reta{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
+        <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:10}}><span style={{fontSize:13,color:C.inkSoft,flex:1,minWidth:200}}>MU, planilha de abertura, saque, reload e salas ficam na Banca.</span>
+          {onIr&&<button style={btnS} onClick={()=>onIr('banca')}>Ir pra Banca</button>}</div>
+      </Card>}
+      {soDinheiro&&d.sit&&<Card data-meu-dinheiro style={{padding:20}}>
+        <h3 style={tituloS}>Seu dinheiro no time{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10}}>
           <div><div style={labelStyle}>MU (capital do time)</div><div data-mu style={{fontWeight:800,fontSize:20}}>{fmt(d.sit.mu)}</div></div>
           <div><div style={labelStyle}>{mk!=null&&mk<0?'Make-up':'Profit'}</div><div data-meu-mk style={{fontWeight:800,fontSize:20,color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':(mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk))}</div></div>
@@ -3204,19 +3215,21 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           <button disabled={saqueAberto_||!d.sit.contrato} onClick={()=>setSaqueAberto(true)} style={{...btnP,padding:'12px 18px',fontSize:14.5,opacity:saqueAberto_||!d.sit.contrato?.5:1}}>Pedir saque</button>
           <button data-pedir-reload disabled={reloadAberto_} onClick={()=>setReloadAberto(true)} style={{...btnS,padding:'12px 18px',fontSize:14.5,opacity:reloadAberto_?.5:1}}>Pedir reload</button>
         </div>
-        {meusReloads.slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
+        {/* aqui só o que está em andamento ou foi recusado há pouco: o que já virou dinheiro está no histórico da Banca */}
+        {meusReloads.filter(r=>['solicitado','aprovado'].includes(r.status)||(['recusado','cancelado'].includes(r.status)&&diasDesde(r.decidido_em||r.solicitado_em)<=30)).slice(0,3).map(r=><div key={r.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13,marginTop:6}}>
           <div style={{flex:1,minWidth:160}}>{dataBR(r.solicitado_em)} · reload {fmt(r.status==='enviado'?r.enviado_valor:r.valor)}{r.sala?` · ${r.sala}`:''}</div>
           <span style={{fontWeight:700,color:r.status==='enviado'?C.greenMid:r.status==='recusado'?C.red:C.gold}}>{RELOAD_ROTULO[r.status]}{r.motivo_recusa?` · ${r.motivo_recusa}`:''}</span>
           {r.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_reload',{p_id:r.id},'Pedido de reload cancelado.')}>Cancelar</button>}
         </div>)}
-        {meusSaques.length>0&&<div style={{marginTop:10}}>{meusSaques.slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
+        {meusSaques.length>0&&<div style={{marginTop:10}}>{meusSaques.filter(s=>['solicitado','aprovado'].includes(s.status)||(['recusado','cancelado'].includes(s.status)&&diasDesde(s.decidido_em||s.solicitado_em)<=30)).slice(0,6).map(s=><div key={s.id} style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',padding:'8px 0',borderTop:`1px solid ${C.border}`,fontSize:13}}>
           <div style={{flex:1,minWidth:160}}>{dataBR(s.solicitado_em)} · MU {fmt(s.devolucao)} + cashout {fmt(s.cashout)} → time {fmt(s.total_time)}, você {fmt(s.parte_jogador)}</div>
           <span style={{fontWeight:700,color:s.status==='pago'?C.greenMid:s.status==='recusado'?C.red:C.gold}}>{SAQUE_ROTULO[s.status]}{s.status==='pago'&&Number(s.diferenca)?` · diferença ${fmt(s.diferenca)}`:''}{s.motivo?` · ${s.motivo}`:''}</span>
           {s.status==='solicitado'&&<button style={btnS} onClick={()=>rodar('cancelar_saque',{p_id:s.id},'Pedido cancelado.')}>Cancelar</button>}
         </div>)}</div>}
       </Card>}
-      {d.salasEu&&<Card style={{padding:20}} data-minhas-salas>
-        <h3 style={tituloS}>Minhas salas</h3>
+      {soDinheiro&&d.salasEu&&<Card style={{padding:20}} data-minhas-salas>
+        <h3 style={tituloS}>Saldo de cada sala agora</h3>
+        <div style={{fontSize:12.5,color:C.inkSoft,marginTop:-4,marginBottom:6}}>O que o sistema calcula hoje: saldo de entrada + jogos + movimentos + capital e reload − saques.</div>
         {(d.salasEu.salas||[]).length===0&&<div style={{fontSize:13.5,color:C.inkSoft}}>Nenhuma sala ainda. Elas aparecem com a planilha conferida, com o capital do time ou com os torneios de cada site.</div>}
         {(d.salasEu.salas||[]).map(s=>{ const r=conf&&conf.resultado&&(conf.resultado.salas||[]).find(x=>x.chave===s.chave);
           return <div key={s.chave||'sem'} data-minha-sala={s.sala} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
@@ -3229,7 +3242,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <div style={{display:'flex',justifyContent:'space-between',fontSize:14,fontWeight:800,padding:'8px 0 0'}}><span>Total (banca)</span><span>{fmt(d.salasEu.total)}</span></div>
         {conf&&conf.resultado&&<div data-conferencia-resultado style={{marginTop:8,fontSize:13,fontWeight:600,color:conf.resultado.diverge?C.red:C.greenMid}}>
           {conf.resultado.diverge?`Lançado ${fmt(conf.resultado.total_informado)} · sistema ${fmt(conf.resultado.total_sistema)} (${fmtSinal(Number(conf.resultado.diferenca))}). O time foi avisado; confira torneios e movimentos das salas em vermelho.`:'Bateu com o sistema.'}</div>}
-        {!conf&&d.salasEu.ultima_conferencia&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:6}}>Última conferência: {dataBR(d.salasEu.ultima_conferencia.criado_em)} · {d.salasEu.ultima_conferencia.diverge?'não bateu':'bateu'}.</div>}
+        {!conf&&d.salasEu.ultima_conferencia&&(()=>{ const uc=d.salasEu.ultima_conferencia, difs=(Array.isArray(uc.salas)?uc.salas:[]).filter(x=>Math.abs(Number(x.diferenca)||0)>=0.01);
+          // diz quanto e onde (A-054): "GG Poker: US$ 15,00 a mais"
+          return <div data-ultima-conferencia style={{fontSize:12.5,color:uc.diverge?C.red:C.inkSoft,fontWeight:uc.diverge?600:400,marginTop:6,lineHeight:1.5}}>Última conferência: {dataBR(uc.criado_em)} · {uc.diverge
+            ?<>não bateu. {difs.map(x=>`${x.sala}: ${fmt(Math.abs(Number(x.diferenca)))} a ${Number(x.diferenca)>0?'mais':'menos'} que o sistema`).join(' · ')}. O time foi avisado: confira os torneios e movimentos dessas salas.</>:'bateu.'}</div>; })()}
         <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
           {!conf&&(d.salasEu.salas||[]).some(s=>s.chave)&&<button data-conferir-saldos style={btnS} onClick={()=>setConf({valores:{},resultado:null})}>Conferir saldos</button>}
           {conf&&!conf.resultado&&<button data-enviar-conferencia style={btnP} onClick={async()=>{
@@ -3240,18 +3256,18 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           {conf&&<button style={btnS} onClick={()=>{ setConf(null); carregar(); }}>{conf.resultado?'Fechar':'Cancelar'}</button>}
         </div>
       </Card>}
-      {minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
+      {!soDinheiro&&minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
         <h3 style={tituloS}>Regras da sua reta</h3>
         {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
           return <div key={rr.k} data-minha-regra={rr.k} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rr.rot}</span><b>{rr.txt(v)}</b></div>; })}
       </Card>}
-      {minhaGradeReta&&<Card style={{padding:20}}>
+      {!soDinheiro&&minhaGradeReta&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'} {minhaGradeReta.simulada?<Tag tom="warn">simulada</Tag>:<Tag tom="ok">oficial</Tag>}</h3>
         {minhaGradeReta.simulada&&<div data-grade-simulada style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,fontWeight:700,marginBottom:10,lineHeight:1.5}}>Grade simulada: montada sem a planilha oficial desta reta. Confirme com o professor antes de seguir à risca.</div>}
         <GradeTabela celulas={minhaGradeReta.celulas||[]}/>
         <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Vale desde {dataBR(minhaGradeReta.vigente_desde)}{minhaGradeReta.unidade_id!==minhaUnidade?` (da ${U[minhaGradeReta.unidade_id]?.nome}, vale pra ${U[minhaUnidade]?.nome})`:''}. Cada torneio lançado é conferido com ela.</div>
       </Card>}
-      {!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
+      {!soDinheiro&&!minhaGradeReta&&minhaGrade.length>0&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Minha grade</h3>
         <GradeTabela celulas={minhaGrade}/>
         <div style={{fontSize:11.5,color:C.inkSoft,marginTop:8}}>Da planilha enviada em {dataBR(minhaAbertura?.enviado_em)}. As regras valem como o time definiu na planilha.</div>
@@ -3966,9 +3982,16 @@ function SaqueModal({pessoa,salas,onClose,onPedir}){
     <div onClick={e=>e.stopPropagation()} data-saque-modal className="ftfade" style={caixaModal}>
       {topoModal('Pedir saque',onClose)}
       {sug&&sug.em_mk&&<div data-saque-sugestao="mk" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>Em MK: a banca no sistema ({fmt(sug.banca)}) está abaixo do MU ({fmt(sug.mu)}). Saque de lucro só depois de sair do MK.</div>}
+      {/* nada a sacar por causa da reserva: a janela diz por quê (A-056) */}
+      {sug&&!sug.em_mk&&!(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao="nada" style={{background:C.goldSoft,color:'#6b4e1a',borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
+        Nada a sacar agora{Number(sug.reserva_por_sala)>0?`: cada sala precisa manter ${fmt(sug.reserva_por_sala)} e nenhuma tem mais que isso`:': a banca não passa do MU'}.
+        {sug.por_sala&&(sug.de_onde||[]).length>0?<> Hoje: {(sug.de_onde||[]).map(x=>`${x.sala} ${fmt(x.saldo)}`).join(' · ')}.</>:null}</div>}
       {sug&&!sug.em_mk&&(Number(sug.devolucao)>0||Number(sug.cashout)>0)&&<div data-saque-sugestao style={{background:C.bg,borderRadius:12,padding:'10px 12px',fontSize:13,lineHeight:1.5}}>
-        Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b>{Number(sug.reserva_total)>0?<>, deixando {fmt(sug.reserva_por_sala)} em {Number(sug.salas)>1?`cada uma das ${sug.salas} salas`:'cada sala'} (banca depois {fmt(sug.banca_depois)})</>:null}.
-        {sug.por_sala&&(sug.de_onde||[]).some(x=>Number(x.sacar)>0)?<> Sai de: {(sug.de_onde||[]).filter(x=>Number(x.sacar)>0).map(x=>`${x.sala} ${fmt(x.sacar)}`).join(', ')}.</>:null}
+        Sugestão: devolver <b>{fmt(sug.devolucao)}</b> de MU e sacar <b>{fmt(sug.cashout)}</b> (banca depois {fmt(sug.banca_depois)}).
+        {/* o texto é montado por sala: quem já está abaixo da reserva não "fica com a reserva" (A-057) */}
+        {sug.por_sala&&(sug.de_onde||[]).length>0?<div data-saque-por-sala style={{marginTop:4}}>{(sug.de_onde||[]).map(x=>{ const sai=Number(x.sacar)||0, fica=cent(num(x.saldo)-sai), r=Number(sug.reserva_por_sala)||0;
+            return <div key={x.sala}><b>{x.sala}</b>: {sai>0?`sai ${fmt(sai)}, fica ${fmt(fica)}`:r>0&&num(x.saldo)<=r?`fica ${fmt(x.saldo)} (já está na reserva de ${fmt(r)}: não sai nada)`:`fica ${fmt(x.saldo)}`}</div>; })}</div>
+          :Number(sug.reserva_total)>0?<> Deixa {fmt(sug.reserva_total)} de reserva nas salas.</>:null}
         <div style={{marginTop:6}}><button style={btnS} onClick={usarSugestao}>Usar sugestão</button></div></div>}
       <div style={{fontSize:12.5,color:C.inkSoft}}>Em cada sala: quanto tem agora (como aparece no site) e quanto sai dela.</div>
       {ls.map((l,i)=>{ const dif=l.sistema!=null&&String(l.saldo).trim()!==''?cent(parseValor(l.saldo)-l.sistema):null;
@@ -4167,10 +4190,12 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq,gr,rg]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
-        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome'),
-        lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,pago_em,status').eq('status','pago').order('id')),
-        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde')]);
+      const [pe,vi,ac,un,sq,gr,rg,apo,rel]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+        sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'),
+        lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')),
+        sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'),
+        lerTudo(()=>sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')),
+        lerTudo(()=>sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id'))]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
       GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe,regras:rg.error?[]:(rg.data||[])};
@@ -4180,7 +4205,7 @@ function Dashboard({session,profile}){
       const raiz=(un.data||[]).find(u=>!u.mae_id);
       const podeConfigurar=!!(eu&&raiz&&(ac.data||[]).some(a=>a.pessoa_id===eu.id&&a.unidade_id===raiz.id&&(a.capacidades||[]).some(c=>c==='administrar'||c==='configurar_regras')));
       const nomePorId=Object.fromEntries((pe.data||[]).map(x=>[x.id,x.nome]));
-      const saquesPagos=(sq.data||[]).map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
+      const saquesPagos=(sq.data||[]).filter(x=>x.status==='pago').map(x=>({id:'saque-'+x.id,player:nomePorId[x.pessoa_id]||'',valor_sacado:num(x.devolucao)+num(x.cashout),
         week_ending_date:weekEnding(String(x.pago_em||'').slice(0,10)),wallet:null,observacoes:'saque do time'}));
       const meusAc=eu?(ac.data||[]).filter(a=>a.pessoa_id===eu.id):[];
       const caps=[...new Set(meusAc.flatMap(a=>a.capacidades||[]))];
@@ -4188,7 +4213,8 @@ function Dashboard({session,profile}){
       const souAdmin=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id&&(a.capacidades||[]).includes('administrar')));
       const naRaiz=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id));
       setTimeGente({jogadores,eu,podeConfigurar,saquesPagos,caps,temGestao:meusAc.length>0,joga,souAdmin,naRaiz,carregado:true,
-        pessoas:pessoas.map(x=>({id:x.id,nome:x.nome}))});
+        pessoas:pessoas.map(x=>({id:x.id,nome:x.nome})),
+        dinheiro:{saques:sq.error?[]:(sq.data||[]),aportes:apo.error?[]:(apo.data||[]),reloads:rel.error?[]:(rel.data||[])}});
     }catch(e){ console.error(e); }
   };
   const loadAll=async()=>{
@@ -4473,7 +4499,7 @@ function Dashboard({session,profile}){
     const vistos=new Set(); lidos=lidos.filter(r=>{ const k=r.tid; if(vistos.has(k)) return false; vistos.add(k); return true; });
     const semData=lidos.filter(r=>!r.date);   // freeroll (buy-in 0) é torneio de verdade e entra
     lidos=lidos.filter(r=>r.date).sort((a,b)=>a.date===b.date?(a.tid<b.tid?-1:1):(a.date<b.date?-1:1));
-    if(semData.length) issues.push(`${semData.length} resumo(s) sem data legível — deixei de fora.`);
+    if(semData.length) issues.push(`${pl(semData.length,'resumo','resumos')} sem data legível: deixei de fora.`);
 
     // classifica cada resumo · "usados" impede que dois torneios iguais no mesmo dia
     // (dois "Daily Classic $3", por exemplo) casem com o mesmo lançamento manual
@@ -4540,7 +4566,7 @@ function Dashboard({session,profile}){
           else { inseridos+=(r1.data||[]).length; setTours(t=>[...(r1.data||[]),...t]); }
         }
         // 23505 = o índice único do id do torneio barrou: já tinha sido importado em outro lugar
-        if(barrados) erros.push(`${barrados} torneio(s) já tinham sido importados em outro aparelho — saia e entre de novo pra ver a lista atualizada.`);
+        if(barrados) erros.push(`${pl(barrados,'torneio já tinha','torneios já tinham')} sido importado${barrados===1?'':'s'} em outro aparelho: saia e entre de novo pra ver a lista atualizada.`);
       }
     }
     for(const x of pv.completa){
@@ -4799,7 +4825,15 @@ function Dashboard({session,profile}){
   if(bancaAtual<piso&&!(modoTime&&(!(piso>0)||(sitSel&&sitSel.abertura!=='confirmada')))) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && statusGrade(t,config).status==='fora');
-  if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
+  if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${pl(foraGradeTours.length,'torneio','torneios')} fora da grade nesta semana. ${toque?'Toque':'Clique'} para ver ${foraGradeTours.length===1?'qual':'quais'}.`,items:foraGradeTours});
+  // histórico do dinheiro do time na Banca (A-018, A-062, A-069): capital, reload enviado e saque pago, só leitura
+  const historicoTime=(()=>{ if(!modoTime) return []; const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); const dt=timeGente.dinheiro; if(!pp||!dt) return [];
+    const rlPorAporte=Object.fromEntries((dt.reloads||[]).filter(r=>r.aporte_id).map(r=>[r.aporte_id,r]));
+    return [...(dt.aportes||[]).filter(a=>a.pessoa_id===pp.id).map(a=>({k:'a'+a.id,data:String(a.data||a.criado_em||'').slice(0,10),
+        tipo:rlPorAporte[a.id]?'Reload':num(a.valor)>=0?'Capital do time':'Capital recolhido pelo time',sala:a.sala,valor:num(a.valor)})),
+      ...(dt.saques||[]).filter(q=>q.pessoa_id===pp.id&&q.status==='pago').map(q=>({k:'s'+q.id,data:String(q.pago_em||q.solicitado_em||'').slice(0,10),tipo:'Saque',
+        texto:`${num(q.devolucao)>0?`devolveu ${fmt(q.devolucao)} de MU + `:''}cashout ${fmt(q.cashout)} · ${somenteLeitura?'jogador':'você'} ficou com ${fmt(q.parte_jogador)}`,valor:-(num(q.devolucao)+num(q.cashout))}))]
+      .sort((x,y)=>String(y.data).localeCompare(String(x.data))); })();
   // o que está em aberto, no Início (A-014, A-051, A-052, A-053, A-055): saque e reload pedidos, planilha, dias sem lançar
   const faixasInicio=(()=>{ if(!solo) return []; const f=[], quem=somenteLeitura?alunoAberto:null;
     const sq=modoTime&&sitSel?sitSel.saque_aberto:null, rl=modoTime&&sitSel?sitSel.reload_aberto:null, ab=modoTime&&sitSel?sitSel.abertura:null;
@@ -4809,7 +4843,7 @@ function Dashboard({session,profile}){
     if(rl) f.push({k:'reload',tom:'warn',titulo:rl.status==='aprovado'?'Reload aprovado':'Reload aguardando aprovação',
       texto:`${fmt(rl.valor)}${rl.sala?` na ${rl.sala}`:''} · ${rl.status==='aprovado'?'o time vai mandar o dinheiro':`pedido em ${dataBR(rl.solicitado_em)}`}`});
     if(ab==='sem') f.push({k:'planilha',tom:'bad',titulo:quem?'Sem planilha de abertura':'Mande a planilha de abertura',
-      texto:quem?'a banca ainda não tem os saldos de entrada':'com ela o time registra seus saldos de entrada, o MU e o que você já sacou',acao:quem?null:['Mandar agora',()=>setView('time')]});
+      texto:quem?'a banca ainda não tem os saldos de entrada':'com ela o time registra seus saldos de entrada, o MU e o que você já sacou',acao:quem?null:['Mandar agora',()=>setView('banca')]});
     if(ab==='enviada') f.push({k:'planilha',tom:'warn',titulo:'Planilha aguardando o time conferir',
       texto:`enviada em ${dataBR(sitSel.abertura_enviada_em)}${sitSel.abertura_banca!=null?` · banca na planilha ${fmt(sitSel.abertura_banca)}`:''}`});
     const ultimo=tours.reduce((m,t)=>t.entry_date>m?t.entry_date:m,''), dd=ultimo?diasDesde(ultimo):null;
@@ -4850,8 +4884,13 @@ function Dashboard({session,profile}){
   // sininho: alertas do painel (enquanto a situação durar e ninguém apagar) + avisos do aparelho + avisos do time
   const alertasPainel=alerts.map(a=>({key:a.key||a.text,painel:true,tipo:'painel',titulo:a.tone===C.red?'Atenção na banca':'Aviso',texto:a.text,tone:a.tone,items:a.items}))
     .filter(a=>!avApagados.includes(a.key)).map(a=>({...a,id:'p-'+a.key,lido_em:avLidos.includes(a.key)?'lido':null}));
-  const todosAvisos=[...alertasPainel,...avLocais,...avisos.map(x=>({...x,servidor:true}))]
-    .sort((x,y)=>String(y.criado_em||'9').localeCompare(String(x.criado_em||'9')));
+  const todosAvisos=(()=>{ const l=[...alertasPainel,...avLocais,...avisos.map(x=>({...x,servidor:true}))]
+      .sort((x,y)=>String(y.criado_em||'9').localeCompare(String(x.criado_em||'9')));
+    const vistos={}, out=[];
+    l.forEach(a=>{ const k=a.servidor?`${a.tipo}|${a.ref_id||''}|${a.titulo}|${a.texto||''}`:'id|'+a.id;
+      if(vistos[k]){ vistos[k].vezes=(vistos[k].vezes||1)+1; if(!a.lido_em) vistos[k].lido_em=null; vistos[k].ids=[...(vistos[k].ids||[vistos[k].id]),a.id]; return; }
+      vistos[k]={...a}; out.push(vistos[k]); });
+    return out; })();
 
   /* dados dos gráficos */
   const chartWeeks=allWeeks.slice(-8);
@@ -5084,12 +5123,14 @@ function Dashboard({session,profile}){
               if(avisos.some(x=>!x.lido_em)){ setAvisos(a=>a.map(x=>x.lido_em?x:{...x,lido_em:new Date().toISOString()})); try{ await sb.rpc('marcar_avisos_lidos'); }catch(e){} } }}
             onApagar={async av=>{ if(av.painel){ setAvApagados(l=>[...l,av.key]); return; }
               if(av.local){ setAvLocais(l=>l.filter(x=>x.id!==av.id)); return; }
-              setAvisos(a=>a.filter(x=>x.id!==av.id)); try{ await sb.rpc('apagar_aviso',{p_id:av.id}); }catch(e){} }}
+              const ids=av.ids||[av.id]; setAvisos(a=>a.filter(x=>!ids.includes(x.id))); try{ for(const id of ids) await sb.rpc('apagar_aviso',{p_id:id}); }catch(e){} }}
             onLimpar={async()=>{ setAvApagados(l=>[...l,...alertasPainel.map(x=>x.key)]); setAvLocais([]);
               if(avisos.length){ setAvisos([]); try{ await sb.rpc('apagar_avisos'); }catch(e){} } }}
-            onIr={av=>{ if(av.items&&av.items.length) setAlertDetail({items:av.items}); else if(!av.local&&!av.painel){
-              if(gestaoAtiva) setView({saque:'g_financeiro',reload:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
-              else setView('time'); } }}/>
+            onIr={av=>{ if(av.items&&av.items.length) return setAlertDetail({items:av.items});
+              if(av.painel){ const k=String(av.key||''); return setView(k.startsWith('parado')||k.startsWith('semres')?'torneios':k.startsWith('piso')?'banca':'painel'); }
+              if(av.local) return;
+              if(gestaoAtiva) return setView({saque:'g_financeiro',reload:'g_financeiro',planilha:'g_financeiro',abertura:'g_financeiro',saida:'g_financeiro',saldo:'g_financeiro',capital:'g_financeiro',entrada:'g_jogadores',grade:'g_grades'}[av.tipo]||'g_visao');
+              setView({grade:'time',planilha:'time',entrada:'time'}[av.tipo]||(modoTime?'banca':'painel')); }}/>
           <button className="mobile-only" onClick={sair} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:600,cursor:'pointer',fontSize:13}}><IcoLogout s={16}/>Sair</button>
         </div>
       </div>
@@ -5151,7 +5192,7 @@ function Dashboard({session,profile}){
           {partesBanca?<div data-partes-banca style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
             <span>Salas {fmt(partesBanca.salas)}</span><span>Jogos {fmtSinal(partesBanca.resultados)}</span>
             {Number(partesBanca.movimentos)!==0&&<span>Movimentos {fmtSinal(partesBanca.movimentos)}</span>}
-            {Number(partesBanca.aportes)!==0&&<span>Capital do time {fmtSinal(partesBanca.aportes)}</span>}
+            {Number(partesBanca.aportes)!==0&&<span>Reload e capital do time {fmtSinal(partesBanca.aportes)}</span>}
             {Number(partesBanca.saques)>0&&<span>Saques −{fmt(partesBanca.saques)}</span>}
             {partesBanca.corte&&<span style={{opacity:.85}}>conta o que veio depois de {dataBR(partesBanca.corte)}</span>}
           </div>:!somenteLeitura&&<div style={{display:'flex',gap:'6px 16px',flexWrap:'wrap',marginTop:8,fontSize:12.5,opacity:.88,fontWeight:600}}>
@@ -5780,9 +5821,9 @@ function Dashboard({session,profile}){
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontWeight:700,fontSize:13.5}}>{dLabel(x.date)} · {(x.hh&&(x.hh.tournament_name||('#'+x.hh.site_tournament_id)))||(x.t&&(x.t.tournament_name||'Torneio'))} <span style={{color:C.inkSoft,fontWeight:600}}>· {(x.hh&&x.hh.site)||(x.t&&x.t.site)||''}</span></div>
                 <div style={{fontSize:12,color:C.inkSoft,marginTop:1}}>
-                  {x.tipo==='ok'&&`Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${x.hh.hands} mão(s) no arquivo`}
+                  {x.tipo==='ok'&&`Lançado ${fmt(x.t.buyin)} · mãos comprovam ${fmt(x.hh.buyin)} · ${pl(x.hh.hands,'mão','mãos')} no arquivo`}
                   {x.tipo==='buyin'&&`Lançado ${fmt(x.t.buyin)} mas as mãos mostram ${fmt(x.hh.buyin)} — confere qual está certo e corrige o lançamento`}
-                  {x.tipo==='semlanc'&&`As mãos provam que esse torneio foi jogado (${x.hh.hands} mão(s), buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`}
+                  {x.tipo==='semlanc'&&`As mãos provam que esse torneio foi jogado (${pl(x.hh.hands,'mão','mãos')}, buy-in ${fmt(x.hh.buyin)}) mas não há lançamento correspondente na aba Torneios`}
                   {x.tipo==='semhh'&&`Lançado ${fmt(x.t.buyin)}${num(x.t.prize)>0?` · prêmio ${fmt(x.t.prize)}`:''} — sem hand history importado pra comprovar (importe as mãos na aba Stats)`}
                 </div>
               </div>
@@ -5826,7 +5867,7 @@ function Dashboard({session,profile}){
             <div><div style={{fontSize:12.5,opacity:.85}}>Salas</div><div style={{fontWeight:700,fontSize:15}}>{fmt(partesBanca.salas)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Resultado dos jogos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.resultados)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Movimentos</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.movimentos)}</div></div>
-            <div><div style={{fontSize:12.5,opacity:.85}}>Capital do time</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.aportes)}</div></div>
+            <div><div style={{fontSize:12.5,opacity:.85}}>Reload e capital do time</div><div style={{fontWeight:700,fontSize:15}}>{fmtSinal(partesBanca.aportes)}</div></div>
             <div><div style={{fontSize:12.5,opacity:.85}}>Saques pagos</div><div style={{fontWeight:700,fontSize:15}}>−{fmt(partesBanca.saques)}</div></div>
           </div>
           {partesBanca.corte&&<div style={{fontSize:12.5,opacity:.85,marginTop:10}}>Jogos e movimentos até {dataBR(partesBanca.corte)} já estão no saldo das salas (planilha ou entrada no time): contam só os de depois.</div>}</>
@@ -5838,8 +5879,16 @@ function Dashboard({session,profile}){
           </div>}
         </Card>
 
+        {modoTime&&!somenteLeitura&&!gestaoAtiva&&timeGente.joga&&<TimeApp secao="dinheiro" session={session} tours={toursRaw} config={config} banca={bancaAtual} onIr={setView}/>}
+        {modoTime&&!semDinheiro&&historicoTime.length>0&&<Card data-historico-time style={{padding:20}}>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Reload, capital e saques</h3>
+          <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,marginBottom:6,lineHeight:1.5}}>O time lança quando manda ou recebe dinheiro. Só leitura: já está na banca, não lance de novo em Movimentos.</div>
+          {historicoTime.map(e=><div key={e.k} data-historico={e.tipo} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0',borderTop:`1px solid ${C.border}`}}>
+            <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,fontSize:14}}>{e.tipo}{e.sala?` · ${e.sala}`:''}</div><div style={{fontSize:12.5,color:C.inkSoft}}>{dataBR(e.data)}{e.texto?` · ${e.texto}`:''}</div></div>
+            <span style={{fontWeight:800,fontSize:15,color:e.valor>=0?C.greenMid:C.red,flexShrink:0}}>{fmtSinal(e.valor)}</span></div>)}
+        </Card>}
         {modoTime?<Card data-salas-time style={{padding:20}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Salas</h3>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:0}}>Saldo de entrada (por sala)</h3>
           <div style={{fontSize:12.5,color:C.inkSoft,marginTop:2,lineHeight:1.5}}>Saldo de cada sala na foto: {sitSel&&sitSel.abertura==='confirmada'?'o da planilha conferida':'o que você tinha quando entrou no time'}. Jogos, movimentos, reload e saques entram sozinhos na banca lá em cima.</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
             {(salasTravadas||somenteLeitura?wallets.map(w=>w.wallet):[...new Set([...wallets.map(w=>w.wallet),...WALLETS.filter(x=>x!=='Reserva')])]).map(w=>{ const wr=wallets.find(x=>x.wallet===w); const editar=!salasTravadas&&!somenteLeitura;

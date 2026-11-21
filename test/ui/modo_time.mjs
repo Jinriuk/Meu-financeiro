@@ -93,16 +93,16 @@ await cenario('aluno com a banca do servidor', time({ acesso: [], pessoa: [{ id:
   const t = await page.locator('main').innerText();
   ok(/Minha banca\s*US\$\s250,50/.test(t), 'banca = a do servidor (US$ 250,50), não a soma local');
   const pt = await page.locator('[data-partes-banca]').innerText();
-  ok(/Salas US\$\s155,00/.test(pt) && /Capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
+  ok(/Salas US\$\s155,00/.test(pt) && /Reload e capital do time \+US\$\s150,50/.test(pt) && /Saques −US\$\s70,00/.test(pt) && /depois de 10\/11\/2026/.test(pt), 'mostra de onde vem: salas, capital do time (reload), saques e a data da foto');
   ok(/MK −US\$\s49,50/.test(await page.locator('[data-painel-mk]').innerText()), 'MK pela mesma conta: 250,50 − MU 300 = −49,50');
   await irPara(page, 'Banca');
-  ok(/Capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
+  ok(/Reload e capital do time\s*\+US\$\s150,50/.test(await page.locator('main').innerText()), 'aba Banca com as mesmas partes');
   ok(/Reload e capital do time entram sozinhos/.test(await page.locator('main').innerText()), 'movimentos avisam que reload não se lança à mão (não conta duas vezes)');
   ok(await page.locator('[data-salas-travadas]').count() === 1 && await page.locator('[data-sala="GG Poker"]').isDisabled() && /US\$\s80,00/.test(await page.locator('[data-sala="GG Poker"]').innerText()),
     'BUG-10 salas travadas depois do reload: mostram o saldo da foto e não abrem pra editar');
-  await irPara(page, 'Meu time');
+  // o dinheiro do jogador no time fica na Banca (A-058)
   await page.locator('[data-lifetime]').waitFor({ timeout: 8000 });
-  ok(/−US\$\s49,50/.test(await page.locator('[data-lifetime]').innerText()), 'Meu time: lifetime = já sacado 0 + profit agora −49,50');
+  ok(/−US\$\s49,50/.test(await page.locator('[data-lifetime]').innerText()), 'Banca: lifetime = já sacado 0 + profit agora −49,50');
 });
 
 // 3) pool de 2 ('team'): nada muda

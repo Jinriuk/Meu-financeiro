@@ -61,10 +61,12 @@ await cenario('aluno: regras da reta e sugestão de saque', dbAluno, async (page
   await aba(page, 'Meu time');
   const r = page.locator('[data-minhas-regras]'); await r.waitFor({ timeout: 15000 });
   ok(/ABI máximo \(reta sem grade\)\s*US\$\s2,00/.test(await r.innerText()) && /Reserva por sala no saque\s*US\$\s50,00 por sala/.test(await r.innerText()), 'Meu time: ABI 2 da reta dele e a reserva herdada da Base');
+  await aba(page, 'Banca');   // o dinheiro (saque, reload, salas) fica na Banca
   await page.getByRole('button', { name: 'Pedir saque' }).click();
   const sg = page.locator('[data-saque-sugestao]'); await sg.waitFor({ timeout: 5000 });
-  ok(/devolver US\$\s200,00 de MU e sacar US\$\s100,00, deixando US\$\s50,00 em cada uma das 2 salas \(banca depois US\$\s100,00\)/.test(await sg.innerText())
-    && /Sai de: GG Poker US\$\s200,00, PokerStars US\$\s100,00/.test(await sg.innerText()), 'sugestão do servidor: devolve o MU e saca deixando 50 em cada sala, dizendo de onde sai');
+  ok(/devolver US\$\s200,00 de MU e sacar US\$\s100,00 \(banca depois US\$\s100,00\)/.test(await sg.innerText())
+    && /GG Poker: sai US\$\s200,00, fica US\$\s50,00/.test(await sg.innerText()) && /PokerStars: sai US\$\s100,00, fica US\$\s50,00/.test(await sg.innerText()),
+    'sugestão do servidor: devolve o MU e saca, dizendo por sala quanto sai e quanto fica');
   await sg.getByRole('button', { name: 'Usar sugestão' }).click(); await page.waitForTimeout(800);
   const s = rpc(escritas, 'simular_saque').pop();
   ok(s && s.p_banca === 400 && s.p_devolucao === 200 && s.p_cashout === 100, '"Usar sugestão" preenche cada sala (saldo do sistema e quanto sai) e simula o saque');
