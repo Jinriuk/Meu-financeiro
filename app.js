@@ -2941,12 +2941,48 @@ function SLMeter({
     color: col
   }));
 }
+// buy-in de referência do stop diário ("10 buy-ins"): o teto da reta (regra abi_max); se a reta tem grade (um teto por
+// tipo de torneio, não um só), o ABI do próprio jogador nos últimos 30 dias; sem nada disso, o ABI máximo do time
+function abiDoStop(config, player, tours, data) {
+  const d = String(data || todayISO()).slice(0, 10);
+  const daReta = regraDoJogador('abi_max', player, d);
+  if (daReta != null && num(daReta) > 0) return {
+    valor: num(daReta),
+    origem: 'teto da reta'
+  };
+  const u = (GRADE_CTX.unidadeDe || {})[String(player || '').trim().toLowerCase()];
+  if (u && gradeDoTorneio({
+    unidade_id: u,
+    entry_date: d
+  }, GRADE_CTX.unidades, GRADE_CTX.grades)) {
+    const desde = addDaysISO(d, -29);
+    let bi = 0,
+      ent = 0;
+    (tours || []).forEach(t => {
+      if (!nomeIgual(t.player, player) || t.entry_date < desde || t.entry_date > d) return;
+      const e = 1 + num(t.reentries);
+      bi += num(t.buyin) * e;
+      ent += e;
+    });
+    if (ent > 0) return {
+      valor: Math.round(bi / ent * 100) / 100,
+      origem: 'ABI dos últimos 30 dias'
+    };
+  }
+  return {
+    valor: abiMaxFor(config, player, d),
+    origem: 'ABI máximo do time'
+  };
+}
+// stop semanal: % da banca do COMEÇO da semana (a de agora cai com um saque e faria o stop "estourar" sem ser verdade)
 function StopLossCard({
   players,
   config,
   daily,
   curWeek,
-  bancaAtual
+  bancaSemana,
+  tours,
+  leitura
 }) {
   const today = todayISO();
   const [open, setOpen] = useState(null); // null = automático (abre sozinho se alguém passou de 70%)
@@ -2956,15 +2992,17 @@ function StopLossCard({
   })) return null;
   const rows = players.map((p, i) => {
     const st = stopDe(config, p); // no time: o stop da reta do jogador
-    const abiMax = abiMaxFor(config, p, today);
+    const abi = abiDoStop(config, p, tours, today),
+      abiMax = abi.valor;
     const slDay = st.dia * abiMax;
     const dayLoss = Math.max(0, -daily.filter(e => e.player === p && e.entry_date === today).reduce((s, e) => s + resultadoDia(e), 0));
-    const wkLim = st.semana * bancaAtual;
+    const wkLim = Math.max(0, st.semana * bancaSemana);
     const wkLoss = Math.max(0, -(curWeek[p] ? curWeek[p].resultado : 0));
     const pct = Math.max(slDay > 0 ? dayLoss / slDay * 100 : 0, wkLim > 0 ? wkLoss / wkLim * 100 : 0);
     return {
       p,
       i,
+      abi,
       abiMax,
       slDay,
       dayLoss,
@@ -3045,7 +3083,7 @@ function StopLossCard({
       color: C.inkSoft,
       marginBottom: 14
     }
-  }, "Quanto do seu limite j\xE1 foi usado. Ver ", /*#__PURE__*/React.createElement("b", null, "antes"), " de estourar \xE9 o ponto \u2014 quando a barra fica vermelha, o dia (ou a semana) acabou."), /*#__PURE__*/React.createElement("div", {
+  }, leitura ? `Quanto do limite de ${leitura} já foi usado. Quando a barra fica vermelha, o dia (ou a semana) dele acabou.` : /*#__PURE__*/React.createElement(React.Fragment, null, "Quanto do seu limite j\xE1 foi usado. Ver ", /*#__PURE__*/React.createElement("b", null, "antes"), " de estourar \xE9 o ponto: quando a barra fica vermelha, o dia (ou a semana) acabou.")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -3058,7 +3096,7 @@ function StopLossCard({
       flexDirection: 'column',
       gap: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, rows.length > 1 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
@@ -3075,17 +3113,33 @@ function StopLossCard({
     style: {
       fontSize: 13.5
     }
-  }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement(SLMeter, {
-    label: `Hoje · limite ${r.st.dia} buy-ins`,
+  }, r.p.split(' ')[0])), r.slDay > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-stop-dia": true
+  }, /*#__PURE__*/React.createElement(SLMeter, {
+    label: `Hoje · limite ${r.st.dia} buy-ins (${fmt(r.slDay)})`,
     used: r.dayLoss,
     limit: r.slDay,
     detail: `${(r.dayLoss / (r.abiMax || 1)).toFixed(1).replace('.', ',')} de ${r.st.dia} bi`
-  }), r.wkLim > 0 && /*#__PURE__*/React.createElement(SLMeter, {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "1 buy-in = ", fmt(r.abiMax), " (", r.abi.origem, ")")), r.wkLim > 0 && /*#__PURE__*/React.createElement("div", {
+    "data-stop-semana": true
+  }, /*#__PURE__*/React.createElement(SLMeter, {
     label: `Semana · limite ${pctFmt(r.st.semana * 100)} da banca`,
     used: r.wkLoss,
     limit: r.wkLim,
     detail: `${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`
-  }))))));
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "banca no come\xE7o da semana: ", fmt(bancaSemana))))))));
 }
 
 /* barras multi-série (positivas ou divergentes se houver negativo); toque numa coluna mostra os valores */
@@ -4000,7 +4054,8 @@ function AddModal({
   initial,
   onClose,
   onSave,
-  onEdit
+  onEdit,
+  aviso
 }) {
   const [f, setF] = useState(() => {
     const o = {};
@@ -4076,6 +4131,7 @@ function AddModal({
     }
   }, title), /*#__PURE__*/React.createElement("button", {
     onClick: onClose,
+    "aria-label": "Fechar",
     style: {
       width: 38,
       height: 38,
@@ -4089,7 +4145,20 @@ function AddModal({
     }
   }, /*#__PURE__*/React.createElement(IcoX, {
     s: 20
-  }))), /*#__PURE__*/React.createElement("div", {
+  }))), aviso && /*#__PURE__*/React.createElement("div", {
+    "data-aviso-form": true,
+    role: "alert",
+    style: {
+      background: C.redSoft,
+      color: C.red,
+      borderRadius: 12,
+      padding: '10px 13px',
+      fontSize: 13.5,
+      fontWeight: 700,
+      lineHeight: 1.45,
+      marginBottom: 14
+    }
+  }, aviso), /*#__PURE__*/React.createElement("div", {
     className: "modalgrid"
   }, fields.map(fd => fd.type === 'toggle' ? /*#__PURE__*/React.createElement("button", {
     key: fd.k,
@@ -14477,7 +14546,8 @@ function Dashboard({
     let vivo = true;
     const t = setTimeout(() => {
       sb.rpc('situacao_jogador', {
-        p_pessoa: pp.id
+        p_pessoa: pp.id,
+        p_inicio_semana: weekStart(weekEnding(todayISO()))
       }).then(({
         data,
         error
@@ -15945,6 +16015,10 @@ function Dashboard({
   const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
   const bancaAtual = modoTime && sitSel && sitSel.banca != null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
   const muTela = sitSel && sitSel.mu != null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // banca no começo da semana (base do stop semanal): no time vem do servidor; no pool e na conta individual, a soma
+  // do que aconteceu antes da semana
+  const iniSemana = weekStart(CURWK);
+  const bancaSemana = modoTime ? sitSel && sitSel.banca_inicio_semana != null ? cent(sitSel.banca_inicio_semana) : bancaAtual : cent(num(config.banca_inicial) + daily.filter(e => e.entry_date < iniSemana).reduce((s, e) => s + resultadoDia(e), 0) + ledger.filter(l => l.entry_date < iniSemana).reduce((s, l) => s + num(l.entrada) - num(l.saida), 0) - wds.filter(w => String(w.week_ending_date || '') < iniSemana).reduce((s, w) => s + num(w.valor_sacado), 0));
   // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
   const salasTravadas = modoTime && !!sitSel && (sitSel.abertura === 'confirmada' || partesBanca && (Number(partesBanca.aportes) !== 0 || Number(partesBanca.saques) !== 0));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
@@ -16038,21 +16112,37 @@ function Dashboard({
     text: `${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,
     items: foraGradeTours
   });
+  // stop já batido pelo jogador na tela (hoje ou na semana): o formulário de torneio avisa antes de lançar mais
+  const stopBatido = (() => {
+    if (!solo || somenteLeitura || !players[0]) return null;
+    const p = players[0],
+      st = stopDe(config, p),
+      hoje = todayISO();
+    const resHoje = daily.filter(e => e.player === p && e.entry_date === hoje).reduce((a, e) => a + resultadoDia(e), 0),
+      slDia = st.dia * abiDoStop(config, p, tours, hoje).valor;
+    if (slDia > 0 && resHoje <= -slDia) return `Você já bateu o stop loss de hoje (${fmtSinal(resHoje)}, limite ${fmt(slDia)}). A regra é parar por hoje.`;
+    const resSem = curWeek[p] ? curWeek[p].resultado : 0,
+      slSem = st.semana * bancaSemana;
+    if (slSem > 0 && resSem <= -slSem) return `Você já bateu o stop loss da semana (${fmtSinal(resSem)}, limite ${fmt(slSem)}). A regra é parar até a semana que vem.`;
+    return null;
+  })();
+  // quem bateu: "Você" na própria conta; o nome no pool e no painel aberto pela gestão
+  const quemBateu = p => solo && !somenteLeitura ? 'Você' : p;
   players.forEach(p => {
     const r = curWeek[p] ? curWeek[p].resultado : 0;
-    const lim = stopDe(config, p).semana * bancaAtual;
+    const lim = stopDe(config, p).semana * bancaSemana;
     if (lim > 0 && r < 0 && r <= -lim) alerts.push({
       key: 'slsem:' + p + ':' + CURWK,
       tone: C.red,
-      text: `${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`
+      text: `${quemBateu(p)} atingiu o stop loss semanal (${fmtSinal(r)}, limite ${fmt(lim)}: ${pctFmt(stopDe(config, p).semana * 100)} da banca do começo da semana).`
     });
   });
   daily.filter(e => weekEnding(e.entry_date) === CURWK).forEach(e => {
-    const sl = stopDe(config, e.player).dia * abiMaxFor(config, e.player, e.entry_date);
+    const sl = stopDe(config, e.player).dia * abiDoStop(config, e.player, tours, e.entry_date).valor;
     if (sl > 0 && resultadoDia(e) <= -sl) alerts.push({
       key: 'sldia:' + e.player + ':' + e.entry_date,
       tone: C.red,
-      text: `${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`
+      text: `${quemBateu(e.player)} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmtSinal(resultadoDia(e))}, limite ${fmt(sl)}).`
     });
   });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
@@ -17215,7 +17305,9 @@ function Dashboard({
     config: config,
     daily: daily,
     curWeek: curWeek,
-    bancaAtual: bancaAtual
+    bancaSemana: bancaSemana,
+    tours: tours,
+    leitura: somenteLeitura ? alunoAberto : null
   }), foraGradeTours.length > 0 && /*#__PURE__*/React.createElement("button", {
     onClick: () => setAlertDetail({
       items: foraGradeTours
@@ -21582,6 +21674,7 @@ function Dashboard({
       fields: FIELDS[type],
       initial: initial,
       onClose: () => setModal(null),
+      aviso: type === 'tour' ? stopBatido : null,
       onSave: d => add(MODAL_TABLE[type], normalizeRow(type, d), setter, list)
     });
   })(), editing && (() => {

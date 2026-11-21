@@ -39,11 +39,15 @@ select teste.erro('professor NÃO aprova reload', $q$select public.decidir_reloa
 select teste.igual('…e não recebeu aviso do reload', $q$select count(*)::text from public.aviso where tipo='reload'$q$, '0');
 select teste.como('dd000000-0000-0000-0000-000000000002');
 select teste.igual('financeiro recebeu o aviso do reload', $q$select titulo from public.aviso where tipo='reload'$q$, 'Gabriel D pediu reload de US$ 100,00');
+select teste.como('dd000000-0000-0000-0000-000000000001');
+select teste.igual('admin também foi avisado do reload (administrar vale aprovar)', $q$select count(*)::text from public.aviso where tipo='reload'$q$, '1');
+select teste.como('dd000000-0000-0000-0000-000000000002');
 select teste.ok('financeiro aprova', $q$select public.decidir_reload((select id from rl), true)$q$);
+select teste.igual('…o pedido resolvido sai do sininho', $q$select count(*)::text from public.aviso where tipo='reload'$q$, '0');
 select teste.ok('financeiro confirma o envio de 100', $q$select public.confirmar_envio_reload((select id from rl), 100)$q$);
 select teste.igual('o reload virou capital: MU do Gabriel 100', $q$select public.situacao_jogador('d1000000-0000-0000-0000-000000000004')->>'mu'$q$, '100.00');
 select teste.como('dd000000-0000-0000-0000-000000000001');
-select teste.igual('admin também foi avisado do reload (administrar vale aprovar)', $q$select count(*)::text from public.aviso where tipo='reload'$q$, '1');
+select teste.igual('…do admin também', $q$select count(*)::text from public.aviso where tipo='reload'$q$, '0');
 select teste.como('dd000000-0000-0000-0000-000000000004');
 select teste.igual('Gabriel recebeu "aprovado" e "enviado"', $q$select string_agg(titulo, ' + ' order by criado_em) from public.aviso where tipo='reload'$q$, 'Reload aprovado + Reload enviado');
 select teste.igual('…e não recebeu aviso do próprio pedido', $q$select count(*)::text from public.aviso where titulo like 'Gabriel D pediu%'$q$, '0');
@@ -67,6 +71,8 @@ select teste.como('dd000000-0000-0000-0000-000000000001');
 select teste.igual('admin avisado: Novo D entrou no time', $q$select titulo from public.aviso where tipo='entrada'$q$, 'Novo D entrou no time');
 
 -- ---------- apagar ----------
+select teste.como('dd000000-0000-0000-0000-000000000004');
+insert into rl select public.pedir_reload(30, null, 'pra testar o apagar');   -- o financeiro fica com 2 avisos: saque e reload
 select teste.como('dd000000-0000-0000-0000-000000000002');
 select teste.ok('apagar um aviso', $q$select public.apagar_aviso((select id from public.aviso where tipo='saque'))$q$);
 select teste.igual('…sumiu, o outro fica', $q$select string_agg(tipo, ',' order by tipo) from public.aviso$q$, 'reload');
@@ -77,4 +83,6 @@ select teste.ok('apagar todos os próprios', $q$select public.apagar_avisos()$q$
 select teste.igual('Gabriel sem avisos', $q$select count(*)::text from public.aviso$q$, '0');
 select teste.como('dd000000-0000-0000-0000-000000000002');
 select teste.igual('…e os do financeiro continuam lá', $q$select count(*)::text from public.aviso$q$, '1');
+select teste.como('dd000000-0000-0000-0000-000000000004');
+select public.cancelar_reload(id) from public.reload where pessoa_id = 'd1000000-0000-0000-0000-000000000004' and status = 'solicitado';
 reset role;

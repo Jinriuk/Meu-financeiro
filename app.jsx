@@ -1287,19 +1287,33 @@ function SLMeter({label,used,limit,detail}){
     <Bar2 pct={pct} color={col}/>
   </div>;
 }
-function StopLossCard({players,config,daily,curWeek,bancaAtual}){
+// buy-in de referência do stop diário ("10 buy-ins"): o teto da reta (regra abi_max); se a reta tem grade (um teto por
+// tipo de torneio, não um só), o ABI do próprio jogador nos últimos 30 dias; sem nada disso, o ABI máximo do time
+function abiDoStop(config,player,tours,data){
+  const d=String(data||todayISO()).slice(0,10);
+  const daReta=regraDoJogador('abi_max',player,d); if(daReta!=null&&num(daReta)>0) return {valor:num(daReta),origem:'teto da reta'};
+  const u=(GRADE_CTX.unidadeDe||{})[String(player||'').trim().toLowerCase()];
+  if(u&&gradeDoTorneio({unidade_id:u,entry_date:d},GRADE_CTX.unidades,GRADE_CTX.grades)){
+    const desde=addDaysISO(d,-29); let bi=0,ent=0;
+    (tours||[]).forEach(t=>{ if(!nomeIgual(t.player,player)||t.entry_date<desde||t.entry_date>d) return; const e=1+num(t.reentries); bi+=num(t.buyin)*e; ent+=e; });
+    if(ent>0) return {valor:Math.round(bi/ent*100)/100,origem:'ABI dos últimos 30 dias'};
+  }
+  return {valor:abiMaxFor(config,player,d),origem:'ABI máximo do time'};
+}
+// stop semanal: % da banca do COMEÇO da semana (a de agora cai com um saque e faria o stop "estourar" sem ser verdade)
+function StopLossCard({players,config,daily,curWeek,bancaSemana,tours,leitura}){
   const today=todayISO();
   const [open,setOpen]=useState(null);   // null = automático (abre sozinho se alguém passou de 70%)
   if(!players.some(p=>{ const s=stopDe(config,p); return s.dia>0||s.semana>0; })) return null;
   const rows=players.map((p,i)=>{
     const st=stopDe(config,p);                       // no time: o stop da reta do jogador
-    const abiMax=abiMaxFor(config,p,today);
+    const abi=abiDoStop(config,p,tours,today), abiMax=abi.valor;
     const slDay=st.dia*abiMax;
     const dayLoss=Math.max(0,-daily.filter(e=>e.player===p&&e.entry_date===today).reduce((s,e)=>s+resultadoDia(e),0));
-    const wkLim=st.semana*bancaAtual;
+    const wkLim=Math.max(0,st.semana*bancaSemana);
     const wkLoss=Math.max(0,-(curWeek[p]?curWeek[p].resultado:0));
     const pct=Math.max(slDay>0?dayLoss/slDay*100:0, wkLim>0?wkLoss/wkLim*100:0);
-    return {p,i,abiMax,slDay,dayLoss,wkLim,wkLoss,pct,st};
+    return {p,i,abi,abiMax,slDay,dayLoss,wkLim,wkLoss,pct,st};
   });
   const worst=Math.max(0,...rows.map(r=>r.pct));
   const isOpen=open==null?worst>=70:open;
@@ -1314,12 +1328,15 @@ function StopLossCard({players,config,daily,curWeek,bancaAtual}){
       <span style={{color:C.inkSoft,fontSize:20,transform:isOpen?'rotate(90deg)':'none',transition:'transform .2s'}}>›</span>
     </button>
     {isOpen&&<div style={{padding:'0 18px 18px'}}>
-      <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto — quando a barra fica vermelha, o dia (ou a semana) acabou.</div>
+      <div style={{fontSize:12.5,color:C.inkSoft,marginBottom:14}}>{leitura?`Quanto do limite de ${leitura} já foi usado. Quando a barra fica vermelha, o dia (ou a semana) dele acabou.`
+        :<>Quanto do seu limite já foi usado. Ver <b>antes</b> de estourar é o ponto: quando a barra fica vermelha, o dia (ou a semana) acabou.</>}</div>
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
         {rows.map(r=><div key={r.p} style={{display:'flex',flexDirection:'column',gap:10}}>
-          <div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>
-          {r.slDay>0&&<SLMeter label={`Hoje · limite ${r.st.dia} buy-ins`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${r.st.dia} bi`}/>}
-          {r.wkLim>0&&<SLMeter label={`Semana · limite ${pctFmt(r.st.semana*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>}
+          {rows.length>1&&<div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:9,height:9,borderRadius:99,background:PLAYER_COLORS[r.i]||C.inkSoft}}/><b style={{fontSize:13.5}}>{r.p.split(' ')[0]}</b></div>}
+          {r.slDay>0&&<div data-stop-dia><SLMeter label={`Hoje · limite ${r.st.dia} buy-ins (${fmt(r.slDay)})`} used={r.dayLoss} limit={r.slDay} detail={`${(r.dayLoss/(r.abiMax||1)).toFixed(1).replace('.',',')} de ${r.st.dia} bi`}/>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:4}}>1 buy-in = {fmt(r.abiMax)} ({r.abi.origem})</div></div>}
+          {r.wkLim>0&&<div data-stop-semana><SLMeter label={`Semana · limite ${pctFmt(r.st.semana*100)} da banca`} used={r.wkLoss} limit={r.wkLim} detail={`${fmt(r.wkLoss)} de ${fmt(r.wkLim)}`}/>
+            <div style={{fontSize:11.5,color:C.inkSoft,marginTop:4}}>banca no começo da semana: {fmt(bancaSemana)}</div></div>}
         </div>)}
       </div>
     </div>}
@@ -1533,7 +1550,7 @@ function QuickEditModal({label,hint,currentValue,kind='money',opts,onClose,onSav
 }
 
 /* ---------- modal adicionar / editar (genérico por schema de campos) ---------- */
-function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
+function AddModal({title, fields, editing, initial, onClose, onSave, onEdit, aviso}){
   const [f,setF]=useState(()=>{
     const o={};
     fields.forEach(fd=>{
@@ -1565,8 +1582,9 @@ function AddModal({title, fields, editing, initial, onClose, onSave, onEdit}){
       <div onClick={e=>e.stopPropagation()} className="ftfade" style={{background:C.surface,width:'100%',maxWidth:560,borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',maxHeight:'92vh',overflowY:'auto'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
           <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:600,margin:0}}>{title}</h3>
-          <button onClick={onClose} style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
+          <button onClick={onClose} aria-label="Fechar" style={{width:38,height:38,borderRadius:12,border:'none',background:C.bg,cursor:'pointer',display:'grid',placeItems:'center',color:C.inkSoft}}><IcoX s={20}/></button>
         </div>
+        {aviso&&<div data-aviso-form role="alert" style={{background:C.redSoft,color:C.red,borderRadius:12,padding:'10px 13px',fontSize:13.5,fontWeight:700,lineHeight:1.45,marginBottom:14}}>{aviso}</div>}
         <div className="modalgrid">
           {fields.map(fd=>fd.type==='toggle'
             ? <button key={fd.k} type="button" className={fd.full?'full':''} onClick={()=>set(fd.k,!f[fd.k])}
@@ -3903,7 +3921,7 @@ function Dashboard({session,profile}){
   useEffect(()=>{ if(!modoTime||!jogadorSel){ setSitSel(null); return; }
     const pp=(timeGente.pessoas||[]).find(x=>nomeIgual(x.nome,jogadorSel)); if(!pp){ setSitSel(null); return; }
     setSitSel(s=>s&&s._pessoa===pp.id?s:null);
-    let vivo=true; const t=setTimeout(()=>{ sb.rpc('situacao_jogador',{p_pessoa:pp.id}).then(({data,error})=>{ if(!vivo) return;
+    let vivo=true; const t=setTimeout(()=>{ sb.rpc('situacao_jogador',{p_pessoa:pp.id,p_inicio_semana:weekStart(weekEnding(todayISO()))}).then(({data,error})=>{ if(!vivo) return;
       if(!error&&data) setSitSel({...data,_pessoa:pp.id}); else setSitSel(s=>s&&s._pessoa===pp.id?s:null); }).catch(()=>{}); },250);
     return ()=>{ vivo=false; clearTimeout(t); }; },[modoTime,jogadorSel,timeGente,toursRaw,ledgerRaw,walletsRaw]);
   const [cfgConfirm,setCfgConfirm]=useState(null);// confirmação pendente de mudança nos Ajustes
@@ -4549,6 +4567,13 @@ function Dashboard({session,profile}){
   const partesBanca = modoTime && sitSel && sitSel.banca_partes ? sitSel.banca_partes : null;
   const bancaAtual = modoTime && sitSel && sitSel.banca!=null ? cent(sitSel.banca) : dinAluno ? cent(alunoResumo.banca) : bancaFatos;
   const muTela = sitSel && sitSel.mu!=null ? sitSel.mu : dinAluno ? alunoResumo.mu : null;
+  // banca no começo da semana (base do stop semanal): no time vem do servidor; no pool e na conta individual, a soma
+  // do que aconteceu antes da semana
+  const iniSemana=weekStart(CURWK);
+  const bancaSemana = modoTime ? (sitSel&&sitSel.banca_inicio_semana!=null ? cent(sitSel.banca_inicio_semana) : bancaAtual)
+    : cent(num(config.banca_inicial)+daily.filter(e=>e.entry_date<iniSemana).reduce((s,e)=>s+resultadoDia(e),0)
+      +ledger.filter(l=>l.entry_date<iniSemana).reduce((s,l)=>s+num(l.entrada)-num(l.saida),0)
+      -wds.filter(w=>String(w.week_ending_date||'')<iniSemana).reduce((s,w)=>s+num(w.valor_sacado),0));
   // saldo inicial das salas trava depois do 1º dinheiro do time ou da planilha conferida (o servidor também recusa)
   const salasTravadas = modoTime && !!sitSel && (sitSel.abertura==='confirmada' || (partesBanca&&(Number(partesBanca.aportes)!==0||Number(partesBanca.saques)!==0)));
   // saldo por jogador e plataforma = inicial + resultado dos torneios naquele site + movimentos atribuídos − saques daquela carteira
@@ -4601,8 +4626,17 @@ function Dashboard({session,profile}){
   // fora da grade: torneios da semana atual com buy-in acima do ABI máximo DAQUELE jogador (clicável mostra quais/de quem)
   const foraGradeTours=tours.filter(t=>weekEnding(t.entry_date)===CURWK && statusGrade(t,config).status==='fora');
   if(foraGradeTours.length) alerts.push({key:'grade:'+CURWK,tone:C.red,text:`${foraGradeTours.length} torneio(s) fora da grade nesta semana. Toque para ver quais.`,items:foraGradeTours});
-  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=stopDe(config,p).semana*bancaAtual; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${p} atingiu o stop loss semanal (${fmt(r)} vs limite ${fmt(-lim)}).`}); });
-  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=stopDe(config,e.player).dia*abiMaxFor(config,e.player,e.entry_date); if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${e.player} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmt(resultadoDia(e))}, limite ${fmt(-sl)}).`}); });
+  // stop já batido pelo jogador na tela (hoje ou na semana): o formulário de torneio avisa antes de lançar mais
+  const stopBatido=(()=>{ if(!solo||somenteLeitura||!players[0]) return null; const p=players[0], st=stopDe(config,p), hoje=todayISO();
+    const resHoje=daily.filter(e=>e.player===p&&e.entry_date===hoje).reduce((a,e)=>a+resultadoDia(e),0), slDia=st.dia*abiDoStop(config,p,tours,hoje).valor;
+    if(slDia>0&&resHoje<=-slDia) return `Você já bateu o stop loss de hoje (${fmtSinal(resHoje)}, limite ${fmt(slDia)}). A regra é parar por hoje.`;
+    const resSem=curWeek[p]?curWeek[p].resultado:0, slSem=st.semana*bancaSemana;
+    if(slSem>0&&resSem<=-slSem) return `Você já bateu o stop loss da semana (${fmtSinal(resSem)}, limite ${fmt(slSem)}). A regra é parar até a semana que vem.`;
+    return null; })();
+  // quem bateu: "Você" na própria conta; o nome no pool e no painel aberto pela gestão
+  const quemBateu=p=>solo&&!somenteLeitura?'Você':p;
+  players.forEach(p=>{ const r=curWeek[p]?curWeek[p].resultado:0; const lim=stopDe(config,p).semana*bancaSemana; if(lim>0 && r<0 && r<=-lim) alerts.push({key:'slsem:'+p+':'+CURWK,tone:C.red,text:`${quemBateu(p)} atingiu o stop loss semanal (${fmtSinal(r)}, limite ${fmt(lim)}: ${pctFmt(stopDe(config,p).semana*100)} da banca do começo da semana).`}); });
+  daily.filter(e=>weekEnding(e.entry_date)===CURWK).forEach(e=>{ const sl=stopDe(config,e.player).dia*abiDoStop(config,e.player,tours,e.entry_date).valor; if(sl>0 && resultadoDia(e)<=-sl) alerts.push({key:'sldia:'+e.player+':'+e.entry_date,tone:C.red,text:`${quemBateu(e.player)} bateu o stop loss diário em ${dLabel(e.entry_date)} (${fmtSinal(resultadoDia(e))}, limite ${fmt(sl)}).`}); });
   // nudge de inatividade: sem registrar torneio há alguns dias -> painel/banca desatualizados.
   // Usa a data do lançamento mais recente (created_at, quando existe; senão a data do torneio).
   if(tours.length>0){
@@ -4950,7 +4984,7 @@ function Dashboard({session,profile}){
         <ResumoTorneios tours={tours} players={players} solo={solo}
           abi={tours.length?tours.reduce((s,t)=>s+nominalTorneio(t),0)/tours.reduce((s,t)=>s+1+num(t.reentries),0):0}/>
 
-        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaAtual={bancaAtual}/>
+        <StopLossCard players={players} config={config} daily={daily} curWeek={curWeek} bancaSemana={bancaSemana} tours={tours} leitura={somenteLeitura?alunoAberto:null}/>
 
         {/* fora da grade fica FIXO: o pop-up passa em 8s e some pra sempre, e essa é a
             informação que o produto existe pra mostrar. Uma linha, sem parágrafo. */}
@@ -5931,7 +5965,7 @@ function Dashboard({session,profile}){
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
       if(type==='transfer') return <AddModal title="Nova transferência" fields={FIELDS.transfer} initial={initial} onClose={()=>setModal(null)} onSave={addTransfer}/>;
       const [list,setter]=MODAL_STATE[type]; return (
-      <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)}
+      <AddModal title={`Novo ${MODAL_TITLE[type]}`} fields={FIELDS[type]} initial={initial} onClose={()=>setModal(null)} aviso={type==='tour'?stopBatido:null}
         onSave={d=>add(MODAL_TABLE[type],normalizeRow(type,d),setter,list)}/>);})()}
 
     {/* modal editar */}

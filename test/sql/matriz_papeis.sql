@@ -189,11 +189,13 @@ insert into teste.ids select 'reload', public.pedir_reload(200, 'GG', 'acabou a 
 select teste.erro_qualquer('J1 NÃO pede outro reload com um aberto', $q$select public.pedir_reload(50, null, null)$q$);
 select teste.igual('reload do J1: quem vê', $q$select teste.quem_ve($c$select count(*)::text from public.reload where id = teste.id('reload')$c$)$q$,
   'A=1 F=1 P1=1 P2=0 J1=1 J2=0 X=0');
+select teste.igual('aviso "pediu reload": admin e financeiro', $q$select teste.quem_ve($c$select count(*)::text from public.aviso where tipo = 'reload' and ref_id = teste.id('reload')$c$)$q$,
+  'A=1 F=1 P1=0 P2=0 J1=0 J2=0 X=0');
 select teste.como('ac000000-0000-0000-0000-0000000000f1');
 select teste.ok('F aprova o reload', $q$select public.decidir_reload(teste.id('reload'), true)$q$);
 select teste.ok('F confirma que mandou 200', $q$select public.confirmar_envio_reload(teste.id('reload'), 200)$q$);
-select teste.igual('avisos do reload: pedido pra admin e financeiro; aprovado e enviado pro J1', $q$select teste.quem_ve($c$select count(*)::text from public.aviso where tipo = 'reload' and ref_id = teste.id('reload')$c$)$q$,
-  'A=1 F=1 P1=0 P2=0 J1=2 J2=0 X=0');
+select teste.igual('avisos do reload: o pedido resolvido sai do sininho de quem decide; aprovado e enviado ficam com o J1', $q$select teste.quem_ve($c$select count(*)::text from public.aviso where tipo = 'reload' and ref_id = teste.id('reload')$c$)$q$,
+  'A=0 F=0 P1=0 P2=0 J1=2 J2=0 X=0');
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
 select teste.igual('…e o MU dele sobe 200', $q$select public.situacao_jogador(teste.id('pJ1'))->>'mu'$q$, '300.00');
 select teste.igual('BUG-1 reload sobe a banca junto com o MU (140 + 200 = 340)',
@@ -237,8 +239,9 @@ select teste.igual('…e a banca dele pro P2 é a mesma de todo mundo (340 + 3 d
 
 -- ---------- 10) renomear: os fatos acompanham e o aluno continua vendo tudo ----------
 select teste.como('ac000000-0000-0000-0000-0000000000a1');
-select teste.ok('A renomeia o J1', $q$select public.renomear_pessoa(teste.id('pJ1'), 'Joga Um B')$q$);
+select teste.erro('A NÃO renomeia o J1 (ele tem conta: o nome é dele)', $q$select public.renomear_pessoa(teste.id('pJ1'), 'Joga Um X')$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
+select teste.ok('o J1 muda o próprio nome', $q$select public.renomear_pessoa(teste.id('pJ1'), 'Joga Um B')$q$);
 select teste.igual('o J1 vê os 3 torneios, as 3 salas e o movimento com o nome novo (nada no antigo)',
   $q$select (select count(*) from public.tournaments where player = 'Joga Um B')||'/'||(select count(*) from public.player_wallets where player = 'Joga Um B')||'/'||
             (select count(*) from public.bankroll_ledger where player = 'Joga Um B')||' antigo:'||(select count(*) from public.tournaments where player = 'Joga Um')$q$, '3/3/1 antigo:0');
