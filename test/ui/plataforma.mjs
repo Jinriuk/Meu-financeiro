@@ -1,7 +1,7 @@
 // Console da conta central (gestor geral da plataforma): abre direto no console, sem nada de jogador; visão geral com os
 // totais e o que precisa de atenção; times por papel, situação, contrato e ações (suspender, reativar, convidar admin,
-// vencimento, assentos, link do admin, erros); contas individuais (estender, liberar, encerrar); registro; time suspenso
-// trava o app de quem é do time; quem não é gestor geral não vê nada disso.
+// vencimento, assentos, link do admin); contas individuais (estender, liberar, encerrar); registro; time suspenso
+// trava o app de quem é do time; quem não é gestor geral não vê nada disso. Sem "erros do app": o console não abre nada de dentro dos times.
 import { abrirApp } from './harness.mjs';
 import { samba, D } from './fixture_time.mjs';
 const falhas = []; const ok = (c, m) => { console.log((c ? '✓ ' : '✗ ') + m); if (!c) falhas.push(m); };
@@ -53,10 +53,10 @@ await cenario('conta central: console', db, async (page, escritas) => {
   ok(/Jogadores ativos 20 15 jogaram nos últimos 7 dias/i.test(await k('jogadores')), 'jogadores ativos (sem o time suspenso) e quem jogou em 7 dias');
   ok(/US\$ 100\/mês/.test(await k('mensalidade')), 'mensalidade: 20 × US$ 5 (o suspenso não entra)');
   ok(/Contas individuais 3 1 em teste · 1 vencida · 1 sem prazo/i.test(await k('contas')), 'contas individuais por situação');
-  ok(/Erros do app 3/i.test(await k('erros')), 'erros do app em 7 dias (times + contas)');
+  ok(await page.locator('[data-kpi-plataforma="erros"]').count() === 0, 'sem cartão de erros do app');
   const at = await txt(page.locator('[data-atencao]'));
   ok(/Time Três está suspenso desde 15\/11\/2026: inadimplência/.test(at) && /Time Novo: ainda sem dono/.test(at) && /Time Novo: contrato vencido há 3 dias/.test(at)
-    && /Time Novo: 2 erros do app em 7 dias/.test(at) && /Conta SoloA: o teste acaba em 2 dias/.test(at), 'precisa de atenção: suspenso, sem dono, contrato vencido, erros e teste acabando: ' + at.slice(0, 200));
+    && !/erro/.test(at) && /Conta SoloA: o teste acaba em 2 dias/.test(at), 'precisa de atenção: suspenso, sem dono, contrato vencido e teste acabando (sem erros do app): ' + at.slice(0, 200));
   ok(/Admins 3 Professores 3 Financeiros 1 Outros papéis 0 Jogadores ativos 24 Convidados \(ainda sem conta\) 3/.test(await txt(page.locator('[data-por-papel]'))), 'pessoas por papel somando todos os times');
   // times
   await nav(page, 'Times');
@@ -64,11 +64,11 @@ await cenario('conta central: console', db, async (page, escritas) => {
   ok(/aparece como Samba Poker Team · com logo/.test(samba_) && /ativo/.test(samba_) && /contrato até/.test(samba_) && /25 23 com conta · 2 convidados/.test(samba_)
     && /20 de 22 cadastrados/.test(samba_) && /1 admin · 2 professores · 1 financeiro/.test(samba_) && /25 de 30/.test(samba_) && /US\$ 100/.test(samba_), 'linha do Samba: marca, situação, pessoas, jogadores, papéis, assentos e mensalidade: ' + samba_);
   const novo = await txt(page.locator('[data-time-plataforma="Time Novo"]'));
-  ok(/contrato vencido há 3 dias/.test(novo) && /sem dono/.test(novo) && /2 erros/.test(novo) && /1 · sem limite/.test(novo), 'Time Novo: contrato vencido, sem dono, erros, sem limite de assentos');
+  ok(/contrato vencido há 3 dias/.test(novo) && /sem dono/.test(novo) && !/erro/.test(novo) && /1 · sem limite/.test(novo), 'Time Novo: contrato vencido, sem dono, sem limite de assentos (sem erros do app)');
   ok(/suspenso/.test(await txt(page.locator('[data-time-plataforma="Time Três"] [data-situacao]'))) && (await page.locator('[data-time-plataforma="Time Três"] [data-mensalidade]').innerText()) === '—', 'Time Três suspenso: sem mensalidade');
   // ações do Samba
   await page.locator('[data-acoes-time="Samba"]').click();
-  ok((await page.locator('[data-acoes-modal]').getByRole('menuitem').allInnerTexts()).join('|') === 'Convidar admin|Marca (logo e nome)|Assentos|Vencimento do contrato|Erros do app|Suspender o time', 'ações do time num painel (sem cortar na tabela): ' + (await page.locator('[data-acoes-modal]').getByRole('menuitem').allInnerTexts()).join('|'));
+  ok((await page.locator('[data-acoes-modal]').getByRole('menuitem').allInnerTexts()).join('|') === 'Convidar admin|Marca (logo e nome)|Assentos|Vencimento do contrato|Suspender o time', 'ações do time num painel (sem cortar na tabela): ' + (await page.locator('[data-acoes-modal]').getByRole('menuitem').allInnerTexts()).join('|'));
   await page.locator('[data-acoes-modal]').getByRole('menuitem', { name: 'Suspender o time' }).click();
   await page.getByRole('button', { name: 'Salvar', exact: true }).click(); await page.waitForTimeout(300);
   ok(rpc(escritas, 'suspender_time').length === 0, 'suspender sem motivo não sai');
@@ -93,10 +93,7 @@ await cenario('conta central: console', db, async (page, escritas) => {
   await acaoDo(page, '[data-acoes-time="Time Novo"]', 'Link novo do admin convidado');
   await page.waitForTimeout(400);
   ok(rpc(escritas, 'novo_link_admin').pop()?.p_ws === 'wn' && (await page.locator('[data-link-convite]').inputValue()).endsWith('b'.repeat(64)), 'link novo do admin convidado do Time Novo');
-  await acaoDo(page, '[data-acoes-time="Time Novo"]', 'Erros do app');
-  await page.locator('[data-erros-modal]').waitFor({ timeout: 5000 });
-  ok(/lista não carregou: timeout/.test(await page.locator('[data-erros-modal]').innerText()) && rpc(escritas, 'erros_do_time').pop()?.p_ws === 'wn', 'erros do app do Time Novo');
-  await page.locator('[data-erros-modal]').getByRole('button', { name: 'Fechar' }).click();
+  ok(rpc(escritas, 'erros_do_time').length === 0, 'o console não pede os erros do app de nenhum time');
   // novo time
   await page.locator('[data-novo-time]').click();
   const criar = page.getByRole('button', { name: 'Criar time' });

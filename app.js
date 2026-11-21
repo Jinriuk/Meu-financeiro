@@ -8431,7 +8431,7 @@ function MarcaEditor({
 }
 
 // conta central = gestor geral da plataforma (plano 3.4, 4.2 e 8): um console só de administração, sem nada de jogador.
-// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão, erros), contas individuais (plano e
+// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão), contas individuais (plano e
 // teste) e o registro de cada ação. O servidor confere tudo e não deixa o gestor geral ver os dados de dentro de um time.
 const ACAO_ROTULO = {
   criar_time: 'criou o time',
@@ -8506,7 +8506,6 @@ function ConsolePlataforma({
   const [perg, setPerg] = useState(null);
   const [marcaDe, setMarcaDe] = useState(null);
   const [acoesDe, setAcoesDe] = useState(null);
-  const [erros, setErros] = useState(null);
   const [confirma, setConfirma] = useState(null);
   const [criando, setCriando] = useState(false);
   const [filtro, setFiltro] = useState('todas');
@@ -8594,7 +8593,6 @@ function ConsolePlataforma({
     nTeste = sits.filter(s => s.tipo === 'teste').length,
     nVenc = sits.filter(s => s.tipo === 'vencida').length,
     nSem = sits.filter(s => s.tipo === 'sem_prazo').length;
-  const erros7 = soma(ts, 'erros_7d') + soma(cs, 'erros_7d');
   const atencao = [...ts.filter(t => t.suspenso_em).map(t => ({
     k: 's' + t.id,
     tom: 'bad',
@@ -8610,10 +8608,6 @@ function ConsolePlataforma({
     k: 'c' + x.t.id,
     tom: x.c.tom,
     txt: `${x.t.nome}: contrato ${x.c.txt}`
-  })), ...ts.filter(t => t.erros_7d > 0).map(t => ({
-    k: 'e' + t.id,
-    tom: 'warn',
-    txt: `${t.nome}: ${t.erros_7d} erro${t.erros_7d > 1 ? 's' : ''} do app em 7 dias`
   })), ...cs.map(c => ({
     c,
     s: situacaoConta(c)
@@ -8684,20 +8678,6 @@ function ConsolePlataforma({
         }, v ? `Contrato do ${t.nome} até ${dataBR(v)}.` : `Contrato do ${t.nome} sem data.`);
       }
     })]);
-    l.push(['Erros do app', async () => {
-      const {
-        data,
-        error
-      } = await sb.rpc('erros_do_time', {
-        p_ws: t.id,
-        p_limite: 30
-      });
-      setErros({
-        nome: t.nome,
-        lista: error ? [] : data || [],
-        erro: error?.message
-      });
-    }]);
     if (t.suspenso_em) l.push(['Reativar o time', () => setConfirma({
       titulo: `Reativar o ${t.nome}?`,
       texto: 'O app volta a funcionar na hora pra todo mundo do time.',
@@ -8889,11 +8869,6 @@ function ConsolePlataforma({
     rotulo: "Contas individuais",
     valor: cs.length,
     sub: `${nTeste} em teste · ${nVenc} vencida${nVenc === 1 ? '' : 's'} · ${nSem} sem prazo`
-  }), /*#__PURE__*/React.createElement(Kpi, {
-    dataK: "erros",
-    rotulo: "Erros do app",
-    valor: erros7,
-    sub: "nos \xFAltimos 7 dias"
   })), /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 20
@@ -9101,9 +9076,7 @@ function ConsolePlataforma({
       tom: "warn"
     }, "sem dono") : t.admin_pendente ? /*#__PURE__*/React.createElement(Tag, {
       tom: "warn"
-    }, "admin convidado") : null, t.erros_7d > 0 && /*#__PURE__*/React.createElement(Tag, {
-      tom: "warn"
-    }, t.erros_7d, " erro", t.erros_7d > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
+    }, "admin convidado") : null), /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'grid',
         gridTemplateColumns: 'repeat(3,minmax(0,1fr))',
@@ -9228,9 +9201,7 @@ function ConsolePlataforma({
       }
     }, /*#__PURE__*/React.createElement(Tag, {
       tom: s.tom
-    }, s.txt), c.erros_7d > 0 && /*#__PURE__*/React.createElement(Tag, {
-      tom: "warn"
-    }, c.erros_7d, " erro", c.erros_7d > 1 ? 's' : '')), /*#__PURE__*/React.createElement("div", {
+    }, s.txt)), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12.5,
         color: C.inkSoft,
@@ -9468,38 +9439,7 @@ function ConsolePlataforma({
       flex: 1
     },
     onClick: () => setConfirma(null)
-  }, "Cancelar")))), erros && /*#__PURE__*/React.createElement("div", {
-    onClick: () => setErros(null),
-    style: fundoModal
-  }, /*#__PURE__*/React.createElement("div", {
-    onClick: e => e.stopPropagation(),
-    "data-erros-modal": true,
-    className: "ftfade",
-    style: caixaModal
-  }, topoModal(`Erros do app · ${erros.nome}`, () => setErros(null)), erros.erro ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.red,
-      fontSize: 13.5
-    }
-  }, erros.erro) : !erros.lista.length ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 14,
-      color: C.inkSoft
-    }
-  }, "Nenhum erro registrado desse time.") : erros.lista.map((e, i) => /*#__PURE__*/React.createElement("div", {
-    key: i,
-    style: {
-      padding: '8px 0',
-      borderTop: i ? `1px solid ${C.border}` : 'none',
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("b", null, dataBR(e.criado_em), " ", String(e.criado_em || '').slice(11, 16)), " \xB7 ", e.origem, e.versao ? ` · versão ${e.versao}` : '', /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.inkSoft,
-      marginTop: 2,
-      wordBreak: 'break-word'
-    }
-  }, e.mensagem))))), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
+  }, "Cancelar")))), perg && /*#__PURE__*/React.createElement(QuickEditModal, {
     label: perg.label,
     hint: perg.hint,
     kind: perg.kind,

@@ -2536,7 +2536,7 @@ function MarcaEditor({nomeTime,atual,temLogo,onSalvar}){
 }
 
 // conta central = gestor geral da plataforma (plano 3.4, 4.2 e 8): um console só de administração, sem nada de jogador.
-// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão, erros), contas individuais (plano e
+// Times só pelos números (por papel, ativos, jogando, assentos, vencimento, suspensão), contas individuais (plano e
 // teste) e o registro de cada ação. O servidor confere tudo e não deixa o gestor geral ver os dados de dentro de um time.
 const ACAO_ROTULO={criar_time:'criou o time',mudar_assentos:'mudou os assentos',novo_link_admin:'gerou link novo do admin',marca:'mudou a marca',
   suspender:'suspendeu o time',reativar:'reativou o time',vencimento:'mudou o vencimento do contrato',convidar_admin:'convidou um admin',
@@ -2565,7 +2565,7 @@ function ConsolePlataforma({session}){
   const [aba,setAba]=useState('visao');
   const [times,setTimes]=useState(null); const [contas,setContas]=useState(null); const [acoes,setAcoes]=useState([]);
   const [aviso,setAviso]=useState(null); const [link,setLink]=useState(null); const [perg,setPerg]=useState(null);
-  const [marcaDe,setMarcaDe]=useState(null); const [acoesDe,setAcoesDe]=useState(null); const [erros,setErros]=useState(null);
+  const [marcaDe,setMarcaDe]=useState(null); const [acoesDe,setAcoesDe]=useState(null);
   const [confirma,setConfirma]=useState(null); const [criando,setCriando]=useState(false); const [filtro,setFiltro]=useState('todas');
   const [novo,setNovo]=useState({nome:'',assentos:'',admin:''});
   const carregar=async()=>{ const [t,c,a]=await Promise.all([sb.rpc('times_da_plataforma'),sb.rpc('contas_da_plataforma'),sb.rpc('acoes_plataforma',{p_limite:60})]);
@@ -2588,12 +2588,10 @@ function ConsolePlataforma({session}){
   const naoSusp=ts.filter(t=>!t.suspenso_em), susp=ts.length-naoSusp.length;
   const jogAtivos=soma(naoSusp,'jogadores'), jogando=soma(naoSusp,'jogando_7d'), mensal=jogAtivos*PRECO_JOGADOR_USD;
   const sits=cs.map(situacaoConta), nTeste=sits.filter(s=>s.tipo==='teste').length, nVenc=sits.filter(s=>s.tipo==='vencida').length, nSem=sits.filter(s=>s.tipo==='sem_prazo').length;
-  const erros7=soma(ts,'erros_7d')+soma(cs,'erros_7d');
   const atencao=[
     ...ts.filter(t=>t.suspenso_em).map(t=>({k:'s'+t.id,tom:'bad',txt:`${t.nome} está suspenso desde ${dataBR(t.suspenso_em)}${t.suspenso_motivo?`: ${t.suspenso_motivo}`:''}`})),
     ...ts.filter(t=>!t.tem_dono||t.admin_pendente).map(t=>({k:'a'+t.id,tom:'warn',txt:`${t.nome}: ${!t.tem_dono?'ainda sem dono':'admin convidado ainda não entrou'}`})),
     ...ts.map(t=>({t,c:situacaoContrato(t)})).filter(x=>x.c&&x.c.tom!=='neutro').map(x=>({k:'c'+x.t.id,tom:x.c.tom,txt:`${x.t.nome}: contrato ${x.c.txt}`})),
-    ...ts.filter(t=>t.erros_7d>0).map(t=>({k:'e'+t.id,tom:'warn',txt:`${t.nome}: ${t.erros_7d} erro${t.erros_7d>1?'s':''} do app em 7 dias`})),
     ...cs.map(c=>({c,s:situacaoConta(c)})).filter(x=>x.s.tipo==='teste'&&x.s.dias<=3)
       .map(x=>({k:'t'+x.c.id,tom:'warn',txt:`Conta ${x.c.apelido||x.c.nome}: o teste acaba em ${x.s.dias} dia${x.s.dias===1?'':'s'}`}))];
   const contasVis=cs.filter((c,i)=>filtro==='todas'||sits[i].tipo===filtro);
@@ -2612,7 +2610,6 @@ function ConsolePlataforma({session}){
     l.push(['Vencimento do contrato',()=>setPerg({label:`Vencimento do contrato do ${t.nome}`,kind:'date',valor:t.contrato_fim||'',
       hint:'Até quando o time está pago. Em branco: sem data. Não trava nada sozinho: quem decide suspender é você.',
       onSave:async v=>{ setPerg(null); await rodar('definir_vencimento',{p_ws:t.id,p_data:v||null},v?`Contrato do ${t.nome} até ${dataBR(v)}.`:`Contrato do ${t.nome} sem data.`); }})]);
-    l.push(['Erros do app',async()=>{ const {data,error}=await sb.rpc('erros_do_time',{p_ws:t.id,p_limite:30}); setErros({nome:t.nome,lista:error?[]:(data||[]),erro:error?.message}); }]);
     if(t.suspenso_em) l.push(['Reativar o time',()=>setConfirma({titulo:`Reativar o ${t.nome}?`,texto:'O app volta a funcionar na hora pra todo mundo do time.',
       ok:async()=>{ setConfirma(null); await rodar('suspender_time',{p_ws:t.id,p_suspender:false,p_motivo:null},`${t.nome} reativado.`); }})]);
     else l.push(['Suspender o time',()=>setPerg({label:`Suspender o ${t.nome}`,kind:'text',valor:'',
@@ -2647,7 +2644,6 @@ function ConsolePlataforma({session}){
       <Kpi dataK="jogadores" rotulo="Jogadores ativos" valor={jogAtivos} sub={`${jogando} jogaram nos últimos 7 dias`}/>
       <Kpi dataK="mensalidade" rotulo="Mensalidade estimada" valor={<>US$ {mensal.toLocaleString('pt-BR')}<span style={{fontSize:14,fontWeight:600,color:C.inkSoft}}>/mês</span></>} sub={`US$ ${PRECO_JOGADOR_USD} × jogadores ativos dos times não suspensos`}/>
       <Kpi dataK="contas" rotulo="Contas individuais" valor={cs.length} sub={`${nTeste} em teste · ${nVenc} vencida${nVenc===1?'':'s'} · ${nSem} sem prazo`}/>
-      <Kpi dataK="erros" rotulo="Erros do app" valor={erros7} sub="nos últimos 7 dias"/>
     </div>
     <Card style={{padding:20}} data-atencao>
       <h3 style={tituloS}>Precisa de atenção</h3>
@@ -2685,8 +2681,7 @@ function ConsolePlataforma({session}){
         <div style={{display:'flex',gap:4,flexWrap:'wrap'}} data-situacao>
           {t.suspenso_em?<Tag tom="bad">suspenso</Tag>:<Tag tom="ok">ativo</Tag>}
           {ct&&<Tag tom={ct.tom}>contrato {ct.txt}</Tag>}
-          {!t.tem_dono?<Tag tom="warn">sem dono</Tag>:t.admin_pendente?<Tag tom="warn">admin convidado</Tag>:null}
-          {t.erros_7d>0&&<Tag tom="warn">{t.erros_7d} erro{t.erros_7d>1?'s':''}</Tag>}</div>
+          {!t.tem_dono?<Tag tom="warn">sem dono</Tag>:t.admin_pendente?<Tag tom="warn">admin convidado</Tag>:null}</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:'10px 12px'}}>
           {[['Pessoas',t.pessoas,`${t.com_conta} com conta${t.convidados?` · ${t.convidados} convidado${t.convidados>1?'s':''}`:''}`,null],
             ['Jogadores',t.jogadores,`de ${t.jogadores_cadastrados} cadastrado${t.jogadores_cadastrados===1?'':'s'}`,'data-jogadores'],
@@ -2715,7 +2710,7 @@ function ConsolePlataforma({session}){
           <div style={{minWidth:0}}><div style={{fontWeight:800,fontSize:15}}>{nome}</div>
             <div style={{fontSize:12.5,color:C.inkSoft,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.email||'sem e-mail'}</div></div>
           {botaoAcoes(nome,{'data-acoes-conta':nome},acoesConta(c))}</div>
-        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}><Tag tom={s.tom}>{s.txt}</Tag>{c.erros_7d>0&&<Tag tom="warn">{c.erros_7d} erro{c.erros_7d>1?'s':''}</Tag>}</div>
+        <div style={{display:'flex',gap:4,flexWrap:'wrap'}}><Tag tom={s.tom}>{s.txt}</Tag></div>
         <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Plano {c.plano||'—'} · criada em {dataBR(c.criado_em)}<br/>{c.torneios} torneio{c.torneios===1?'':'s'} · último lançamento {c.ultimo_lancamento?dataBR(c.ultimo_lancamento):'—'}</div>
       </Card>; })}
     </div>}
@@ -2763,12 +2758,6 @@ function ConsolePlataforma({session}){
       <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>{confirma.texto}</div>
       <div style={{display:'flex',gap:8}}><button style={{...btnP,flex:1,...(confirma.perigo?{background:C.red,borderColor:C.red}:{})}} onClick={confirma.ok}>Confirmar</button>
         <button style={{...btnS,flex:1}} onClick={()=>setConfirma(null)}>Cancelar</button></div>
-    </div></div>}
-    {erros&&<div onClick={()=>setErros(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-erros-modal className="ftfade" style={caixaModal}>
-      {topoModal(`Erros do app · ${erros.nome}`,()=>setErros(null))}
-      {erros.erro?<div style={{color:C.red,fontSize:13.5}}>{erros.erro}</div>:!erros.lista.length?<div style={{fontSize:14,color:C.inkSoft}}>Nenhum erro registrado desse time.</div>
-        :erros.lista.map((e,i)=><div key={i} style={{padding:'8px 0',borderTop:i?`1px solid ${C.border}`:'none',fontSize:13}}>
-          <b>{dataBR(e.criado_em)} {String(e.criado_em||'').slice(11,16)}</b> · {e.origem}{e.versao?` · versão ${e.versao}`:''}<div style={{color:C.inkSoft,marginTop:2,wordBreak:'break-word'}}>{e.mensagem}</div></div>)}
     </div></div>}
     {perg&&<QuickEditModal label={perg.label} hint={perg.hint} kind={perg.kind} currentValue={perg.valor} onClose={()=>setPerg(null)} onSave={perg.onSave}/>}
     {marcaDe&&<div onClick={()=>setMarcaDe(null)} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-marca-modal className="ftfade" style={caixaModal}>
