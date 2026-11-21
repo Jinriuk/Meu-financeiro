@@ -1,5 +1,5 @@
 -- Console da plataforma (pedido do dono, 21/11): a conta central vê os times por papel, suspende e reativa, marca o
--- vencimento, convida admin, cuida das contas individuais e vê os erros do app. Quem não é gestor geral não faz nada disso.
+-- vencimento, convida admin e cuida das contas individuais. Quem não é gestor geral não faz nada disso.
 -- E gestor geral · A admin do time · B1 professor · B2 financeiro · D1/D2 jogadores · F1 conta individual · 99 de fora
 \set ON_ERROR_STOP 1
 reset role;
@@ -46,10 +46,10 @@ values ('c5000000-0000-0000-0000-0000000000f1', 'cf1@console.test', 'SoloNick', 
 
 set role authenticated;
 select teste.como('c5000000-0000-0000-0000-0000000000e1');
-select teste.igual('times: pessoas, com conta, convidados, jogadores ativos/cadastrados, jogando 7 dias e erros',
+select teste.igual('times: pessoas, com conta, convidados, jogadores ativos/cadastrados e jogando 7 dias',
   $q$select pessoas || ' pessoas, ' || com_conta || ' com conta, ' || convidados || ' convidado, ' || jogadores || ' ativos, ' || jogadores_cadastrados
-     || ' cadastrados, ' || jogando_7d || ' jogando, ' || erros_7d || ' erro' from public.times_da_plataforma() where id = teste.cpid('ws')$q$,
-  '6 pessoas, 5 com conta, 1 convidado, 2 ativos, 3 cadastrados, 1 jogando, 1 erro');
+     || ' cadastrados, ' || jogando_7d || ' jogando' from public.times_da_plataforma() where id = teste.cpid('ws')$q$,
+  '6 pessoas, 5 com conta, 1 convidado, 2 ativos, 3 cadastrados, 1 jogando');
 select teste.igual('…e por papel: admin / professor / financeiro / outros',
   $q$select n_admins || '/' || n_professores || '/' || n_financeiros || '/' || n_outros from public.times_da_plataforma() where id = teste.cpid('ws')$q$, '1/1/1/0');
 
@@ -107,9 +107,6 @@ select teste.erro_qualquer('ação inválida, não', $q$select public.acesso_con
 select teste.erro_qualquer('estender 0 dias, não', $q$select public.acesso_conta_plataforma('c7000000-0000-0000-0000-0000000000f1', 'estender', 0)$q$);
 select teste.erro_qualquer('mexer no acesso de um TIME por aqui, não', $q$select public.acesso_conta_plataforma(teste.cpid('ws'), 'encerrar')$q$);
 
--- erros do app de um time
-select teste.igual('erros do app do time (só o técnico)', $q$select count(*) || ' ' || min(mensagem) from public.erros_do_time(teste.cpid('ws'))$q$, '1 falhou a carga do teste');
-
 -- quem não é gestor geral: nada
 select teste.como('c5000000-0000-0000-0000-0000000000a1');
 select teste.erro('admin de time NÃO vê a lista de times', $q$select count(*) from public.times_da_plataforma()$q$);
@@ -118,11 +115,10 @@ select teste.erro('…nem suspende', $q$select public.suspender_time(teste.cpid(
 select teste.erro('…nem muda o vencimento', $q$select public.definir_vencimento(teste.cpid('ws'), current_date + 90)$q$);
 select teste.erro('…nem convida admin pela plataforma', $q$select public.convidar_admin_plataforma(teste.cpid('ws'), 'Hack')$q$);
 select teste.erro('…nem mexe no acesso de conta', $q$select public.acesso_conta_plataforma('c7000000-0000-0000-0000-0000000000f1', 'sem_prazo')$q$);
-select teste.erro('…nem vê os erros', $q$select count(*) from public.erros_do_time(teste.cpid('ws'))$q$);
 select teste.como('c5000000-0000-0000-0000-000000000099');
 select teste.erro('quem é de fora também não', $q$select public.suspender_time(teste.cpid('ws'), true, 'x')$q$);
 reset role;
 select teste.igual('anon não executa nenhuma função do console',
   $q$select count(*)::text from unnest(array['public.times_da_plataforma()', 'public.contas_da_plataforma()', 'public.suspender_time(uuid,boolean,text)',
-     'public.definir_vencimento(uuid,date)', 'public.convidar_admin_plataforma(uuid,text)', 'public.acesso_conta_plataforma(uuid,text,integer)',
-     'public.erros_do_time(uuid,integer)']) f where has_function_privilege('anon', f, 'execute')$q$, '0');
+     'public.definir_vencimento(uuid,date)', 'public.convidar_admin_plataforma(uuid,text)', 'public.acesso_conta_plataforma(uuid,text,integer)'])
+     f where has_function_privilege('anon', f, 'execute')$q$, '0');

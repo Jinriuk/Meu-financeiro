@@ -137,8 +137,8 @@ select teste.erro_qualquer('BUG-10 …nem cria sala nova com saldo', $q$insert i
 select teste.erro_qualquer('BUG-10 …nem apaga sala com saldo', $q$delete from public.player_wallets where pessoa_id = teste.id('pJ1') and wallet = 'PS'$q$);
 select teste.ok('BUG-10 J1 abre sala nova com 0 (o dinheiro chega pelo reload)', $q$insert into public.player_wallets(player, wallet, saldo_inicial) values ('Joga Um', 'WPT', 0)$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000f1');
-select teste.ok('BUG-10 quem aprova saques corrige o saldo de uma sala do J1', $q$update public.player_wallets set saldo_inicial = 5 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
-select teste.ok('BUG-10 …e volta pro valor certo', $q$update public.player_wallets set saldo_inicial = 0 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
+-- regra do dono (21/11): só o aluno mexe na conta dele; quem aprova saques vê a sala, mas não muda (antes corrigia)
+select teste.erro('BUG-10 quem aprova saques NÃO muda o saldo de uma sala do J1 (só o J1 mexe na conta dele)', $q$update public.player_wallets set saldo_inicial = 5 where pessoa_id = teste.id('pJ1') and wallet = 'WPT'$q$);
 select teste.como('ac000000-0000-0000-0000-0000000000c1');
 select teste.igual('BUG-10 as salas do J1 continuam a foto (GG 90, PS 80) e a WPT nova com 0',
   $q$select string_agg(wallet||':'||saldo_inicial::text, ',' order by wallet) from public.player_wallets where pessoa_id = teste.id('pJ1')$q$, 'GG Poker:90.00,PS:80.00,WPT:0');
