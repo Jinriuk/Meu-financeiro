@@ -3278,13 +3278,16 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   const envioLigado=d.unidades.some(u=>regraEf(u.id,'envio_ligado')===true);
   const envioDe=l=>{ if(l.status!=='ativo'||regraEf(l.unidade_id,'envio_ligado')!==true) return null;
     const feito=(d.envios||[]).find(e=>e.pessoa_id===l.pessoa_id&&String(e.mes).slice(0,10)===mesEnvio); if(feito) return {st:'ok',em:feito.enviado_em};
-    if(l.torneios!=null&&!(tours||[]).some(t=>(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))&&String(t.entry_date).slice(0,7)===mesEnvio.slice(0,7)&&salaChave(t.site)==='gg'))
+    // sem ver os torneios (o financeiro), não dá pra saber se ele jogou na GG: diz só que não confirmou, sem cobrar
+    if(l.torneios==null) return {st:'sem_dado'};
+    if(!(tours||[]).some(t=>(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))&&String(t.entry_date).slice(0,7)===mesEnvio.slice(0,7)&&salaChave(t.site)==='gg'))
       return {st:'nao_jogou'};
     const prazo=prazoDoEnvio(num(regraEf(l.unidade_id,'envio_prazo_dia')));
     return {st:prazo&&hoje>prazo?'atrasado':'pendente',prazo}; };
   const envioPend=linhas.filter(l=>(!d.eu||l.pessoa_id!==d.eu.id)&&['pendente','atrasado'].includes(envioDe(l)?.st));
   const envioTag=l=>{ const e=envioDe(l); if(!e) return <span style={{color:C.inkSoft}}>—</span>;
     return e.st==='ok'?<Tag tom="ok" title={`confirmou em ${dataBR(e.em)}`}>enviado</Tag>:e.st==='nao_jogou'?<span style={{color:C.inkSoft,fontSize:12.5}}>não jogou na GG</span>
+      :e.st==='sem_dado'?<span style={{color:C.inkSoft,fontSize:12.5}} title="Sem acesso aos torneios: não dá pra saber se jogou na GG no mês">não confirmado</span>
       :<Tag tom={e.st==='atrasado'?'bad':'warn'}>{e.st==='atrasado'?'atrasado':'pendente'}</Tag>; };
   // comprovação por jogador no período da tela (antifraude): digitado sem arquivo e o que mudou depois do import
   const rotPeriodo={mes:'este mês','30':'30 dias',tudo:'todo o histórico'}[periodo]||'período';
@@ -3611,7 +3614,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <Chip on={!filtro.reta} onClick={()=>setFiltro(f=>({...f,reta:null}))}>Todas as retas</Chip>
         {retasComJogador.map(u=><Chip key={u.id} data-filtro-reta={u.nome} on={filtro.reta===u.id} onClick={()=>setFiltro(f=>({...f,reta:f.reta===u.id?null:u.id}))}>{u.nome}</Chip>)}
         <span style={{width:1,height:22,background:C.border,margin:'0 4px'}}/>
-        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[]),...(compTot.sem+compTot.diverge?[['comp','Sem comprovação']]:[])]:[]),...(envioLigado?[['envio','Envio pendente']]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
+        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[]),...(compTot.sem+compTot.diverge?[['comp','Sem comprovação']]:[])]:[]),...(envioPend.length?[['envio','Envio pendente']]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
         {periodoChips}
       </div>
       <Card style={{padding:celular?'8px':'6px 10px'}}>

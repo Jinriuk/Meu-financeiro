@@ -11332,7 +11332,11 @@ function TimeApp({
       st: 'ok',
       em: feito.enviado_em
     };
-    if (l.torneios != null && !(tours || []).some(t => (t.pessoa_id === l.pessoa_id || !t.pessoa_id && nomeIgual(t.player, l.nome)) && String(t.entry_date).slice(0, 7) === mesEnvio.slice(0, 7) && salaChave(t.site) === 'gg')) return {
+    // sem ver os torneios (o financeiro), não dá pra saber se ele jogou na GG: diz só que não confirmou, sem cobrar
+    if (l.torneios == null) return {
+      st: 'sem_dado'
+    };
+    if (!(tours || []).some(t => (t.pessoa_id === l.pessoa_id || !t.pessoa_id && nomeIgual(t.player, l.nome)) && String(t.entry_date).slice(0, 7) === mesEnvio.slice(0, 7) && salaChave(t.site) === 'gg')) return {
       st: 'nao_jogou'
     };
     const prazo = prazoDoEnvio(num(regraEf(l.unidade_id, 'envio_prazo_dia')));
@@ -11357,7 +11361,13 @@ function TimeApp({
         color: C.inkSoft,
         fontSize: 12.5
       }
-    }, "n\xE3o jogou na GG") : /*#__PURE__*/React.createElement(Tag, {
+    }, "n\xE3o jogou na GG") : e.st === 'sem_dado' ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft,
+        fontSize: 12.5
+      },
+      title: "Sem acesso aos torneios: n\xE3o d\xE1 pra saber se jogou na GG no m\xEAs"
+    }, "n\xE3o confirmado") : /*#__PURE__*/React.createElement(Tag, {
       tom: e.st === 'atrasado' ? 'bad' : 'warn'
     }, e.st === 'atrasado' ? 'atrasado' : 'pendente');
   };
@@ -12954,7 +12964,7 @@ function TimeApp({
         background: C.border,
         margin: '0 4px'
       }
-    }), [...(temPerf ? [['fora', 'Fora da grade']] : []), ...(temDin ? [['mk', 'Em MK']] : []), ...(temPerf ? [['parados', 'Sem lançar'], ...(stops.length ? [['stop', 'Stop loss']] : []), ...(compTot.sem + compTot.diverge ? [['comp', 'Sem comprovação']] : [])] : []), ...(envioLigado ? [['envio', 'Envio pendente']] : []), ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
+    }), [...(temPerf ? [['fora', 'Fora da grade']] : []), ...(temDin ? [['mk', 'Em MK']] : []), ...(temPerf ? [['parados', 'Sem lançar'], ...(stops.length ? [['stop', 'Stop loss']] : []), ...(compTot.sem + compTot.diverge ? [['comp', 'Sem comprovação']] : [])] : []), ...(envioPend.length ? [['envio', 'Envio pendente']] : []), ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
       key: k,
       "data-filtro-sit": k,
       on: filtro.sit === k,

@@ -77,5 +77,18 @@ await cenario('gestão: quem falta', dbAdm, async page => {
     && /não jogou na GG/.test(await page.locator('[data-envio-de="Enzo P."]').innerText()), 'coluna do envio: Bruno enviou, Caio pendente, Enzo não jogou na GG');
 });
 
+// 5) financeiro: não vê os torneios, então não sabe quem jogou na GG. Mostra quem confirmou e "não confirmado", sem cobrar
+const dbFin = samba('fin', { regra_unidade: regras, tournaments: [],
+  envio_mensal: [{ pessoa_id: 'p1', mes: mesPassado, enviado_em: mesPassado.slice(0, 8) + '05T10:00:00Z' }] });
+dbFin.__rpc = { ...dbFin.__rpc, resumo_time: dbFin.__rpc.resumo_time.map(r => ({ ...r, torneios: null, entradas: null, investido: null, lucro: null, roi: null, abi: null, ultimo_lancamento: null })) };
+await cenario('financeiro: envio sem inventar', dbFin, async page => {
+  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
+  ok(await page.locator('[data-pendencia^="Envio de"]').count() === 0, 'sem pendência de envio (não dá pra saber quem jogou na GG)');
+  await aba(page, 'Jogadores');
+  ok(/enviado/.test(await page.locator('[data-envio-de="Bruno T."]').innerText()) && (await page.locator('[data-envio-de="Caio R."]').innerText()).trim() === 'não confirmado'
+    && !/não jogou|pendente|atrasado/.test(await page.locator('[data-jogadores]').innerText()), 'coluna: Bruno enviou, os outros "não confirmado" (nem "pendente", nem "não jogou na GG")');
+  ok(await page.locator('[data-filtro-sit="envio"]').count() === 0, 'sem o filtro "Envio pendente" (ninguém a cobrar)');
+});
+
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
 process.exit(falhas.length ? 1 : 0);
