@@ -163,7 +163,7 @@ await cenario('visão, reload e sininho', estrutura({
   await aba(page, 'Visão geral');
   await page.locator('[data-por-reta]').waitFor({ timeout: 5000 });
   const cel = (await page.locator('[data-reta="Pandeiro"] td').allInnerTexts()).map(x => x.trim());
-  ok(cel[1] === '2' && cel[2] === '50' && /^-40,0%$/.test(cel[4]) && /−US\$\s80,00/.test(cel[5]), 'Pandeiro: 2 alunos (o convidado não conta), 50 torneios, ROI pelo total investido -40% (não a média de 20% e -100%), resultado −80: ' + cel.join(' | '));
+  ok(cel[1] === '2' && cel[2] === '50' && /^−40,0%$/.test(cel[4]) && /−US\$\s80,00/.test(cel[5]), 'Pandeiro: 2 alunos (o convidado não conta), 50 torneios, ROI pelo total investido -40% (não a média de 20% e -100%), resultado −80: ' + cel.join(' | '));
   ok(/1 sem lançar/.test(await page.locator('[data-kpis]').innerText()), 'conta quem está sem lançar há 7+ dias');
   await page.locator('[data-reta="Pandeiro"]').click();
   await page.locator('[data-jogadores]').waitFor({ timeout: 5000 });

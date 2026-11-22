@@ -106,12 +106,17 @@ const cent = v => { const n=Number(v); if(!Number.isFinite(n)) return 0; const r
 // valor curto de eixo de gráfico: US$ 1.234 (sem centavos), negativo com o sinal antes do US$
 const fmtEixo=v=>{ const r=Math.round(Number(v)||0); return (r<0?'−':'')+'US$ '+Math.abs(r).toLocaleString('pt-BR'); };
 const fmt = n => { const v=cent(Number(n)||0), t=Math.abs(v).toLocaleString('pt-BR',{style:'currency',currency:'USD'}); return v<0?'−'+t:t; };
-const pctFmt = n => `${((Number(n)||0)).toFixed(1).replace('.',',')}%`;
+// percentual com o mesmo sinal de menos do dinheiro (−12,5%); arredondou pra zero, fica sem sinal
+const pctFmt = n => { const v=Number(n)||0, t=Math.abs(v).toFixed(1).replace('.',','); return (v<0&&t!=='0,0'?'−':'')+t+'%'; };
 const mKey = d => (d||'').slice(0,7);
 const mLabel = k => { const [y,m]=k.split('-'); return `${MONTHS[+m-1]} de ${y}`; };
 const dLabel = d => { if(!d) return ''; const [,m,day]=d.split('-'); return `${day}/${m}`; };
 // data LOCAL (não UTC): no Brasil, depois das 21h o toISOString() já viraria "amanhã"
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+// dia (AAAA-MM-DD) no fuso de quem olha: data pura fica como está; carimbo de hora (o banco manda em UTC) vira o dia local.
+// Ex.: pago 31/10 às 23h30 em Brasília chega "2026-11-01T02:30:00+00:00" e conta em outubro.
+const diaLocal = s => { const t=String(s||''); if(!t) return ''; if(/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const d=new Date(t); return isNaN(d)?t.slice(0,10):`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 // PWA: já está rodando instalado na tela inicial? · é iPhone/iPad (instalação é manual)?
 const isStandalone = () => { try { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true; } catch(e){ return false; } };
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent||'') && !window.MSStream;
@@ -1231,6 +1236,50 @@ function statusGrade(t,config){
   return num(t.buyin)>mx?{status:'fora',motivo:`buy-in ${fmt(t.buyin)} · teto ${fmt(mx)}`,teto:mx}:{status:'dentro',motivo:'',teto:mx};
 }
 
+// Relatório do time (pedido do dono, 22/11): o período e o recorte da árvore que a gestão escolhe, na tela e em PDF.
+// · torneios: só os de dentro do time (têm unidade; o histórico de antes do time é do jogador), no período, jogados numa
+//   unidade do recorte que quem olha pode ver; "por reta" agrupa pela unidade ONDE o torneio foi jogado (quem foi
+//   promovido no meio do mês aparece nas duas);
+// · jogadores: quem teve vínculo no recorte em algum dia do período (inclui quem saiu ou mudou de reta) ou jogou nele;
+//   convidado que ainda não entrou não conta;
+// · dinheiro: capital e reload pela data, saque pago pelo dia do pagamento, acerto de saída pela data de saída, cada um
+//   na unidade onde aconteceu. ABI = buy-in cheio / entradas (como no resumo do banco); investido não conta bilhete.
+function relatorioTime(o){
+  const {de,ate,naRecorte,vePerf,veDin}=o, fora=o.fora||(()=>false), pidDe=o.pidDe||(t=>t.pessoa_id);
+  const tours=o.tours||[], pessoas=o.pessoas||[], vinculos=o.vinculos||[], saques=o.saques||[], aportes=o.aportes||[], acertos=o.acertos||[];
+  const noPer=x=>{ const v=diaLocal(x); return !!v&&v>=de&&v<=ate; };
+  const ts=tours.filter(t=>t.unidade_id&&naRecorte(t.unidade_id)&&vePerf(t.unidade_id)&&noPer(t.entry_date));
+  const vs=vinculos.filter(v=>naRecorte(v.unidade_id)&&String(v.inicio||'')<=ate&&(!v.fim||String(v.fim)>=de));
+  const P=Object.fromEntries(pessoas.map(p=>[p.id,p]));
+  const agg=lista=>{ const inv=cent(lista.reduce((a,t)=>a+totalInvestido(t),0)), res=cent(lista.reduce((a,t)=>a+lucroTorneio(t),0));
+    const ent=lista.reduce((a,t)=>a+1+num(t.reentries),0), nom=lista.reduce((a,t)=>a+nominalTorneio(t),0), comp=lista.map(comprovacaoDe);
+    return {n:lista.length,dias:new Set(lista.map(t=>String(t.entry_date).slice(0,10))).size,entradas:ent,inv,res,roi:inv>0?res/inv*100:null,abi:ent?cent(nom/ent):null,
+      fora:lista.filter(fora).length,sem:comp.filter(c=>c.st==='sem').length,diverge:comp.filter(c=>c.st==='diverge').length,jogouGG:lista.some(t=>salaChave(t.site)==='gg')}; };
+  // movimento de dinheiro: conta se aconteceu numa unidade do recorte que quem olha vê (sem unidade: a do jogador)
+  const movOk=(x,uPadrao)=>x.unidade_id?(naRecorte(x.unidade_id)&&veDin(x.unidade_id)):veDin(uPadrao);
+  const ids=[...new Set([...vs.map(v=>v.pessoa_id),...ts.map(pidDe)].filter(Boolean))].filter(id=>!P[id]||P[id].status!=='convidado');
+  const jogadores=ids.map(pid=>{
+    const p=P[pid]||null, meus=ts.filter(t=>pidDe(t)===pid);
+    const aberto=vinculos.find(v=>v.pessoa_id===pid&&!v.fim)||null;
+    const ultimo=vs.filter(v=>v.pessoa_id===pid).sort((a,b)=>String(b.inicio).localeCompare(String(a.inicio)))[0]||null;
+    const tUlt=meus.slice().sort((a,b)=>String(b.entry_date).localeCompare(String(a.entry_date)))[0];
+    const unidade_id=aberto&&naRecorte(aberto.unidade_id)?aberto.unidade_id:ultimo?ultimo.unidade_id:tUlt?tUlt.unidade_id:null;
+    const saiu=p&&p.status==='saiu'?((acertos.find(a=>a.pessoa_id===pid)||{}).saida||(ultimo&&ultimo.fim)||''):null;
+    const mudou=!saiu&&aberto&&!naRecorte(aberto.unidade_id)?aberto.unidade_id:null;
+    const din=!!unidade_id&&veDin(unidade_id);
+    const sq=din?saques.filter(x=>x.pessoa_id===pid&&x.status==='pago'&&noPer(x.pago_em)&&movOk(x,unidade_id)):[];
+    const ap=din?aportes.filter(x=>x.pessoa_id===pid&&noPer(x.data)&&movOk(x,unidade_id)):[];
+    return {pessoa_id:pid,nome:p?p.nome:(tUlt&&tUlt.player)||'—',unidade_id,saiu,mudou,perf:(!!unidade_id&&vePerf(unidade_id))||meus.length>0,din,...agg(meus),
+      saques:sq.length,sacado:cent(sq.reduce((a,x)=>a+num(x.devolucao)+num(x.cashout),0)),timeRecebeu:cent(sq.reduce((a,x)=>a+num(x.recebido??x.total_time),0)),
+      jogadorFicou:cent(sq.reduce((a,x)=>a+num(x.parte_jogador),0)),capital:cent(ap.reduce((a,x)=>a+num(x.valor),0)),
+      acertos:din?acertos.filter(a=>a.pessoa_id===pid&&noPer(a.saida)&&movOk(a,unidade_id)):[]};
+  });
+  const porUnidade=Object.entries(ts.reduce((m,t)=>{ (m[t.unidade_id]||(m[t.unidade_id]=[])).push(t); return m; },{}))
+    .map(([unidade_id,lista])=>({unidade_id,jogaram:new Set(lista.map(pidDe).filter(Boolean)).size,...agg(lista)}));
+  const comDin=jogadores.filter(j=>j.din), soma=k=>cent(comDin.reduce((a,j)=>a+num(j[k]),0));
+  return {jogadores,porUnidade,total:{...agg(ts),jogaram:new Set(ts.map(pidDe).filter(Boolean)).size},
+    dinheiro:{capital:soma('capital'),saques:comDin.reduce((a,j)=>a+j.saques,0),sacado:soma('sacado'),timeRecebeu:soma('timeRecebeu'),jogadorFicou:soma('jogadorFicou')}};
+}
 const Svg = p => <svg width={p.s||20} height={p.s||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
 const IcoPanel  = p => <Svg {...p}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></Svg>;
 const IcoDaily  = p => <Svg {...p}><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/><circle cx="12" cy="14.5" r="1.4" fill="currentColor" stroke="none"/></Svg>;
@@ -3099,6 +3148,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   const [saqueAberto,setSaqueAberto]=useState(false);
   const [saidaDe,setSaidaDe]=useState(null);   // saída: {p, previa} (a prévia do acerto vem do servidor)
   const [regraSel,setRegraSel]=useState(null); // regras por reta: a unidade aberta no cartão
+  // relatório do time: um mês (padrão: o do fechamento, o mês passado) ou um intervalo; time inteiro ou uma unidade
+  const [rel,setRel]=useState(()=>({modo:'mes',mes:mesCobrado().slice(0,7),de:'',ate:'',uni:null,imprimir:false}));
   const [planilha,setPlanilha]=useState(null);
   const [reloadAberto,setReloadAberto]=useState(false);
   const [capitalDe,setCapitalDe]=useState(null);   // capital com a sala: {p, salas}
@@ -3139,6 +3190,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida'),q('conferencia_saldo')]);
     const stp=await sb.rpc('stop_semana_do_time',{p_inicio:weekStart(weekEnding(todayISO()))});
     const env=await sb.from('envio_mensal').select('pessoa_id,mes,enviado_em');
+    const apo=await lerTudo(()=>sb.from('aporte').select('id,pessoa_id,unidade_id,valor,data,sala').order('id'));
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
@@ -3153,7 +3205,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em))),
       acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em))),
       stopSemana:stp&&!stp.error&&Array.isArray(stp.data)?stp.data:[],
-      envios:env&&!env.error?(env.data||[]):[]});
+      envios:env&&!env.error?(env.data||[]):[],aportes:apo&&!apo.error?(apo.data||[]):[]});
   };
   useEffect(()=>{ carregar(); },[]);
   // trocou de tela: nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
@@ -3676,6 +3728,101 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     </div>;
   }
 
+  /* ---------- RELATÓRIO DO TIME (na tela; imprime ou salva em PDF; sem planilha) ---------- */
+  if(secao==='g_relatorios'){
+    const ultimoDia=ym=>{ const [y,m]=ym.split('-').map(Number); return new Date(Date.UTC(y,m,0)).toISOString().slice(0,10); };
+    const de=rel.modo==='mes'?rel.mes+'-01':(rel.de||''), ate=rel.modo==='mes'?ultimoDia(rel.mes):(rel.ate||'');
+    const okPer=!!de&&!!ate&&de<=ate;
+    const vePerf=u=>!!u&&pode('ver_desempenho',u), veDin=u=>!!u&&pode('ver_financeiro',u);
+    const unisRel=d.unidades.filter(u=>vePerf(u.id)||veDin(u.id));
+    const uni=(rel.uni&&unisRel.find(u=>u.id===rel.uni))||(raiz&&unisRel.find(u=>u.id===raiz.id))||unisRel[0]||null;
+    const meses=[...Array(12)].map((_,i)=>{ const [y,m]=hoje.slice(0,7).split('-').map(Number); return new Date(Date.UTC(y,m-1-i,1)).toISOString().slice(0,7); });
+    // recorte: o time inteiro (qualquer unidade do time, até arquivada) ou a sub-árvore escolhida
+    const naRecorte=id=>{ if(!uni||!id) return false; if(!uni.mae_id) return true; const u=U[id]; return !!u&&String(u.caminho).startsWith(uni.caminho); };
+    const R=okPer&&uni?relatorioTime({de,ate,naRecorte,vePerf,veDin,fora:t=>statusGrade(t,config).status==='fora',pidDe:t=>t.pessoa_id||pessoaPorNome(t.player)?.id,
+      tours:(tours||[]).filter(t=>!raiz||!t.workspace_id||t.workspace_id===raiz.workspace_id),
+      pessoas:d.pessoas,vinculos:d.vinculos,saques:d.saques,aportes:d.aportes||[],acertos:d.acertos||[]}):null;
+    const rows=R?R.jogadores.slice().sort((a,b)=>(posU[a.unidade_id]??999)-(posU[b.unidade_id]??999)||a.nome.localeCompare(b.nome)):[];
+    const temP=rows.some(r=>r.perf), temD=rows.some(r=>r.din), T=R?R.total:null;
+    const mesRel=rel.modo==='mes'?rel.mes+'-01':null;
+    const envioLig=r=>!!mesRel&&!!r.unidade_id&&regraEf(r.unidade_id,'envio_ligado')===true;
+    const envioRel=r=>{ if(!envioLig(r)) return '—'; const e=(d.envios||[]).find(x=>x.pessoa_id===r.pessoa_id&&String(x.mes).slice(0,10)===mesRel);
+      return e?`enviado ${dataBR(diaLocal(e.enviado_em))}`:(r.jogouGG||!r.perf)?'não confirmado':'não jogou na GG'; };
+    const mostraEnvio=rows.some(envioLig);
+    const porUni=R?R.porUnidade.slice().sort((a,b)=>(posU[a.unidade_id]??999)-(posU[b.unidade_id]??999)):[];
+    const acs=rows.flatMap(r=>r.acertos.map(a=>({...a,nome:r.nome})));
+    const sinal=v=>v===0?fmt(0):fmtSinal(v), corRes=v=>v>0?C.greenMid:v<0?C.red:C.ink;
+    const nomeUni=id=>U[id]?.nome||'reta arquivada';
+    const perTxt=okPer?(rel.modo==='mes'?`${nomeMes(rel.mes+'-01')} de ${rel.mes.slice(0,4)}`:`${dataBR(de)} a ${dataBR(ate)}`):'';
+    const corpo=<div data-relatorio style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div className="repcard" style={{display:'flex',alignItems:'center',gap:12}}>
+        {marca&&marca.logo&&<img src={marca.logo} alt="" width={46} height={46} data-rel-logo style={{borderRadius:11,objectFit:'contain',background:'#fff',flexShrink:0}}/>}
+        <div style={{minWidth:0}}><div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:700,color:P}}>{(marca&&marca.nome)||nomeTime||'Time'} · relatório</div>
+        <div data-rel-cabecalho style={{fontSize:13,color:C.inkSoft,marginTop:2}}>{uni?(uni.mae_id?caminhoNome(uni):'Time inteiro'):'—'}{perTxt?` · ${perTxt}`:''} · gerado em {dataBR(hoje)}</div></div></div>
+      {!okPer&&<Empty>Escolha o período: a data inicial e a final.</Empty>}
+      {R&&temP&&<div className="repcard" data-rel-kpis style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10}}>
+        <Kpi rot="Jogadores" val={rows.length} sub={`${T.jogaram} jogaram no período`}/>
+        <Kpi rot="Torneios" val={T.n.toLocaleString('pt-BR')} sub={T.abi!=null?`ABI ${fmt(T.abi)}`:null}/>
+        <Kpi rot="Resultado" val={sinal(T.res)} tom={T.res>0?'ok':T.res<0?'bad':null} sub={T.roi!=null?`ROI ${pctFmt(T.roi)} sobre ${fmt(T.inv)}`:null}/>
+        <Kpi rot="Fora da grade" val={T.fora} tom={T.fora?'bad':'ok'} sub={T.n?`de ${T.n} torneio${T.n!==1?'s':''}`:null}/>
+        <Kpi rot="Sem comprovação" val={T.sem+T.diverge} tom={T.sem+T.diverge?'warn':'ok'} sub={T.diverge?`${T.diverge} diverge${T.diverge!==1?'m':''} do arquivo`:'digitado sem o arquivo do site'}/>
+      </div>}
+      {R&&temP&&porUni.length>1&&<div className="repcard"><h3 style={tituloS}>Por reta</h3>
+        <div style={{overflowX:'auto'}}><table className="reptable" data-rel-retas><thead><tr><th>Reta</th><th>Jogaram</th><th>Torneios</th><th>ABI</th><th>Investido</th><th>Resultado</th><th>ROI</th><th>Fora da grade</th><th>Sem comprov.</th></tr></thead>
+          <tbody>{porUni.map(x=><tr key={x.unidade_id} data-rel-reta={nomeUni(x.unidade_id)}><td><b>{nomeUni(x.unidade_id)}</b></td><td>{x.jogaram}</td><td>{x.n}</td><td>{x.abi!=null?fmt(x.abi):'—'}</td><td>{fmt(x.inv)}</td>
+            <td style={{color:corRes(x.res)}}>{sinal(x.res)}</td><td>{x.roi!=null?pctFmt(x.roi):'—'}</td><td>{x.fora||'—'}</td><td>{x.sem+x.diverge||'—'}</td></tr>)}</tbody></table></div>
+        <div style={{fontSize:11.5,color:C.inkSoft,marginTop:6}}>Cada torneio conta na reta em que foi jogado.</div></div>}
+      {R&&<div className="repcard"><h3 style={tituloS}>Por jogador</h3>
+        {!rows.length&&<Empty>Ninguém jogou nem esteve nesse recorte no período.</Empty>}
+        {rows.length>0&&<div style={{overflowX:'auto'}}><table className="reptable" data-rel-jogadores><thead><tr><th>Jogador</th><th>Reta</th>
+          {temP&&<><th>Torneios</th><th>Dias</th><th>ABI</th><th>Investido</th><th>Resultado</th><th>ROI</th><th>Fora da grade</th><th>Comprovação</th></>}
+          {mostraEnvio&&<th>Envio do mês</th>}</tr></thead>
+          <tbody>{rows.map(r=><tr key={r.pessoa_id} data-rel-de={r.nome}><td><b>{r.nome}</b>{r.saiu!=null&&<div style={{fontSize:11,color:C.inkSoft}}>saiu{r.saiu?` em ${dataBR(r.saiu)}`:''}</div>}
+              {r.mudou&&<div style={{fontSize:11,color:C.inkSoft}}>hoje em {nomeUni(r.mudou)}</div>}</td><td>{r.unidade_id?nomeUni(r.unidade_id):'—'}</td>
+            {temP&&(r.perf?<><td>{r.n||'—'}</td><td>{r.dias||'—'}</td><td>{r.abi!=null?fmt(r.abi):'—'}</td><td>{r.n?fmt(r.inv):'—'}</td>
+              <td style={{color:corRes(r.res)}}>{r.n?sinal(r.res):'—'}</td><td>{r.roi!=null?pctFmt(r.roi):'—'}</td><td>{r.n?(r.fora||'—'):'—'}</td>
+              <td data-rel-comp={r.nome}>{!r.n?'—':r.sem+r.diverge?<span style={{color:r.diverge?C.red:'#7a5a1f',fontWeight:700}}>{[r.sem?`${r.sem} sem`:'',r.diverge?`${r.diverge} diverge`:''].filter(Boolean).join(' · ')}</span>:'ok'}</td></>
+              :<td colSpan={8} style={{color:C.inkSoft}}>sem acesso ao desempenho</td>)}
+            {mostraEnvio&&<td data-rel-envio={r.nome}>{envioRel(r)}</td>}</tr>)}</tbody></table></div>}
+        {rows.length>0&&temP&&<div style={{fontSize:11.5,color:C.inkSoft,marginTop:6,lineHeight:1.5}}>Resultado = prêmios + bounties − investido (bilhete não custa). ABI = buy-in médio por entrada. Comprovação: "sem" = digitado sem o arquivo do site; "diverge" = mudou depois do import.</div>}
+      </div>}
+      {R&&temD&&<div className="repcard"><h3 style={tituloS}>Dinheiro</h3>
+        <div style={{overflowX:'auto'}}><table className="reptable" data-rel-dinheiro><thead><tr><th>Jogador</th><th>Banca hoje</th><th>MU hoje</th><th>MK / Profit hoje</th><th>Capital e reload no período</th><th>Saques pagos no período</th><th>Time recebeu</th><th>Jogador ficou</th></tr></thead>
+          <tbody>{rows.filter(r=>r.din).map(r=>{ const l=linhas.find(x=>x.pessoa_id===r.pessoa_id), b=l&&l.banca!=null?num(l.banca):null, mu=l&&l.mu!=null?num(l.mu):null, mk=b!=null&&mu!=null?mkDe(b,mu):null;
+            return <tr key={r.pessoa_id} data-rel-din={r.nome}><td><b>{r.nome}</b></td><td>{b==null?'—':fmt(b)}</td><td>{mu==null?'—':fmt(mu)}</td>
+              <td style={{color:mk==null?C.ink:mk<0?'#7a5a1f':C.greenMid}}>{mk==null?'—':mk<0?`MK ${fmtSinal(mk)}`:fmtSinal(mk)}</td><td>{r.capital?fmtSinal(r.capital):'—'}</td>
+              <td>{r.saques?`${r.saques} · ${fmt(r.sacado)}`:'—'}</td><td>{r.saques?fmt(r.timeRecebeu):'—'}</td><td>{r.saques?fmt(r.jogadorFicou):'—'}</td></tr>; })}
+            {rows.filter(r=>r.din).length>1&&<tr data-rel-din-total><td><b>Total</b></td><td></td><td></td><td></td><td><b>{R.dinheiro.capital?fmtSinal(R.dinheiro.capital):'—'}</b></td>
+              <td><b>{R.dinheiro.saques?`${R.dinheiro.saques} · ${fmt(R.dinheiro.sacado)}`:'—'}</b></td><td><b>{R.dinheiro.saques?fmt(R.dinheiro.timeRecebeu):'—'}</b></td><td><b>{R.dinheiro.saques?fmt(R.dinheiro.jogadorFicou):'—'}</b></td></tr>}</tbody></table></div>
+        <div style={{fontSize:11.5,color:C.inkSoft,marginTop:6,lineHeight:1.5}}>Banca, MU e MK são de hoje; capital, reload e saques são os do período (saque conta no dia em que foi pago). MU = capital do time; MK = quanto falta pra banca voltar ao MU.</div></div>}
+      {R&&acs.length>0&&<div className="repcard"><h3 style={tituloS}>Saídas no período</h3>
+        <div style={{overflowX:'auto'}}><table className="reptable" data-rel-saidas><thead><tr><th>Jogador</th><th>Saiu em</th><th>Banca final</th><th>MU</th><th>Time recebe</th><th>Situação</th></tr></thead>
+          <tbody>{acs.map(x=><tr key={x.id}><td><b>{x.nome}</b></td><td>{dataBR(x.saida)}</td><td>{fmt(x.banca)}</td><td>{fmt(x.mu)}</td><td>{x.total_time!=null?fmt(x.total_time):'sem contrato'}</td>
+            <td>{x.status==='recebido'?`recebido ${fmt(x.recebido)}${Number(x.diferenca)?` · diferença ${fmt(x.diferenca)}`:''}`:'a receber'}</td></tr>)}</tbody></table></div></div>}
+    </div>;
+    return <div className="ftfade" style={{display:'flex',flexDirection:'column',gap:16}}>
+      {header('Relatórios',R&&<button data-imprimir-relatorio style={btnP} onClick={()=>setRel(r=>({...r,imprimir:true}))}>Imprimir / salvar PDF</button>)}
+      <Card style={{padding:16,display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
+        <div><div style={labelStyle}>Período</div><div style={{display:'flex',gap:6}}><Chip on={rel.modo==='mes'} onClick={()=>setRel(r=>({...r,modo:'mes'}))}>Mês</Chip><Chip on={rel.modo==='int'} onClick={()=>setRel(r=>({...r,modo:'int'}))}>Intervalo</Chip></div></div>
+        {rel.modo==='mes'?<div><label style={labelStyle} htmlFor="rel-mes">Mês</label><select id="rel-mes" data-rel-mes value={rel.mes} onChange={e=>setRel(r=>({...r,mes:e.target.value}))} style={{...inputStyle,width:'auto'}}>
+            {meses.map(m=><option key={m} value={m}>{nomeMes(m+'-01')} de {m.slice(0,4)}</option>)}</select></div>
+          :<><div><label style={labelStyle} htmlFor="rel-de">De</label><input id="rel-de" data-rel-de-in type="date" value={rel.de} max={hoje} onChange={e=>setRel(r=>({...r,de:e.target.value}))} style={{...inputStyle,width:'auto'}}/></div>
+            <div><label style={labelStyle} htmlFor="rel-ate">Até</label><input id="rel-ate" data-rel-ate-in type="date" value={rel.ate} max={hoje} onChange={e=>setRel(r=>({...r,ate:e.target.value}))} style={{...inputStyle,width:'auto'}}/></div></>}
+        {unisRel.length>1&&<div><label style={labelStyle} htmlFor="rel-uni">Recorte</label><select id="rel-uni" data-rel-uni value={uni?uni.id:''} onChange={e=>setRel(r=>({...r,uni:e.target.value}))} style={{...inputStyle,width:'auto'}}>
+          {unisRel.map(u=><option key={u.id} value={u.id}>{u.mae_id?caminhoNome(u):'Time inteiro'}</option>)}</select></div>}
+        {rel.modo==='int'&&rel.de&&rel.ate&&rel.de>rel.ate&&<div style={{fontSize:12.5,color:C.red,fontWeight:600}}>A data inicial é depois da final.</div>}
+      </Card>
+      {!rel.imprimir&&corpo}
+      {rel.imprimir&&<Portal><div className="printrep" data-rel-impressao style={{position:'fixed',inset:0,background:'#fff',zIndex:80,overflowY:'auto'}}>
+        <div className="noprint" style={{position:'sticky',top:0,background:'#fff',borderBottom:`1px solid ${C.border}`,padding:'12px 16px',display:'flex',gap:10,zIndex:2}}>
+          <button onClick={()=>setRel(r=>({...r,imprimir:false}))} style={btnS}>← Voltar</button>
+          <button onClick={()=>window.print()} style={{...btnP,marginLeft:'auto'}}>Imprimir / salvar PDF</button></div>
+        <div style={{maxWidth:1000,margin:'0 auto',padding:'22px 20px 60px'}}>{corpo}</div>
+      </div></Portal>}
+      <Portal>{modais}</Portal>
+    </div>;
+  }
+
   /* ---------- FINANCEIRO ---------- */
   if(secao==='g_financeiro'){
     const din=linhas.filter(l=>l.banca!=null&&l.status!=='convidado');
@@ -4173,7 +4320,7 @@ function SaqueModal({pessoa,salas,onClose,onPedir}){
 }
 
 // telas que têm endereço próprio (#tela). O resto do hash (ex.: o retorno do login por e-mail) não é tela.
-const TELAS=new Set(['painel','torneios','diario','semanal','mensal','stats','saques','banca','config','time','g_visao','g_jogadores','g_grades','g_financeiro','g_equipe','g_regras']);
+const TELAS=new Set(['painel','torneios','diario','semanal','mensal','stats','saques','banca','config','time','g_visao','g_jogadores','g_grades','g_financeiro','g_relatorios','g_equipe','g_regras']);
 function Dashboard({session,profile}){
   /* convidado (role='guest'): sem acesso às áreas da pool — o RLS do banco também bloqueia;
      aqui só mostramos a telinha de acesso restrito e liberamos as Stats/relatório dele */
@@ -5170,6 +5317,7 @@ function Dashboard({session,profile}){
         ...((tem('ver_desempenho')||tem('ver_financeiro')||tem('gerir_pessoas')||tem('promover')||tem('aprovar_saques'))?[{id:'g_jogadores',label:'Jogadores',Icon:IcoUsers}]:[]),
         {id:'g_grades',label:'Grades',Icon:IcoGrid},
         ...((tem('ver_financeiro')||tem('aprovar_saques'))?[{id:'g_financeiro',label:'Financeiro',Icon:IcoCashOut}]:[]),
+        ...((tem('ver_desempenho')||tem('ver_financeiro'))?[{id:'g_relatorios',label:'Relatórios',Icon:IcoMonth}]:[]),
         ...(tem('gerir_pessoas')?[{id:'g_equipe',label:'Equipe e convites',Icon:IcoShield}]:[]),
         ...(tem('configurar_regras')?[{id:'g_regras',label:'Regras do time',Icon:IcoGear}]:[]),
         {id:'config',label:'Minha conta',Icon:IcoUser}];

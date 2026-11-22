@@ -68,7 +68,7 @@
   }
   /* relatórios: na impressão só o relatório aparece (Imprimir -> Salvar como PDF) */
   @media print{
-    body{background:#fff}
+    html,body{background:#fff !important}
     body *{visibility:hidden}
     .printrep,.printrep *{visibility:visible}
     .printrep{position:absolute !important;inset:0 !important;overflow:visible !important}
