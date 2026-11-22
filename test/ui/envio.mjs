@@ -21,7 +21,7 @@ const regras = [
   { id: 'e1', workspace_id: 'w1', unidade_id: 'u0', chave: 'envio_ligado', valor: true, vigente_desde: '2026-01-01' },
   { id: 'e2', workspace_id: 'w1', unidade_id: 'u0', chave: 'envio_email', valor: 'arquivos@time.test', vigente_desde: '2026-01-01' },
   { id: 'e3', workspace_id: 'w1', unidade_id: 'u0', chave: 'envio_prazo_dia', valor: 28, vigente_desde: '2026-01-01' },
-  { id: 'e4', workspace_id: 'w1', unidade_id: 'ub', chave: 'envio_divisao', valor: 'Pagodinho', vigente_desde: '2026-01-01' }];
+  { id: 'e4', workspace_id: 'w1', unidade_id: 'ub', chave: 'envio_divisao', valor: 'Chorinho', vigente_desde: '2026-01-01' }];
 const tGG = (id, player, pid, d) => ({ id, workspace_id: 'w1', entry_date: d, player, pessoa_id: pid, unidade_id: 'u2', site: 'GG Poker', tournament_name: 'Daily Main', modality: 'MTT',
   buyin: 2.5, prize: 0, reentries: 0, field_size: 100, bounty: 0, ticket: false, currency: 'USD', created_at: d + 'T10:00:00Z' });
 
@@ -48,9 +48,9 @@ await cenario('jogador: lembrete do envio', dbAluno, async (page, escritas) => {
   ok(new RegExp('Envio de ' + nomeMes).test(await page.locator('[data-faixa="envio"]').innerText()), 'Início: "Envio de ' + nomeMes + '" com o prazo');
   await page.locator('[data-faixa="envio"]').getByRole('button', { name: 'Como fazer' }).click();
   await page.locator('[data-envio-modal]').waitFor({ timeout: 5000 });
-  ok((await page.locator('[data-envio-titulo]').innerText()) === 'BRUNO T. - PAGODINHO', 'título pronto: NOME - DIVISÃO (a divisão vem da Base)');
+  ok((await page.locator('[data-envio-titulo]').innerText()) === 'BRUNO T. - CHORINHO', 'título pronto: NOME - DIVISÃO (a divisão vem da Base)');
   ok((await page.locator('[data-envio-email]').innerText()) === 'arquivos@time.test' && /PokerCraft/.test(await page.locator('[data-envio-passos]').innerText()), 'e-mail do time e o passo a passo');
-  ok(/mailto:arquivos@time\.test\?subject=BRUNO%20T\.%20-%20PAGODINHO/.test(await page.getByRole('link', { name: 'Abrir o e-mail' }).getAttribute('href')), '"Abrir o e-mail" já com o título');
+  ok(/mailto:arquivos@time\.test\?subject=BRUNO%20T\.%20-%20CHORINHO/.test(await page.getByRole('link', { name: 'Abrir o e-mail' }).getAttribute('href')), '"Abrir o e-mail" já com o título');
   await page.locator('[data-envio-enviei]').click(); await page.waitForTimeout(600);
   const m = rpcs(escritas, 'marcar_envio_mensal').pop();
   ok(m && m.p_mes === mesPassado && m.p_enviado === true, '"Já enviei" marca o mês passado: ' + JSON.stringify(m));

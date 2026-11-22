@@ -64,12 +64,12 @@ select teste.erro_qualquer('prazo 0 não existe', $q$select public.definir_regra
 select teste.erro_qualquer('prazo quebrado não existe', $q$select public.definir_regra(teste.ceid('R'), 'envio_prazo_dia', '6.5'::jsonb)$q$);
 select teste.ok('prazo dia 6', $q$select public.definir_regra(teste.ceid('R'), 'envio_prazo_dia', '6'::jsonb)$q$);
 select teste.ok('divisão do time inteiro e a da base', $q$select public.definir_regra(teste.ceid('R'), 'envio_divisao', '"  SAMBA "'::jsonb);
-  select public.definir_regra(teste.ceid('B'), 'envio_divisao', '"PAGODINHO"'::jsonb)$q$);
+  select public.definir_regra(teste.ceid('B'), 'envio_divisao', '"CHORINHO"'::jsonb)$q$);
 select teste.erro_qualquer('texto vazio não vale (pra herdar é limpar_regra)', $q$select public.definir_regra(teste.ceid('B'), 'envio_divisao', '"   "'::jsonb)$q$);
 select teste.erro_qualquer('instruções grandes demais', $q$select public.definir_regra(teste.ceid('R'), 'envio_instrucoes', to_jsonb(repeat('a', 4001)))$q$);
 select teste.ok('instruções', $q$select public.definir_regra(teste.ceid('R'), 'envio_instrucoes', '"Pokercraft > My Tournaments > mês inteiro > Download summaries"'::jsonb)$q$);
 select teste.igual('a reta herda a divisão da base (e o texto fica sem espaço sobrando)',
-  $q$select (public.regra_efetiva(teste.ceid('U'), 'envio_divisao') #>> '{}') || ' / ' || (public.regra_efetiva(teste.ceid('R'), 'envio_divisao') #>> '{}')$q$, 'PAGODINHO / SAMBA');
+  $q$select (public.regra_efetiva(teste.ceid('U'), 'envio_divisao') #>> '{}') || ' / ' || (public.regra_efetiva(teste.ceid('R'), 'envio_divisao') #>> '{}')$q$, 'CHORINHO / SAMBA');
 
 -- ---------- confirmar o envio ----------
 select teste.erro('admin (não joga) não confirma envio', $q$select public.marcar_envio_mensal(date_trunc('month', current_date)::date)$q$);
