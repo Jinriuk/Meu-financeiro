@@ -1371,7 +1371,7 @@ function abiDoStop(config,player,tours,data){
     (tours||[]).forEach(t=>{ if(!nomeIgual(t.player,player)||t.entry_date<desde||t.entry_date>d) return; const e=1+num(t.reentries); bi+=num(t.buyin)*e; ent+=e; });
     if(ent>0) return {valor:Math.round(bi/ent*100)/100,origem:'ABI dos últimos 30 dias'};
   }
-  return {valor:abiMaxFor(config,player,d),origem:'ABI máximo do time'};
+  return {valor:abiMaxFor(config,player,d),origem:emTime()?'ABI máximo do time':'seu ABI máximo'};   // conta individual: o teto é dele, não de um time
 }
 // a reta do jogador tem grade naquela data? (aí não existe um teto de ABI só: a grade confere torneio a torneio)
 function comGrade(player,data){
