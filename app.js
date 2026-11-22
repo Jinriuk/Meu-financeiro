@@ -3160,8 +3160,8 @@ function abiDoStop(config, player, tours, data) {
   }
   return {
     valor: abiMaxFor(config, player, d),
-    origem: 'ABI máximo do time'
-  };
+    origem: emTime() ? 'ABI máximo do time' : 'seu ABI máximo'
+  }; // conta individual: o teto é dele, não de um time
 }
 // a reta do jogador tem grade naquela data? (aí não existe um teto de ABI só: a grade confere torneio a torneio)
 function comGrade(player, data) {
