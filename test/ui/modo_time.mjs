@@ -58,9 +58,12 @@ await cenario('gestor que joga', time(), async (page) => {
   ok(await page.locator('[data-sub-torneios]').count() === 1, 'Diário, Semana e Mês ficam dentro de Torneios');
   for (const aba of ['Stats', 'Banca', 'Início']) await irPara(page, aba);
   ok(/MU\s*US\$\s60,00/.test(await page.locator('[data-painel-mk]').innerText()) && /Profit \+US\$\s40,00/.test(await page.locator('[data-painel-mk]').innerText()), 'Início mostra MU e profit (banca 100 − MU 60)');
-  await irPara(page, 'Ajustes');
+  await irPara(page, 'Minha conta');
   t = await corpo(page);
-  ok(!/Configurações do time/.test(t) && !/Seu nome/.test(t) && !/Seu plano/.test(t), 'Ajustes do time: sem as regras repetidas (ficam em Meu time), sem nome, sem plano');
+  const conta = async k => (await page.locator(`[data-minha-conta] [data-conta="${k}"]`).innerText()).replace(/\s+/g, ' ');
+  ok(!/Configurações do time/.test(t) && !/Seu plano/.test(t), 'Minha conta do time: sem configuração da pool e sem plano');
+  ok(/Nome no time Hero/.test(await conta('nome')) && /Time Samba/.test(await conta('time')) && /Reta Time inteiro/.test(await conta('reta'))
+    && /Jogador · Admin · time inteiro/.test(await conta('papel')), 'Minha conta: nome, time, reta e papéis (joga e administra)');
   ok(await page.getByRole('button', { name: /^Saques$/ }).count() === 0, 'sem a aba Saques do pool');
 });
 
@@ -80,8 +83,8 @@ await cenario('aluno', time({ acesso: [], pessoa: [{ id: 'p1', workspace_id: 'w1
   ok(/antes de qualquer reload/.test(await corpo(page)), '…e o aviso diz que é o saldo de quando entrou, antes de qualquer reload');
   await page.mouse.click(8, 8); await page.waitForTimeout(250);   // fecha o editor clicando fora
   await irPara(page, 'Meu time');
-  await page.locator('[data-minhas-regras]').waitFor({ timeout: 8000 });
-  ok(await page.locator('[data-minhas-regras]').getByRole('button').count() === 0, 'aluno vê as regras da reta em Meu time, sem poder editar');
+  await page.locator('[data-secao-time="meu"]').waitFor({ timeout: 8000 });
+  ok(await page.locator('[data-minhas-regras]').count() === 0, 'Meu time sem o bloco "Regras da sua reta" (o aluno segue a grade)');
 });
 
 // 2b) a banca do aluno vem do SERVIDOR (a mesma da lista e do MK): salas + o que veio depois da foto + capital do time − saques

@@ -20,8 +20,13 @@ await cenario('admin', db, async (page, escritas) => {
   const n = await nav(page);
   ok(/Visão geral/.test(n) && /Regras do time/.test(n) && /Minha conta/.test(n) && !/Torneios|Stats/.test(n) && await page.locator('[data-modo]').count() === 0, 'admin que não joga: só gestão, sem chave de modo');
   const k = await page.locator('[data-kpis]').innerText();
-  ok(/ALUNOS ATIVOS\s*3/i.test(k) && /FORA DA GRADE · 7 DIAS\s*3 torneios/i.test(k) && !/MK/.test(k), 'números do time: 3 alunos (convidada não conta), 3 fora da grade; nada de "N em MK"');
-  ok(await page.locator('[data-pendencia]').count() === 5, 'pendências: saque, reload, planilha, parado e convite');
+  // fora: o Hot $44 do Bruno e o $7,50 do Enzo (acima do teto da grade). O $3 do Caio é "atenção" (só vale com garantido
+  // 2k+ e o nome não diz) e o Sunday Storm do Enzo é liberado pela grade (até 21/11 ele caía antes da grade valer e era
+  // julgado pelo teto da configuração: o teste dependia do dia)
+  ok(/ALUNOS ATIVOS\s*3/i.test(k) && /FORA DA GRADE · 7 DIAS\s*2 torneios/i.test(k) && !/MK/.test(k), 'números do time: 3 alunos (convidada não conta), 2 fora da grade; nada de "N em MK"');
+  const pend = await page.locator('[data-pendencia]').evaluateAll(es => es.map(e => e.getAttribute('data-pendencia').split(' (')[0].split(' · ')[0]));
+  ok(JSON.stringify(pend) === JSON.stringify(['Saques para aprovar', 'Reloads pedidos', 'Planilhas para conferir', 'Alunos sem lançar há mais de 7 dias',
+    'Torneios digitados sem comprovação', 'Convites ainda não aceitos']), 'pendências: saque, reload, planilha, parado, sem comprovação e convite: ' + pend.join(' | '));
   ok(!/MK/.test(await page.locator('[data-por-reta]').innerText()), 'tabela por reta sem coluna de MK');
   await aba(page, 'Jogadores');
   ok(/MK −US\$\s119,00/.test(await page.locator('[data-jogador="Caio R."]').innerText()) && /\+US\$\s112,00/.test(await page.locator('[data-jogador="Bruno T."]').innerText()), 'make-up por jogador com sinal (Caio em MK −119; Bruno +112)');
