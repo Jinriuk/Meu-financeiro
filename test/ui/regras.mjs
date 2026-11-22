@@ -54,6 +54,11 @@ await cenario('admin: regras por reta', samba('admin', { regra_unidade: regras }
   await page.getByRole('button', { name: 'Confirmar' }).click(); await page.waitForTimeout(500);
   const cfg = escritas.filter(e => e.tabela === 'pool_config' && e.metodo !== 'GET').pop();
   ok(cfg && /"abi_max_player1":4/.test(cfg.corpo || ''), 'ABI do Time inteiro grava o padrão do time (a configuração): ' + JSON.stringify(cfg || {}).slice(0, 120));
+  ok(/desligado · padrão do time/.test(await t('stop_dia_buyins')) && /desligado · padrão do time/.test(await t('stop_semana_pct')),
+    'Time inteiro: stop loss desligado por padrão (o time segue a grade)');
+  await linha(page, 'stop_dia_buyins').getByRole('button', { name: 'Mudar' }).click(); await digitar(page, '6');
+  const sd = rpc(escritas, 'definir_regra').pop();
+  ok(sd && sd.p_unidade === 'u0' && sd.p_chave === 'stop_dia_buyins' && sd.p_valor === 6, 'ligar o stop do time inteiro grava uma regra do time (não a configuração)');
 });
 
 // 2) aluno: as regras da reta dele no "Meu time" e a sugestão de saque com a reserva
@@ -64,8 +69,8 @@ dbAluno.__rpc = { ...dbAluno.__rpc, salas_jogador: { salas: [{ chave: 'gg', sala
   simular_saque: { parte_jogador: 35, total_time: 265, devolucao: 200, parte_time: 65, banca_depois: 100, mu_depois: 0 } };
 await cenario('aluno: regras da reta e sugestão de saque', dbAluno, async (page, escritas) => {
   await aba(page, 'Meu time');
-  const r = page.locator('[data-minhas-regras]'); await r.waitFor({ timeout: 15000 });
-  ok(/ABI máximo \(reta sem grade\)\s*US\$\s2,00/.test(await r.innerText()) && /Reserva por sala no saque\s*US\$\s50,00 por sala/.test(await r.innerText()), 'Meu time: ABI 2 da reta dele e a reserva herdada da Base');
+  await page.locator('[data-secao-time="meu"]').waitFor({ timeout: 15000 });
+  ok(await page.locator('[data-minhas-regras]').count() === 0, 'Meu time sem o bloco de regras (a reserva aparece na hora do saque)');
   await aba(page, 'Banca');   // o dinheiro (saque, reload, salas) fica na Banca
   await page.getByRole('button', { name: 'Pedir saque' }).click();
   const sg = page.locator('[data-saque-sugestao]'); await sg.waitFor({ timeout: 5000 });
@@ -100,6 +105,13 @@ await cenario('jogador: a regra da reta vale', dbJogo, async (page) => {
   const sl = page.getByRole('button', { name: /Stop loss — a hora de parar/ });
   await sl.click(); await page.waitForTimeout(300);
   ok(/Hoje · limite 2 buy-ins/.test(await page.locator('main').innerText()), 'stop diário de 2 buy-ins da reta (o do time é 10)');
+  ok(await page.locator('[data-stop-semana]').count() === 0, 'sem regra semanal: só o diário (os 15% da configuração não valem no time)');
+});
+
+// 4) jogador de time sem stop ligado: o Início não mostra o cartão (o padrão da configuração não vale pro time)
+await cenario('jogador: sem stop ligado', samba('aluno'), async (page) => {
+  await page.locator('[data-painel-mk], [data-faixas-inicio]').first().waitFor({ timeout: 15000 });
+  ok(await page.getByRole('button', { name: /Stop loss — a hora de parar/ }).count() === 0, 'sem regra de stop: sem o cartão de stop loss no Início');
 });
 
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');

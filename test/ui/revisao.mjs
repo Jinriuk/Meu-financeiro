@@ -33,7 +33,9 @@ await cenario('financeiro sem desempenho', dbFin, async page => {
 });
 
 // 2) admin: ver quais, renomear, mover de reta, pendência de stop
-const dbAdm = samba('admin');
+// o stop só vale quando a gestão liga (regra do time); aqui o semanal está ligado no time inteiro
+const stopLigado = [{ id: 'sl1', workspace_id: 'w1', unidade_id: 'u0', chave: 'stop_semana_pct', valor: 0.15, vigente_desde: '2026-01-01' }];
+const dbAdm = samba('admin', { regra_unidade: stopLigado });
 dbAdm.__rpc = { ...dbAdm.__rpc, stop_semana_do_time: [{ pessoa_id: 'p2', resultado: -80, bateu: true }], renomear_pessoa: null };
 await cenario('admin: gestão', dbAdm, async (page, escritas) => {
   await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
@@ -74,7 +76,7 @@ await cenario('sininho', dbSino, async page => {
 });
 
 // 4) jogador: Início com o que está em aberto, stop pela banca do começo da semana, Banca com o dinheiro do time
-const dbAluno = samba('aluno', {
+const dbAluno = samba('aluno', { regra_unidade: stopLigado,
   aporte: [{ id: 'ap1', pessoa_id: 'p0', valor: 100, data: D(5), sala: 'GG Poker', criado_em: D(5) + 'T10:00:00Z' }, { id: 'ap2', pessoa_id: 'p0', valor: 200, data: D(3), sala: 'PokerStars', criado_em: D(3) + 'T10:00:00Z' }],
   reload: [{ id: 'r2', pessoa_id: 'p0', unidade_id: 'u2', status: 'enviado', valor: 200, sala: 'PokerStars', enviado_valor: 200, enviado_em: D(3) + 'T10:00:00Z', aporte_id: 'ap2', solicitado_em: D(4) + 'T10:00:00Z' }] });
 dbAluno.__rpc = { ...dbAluno.__rpc, salas_jogador: { salas: [{ chave: 'gg', sala: 'GG Poker', saldo: 253.5 }, { chave: 'ps', sala: 'PokerStars', saldo: 100 }], total: 353.5, banca: 353.5, sem_sala: 0 },
@@ -99,11 +101,11 @@ await cenario('jogador: Início e Banca', dbAluno, async page => {
   ok(await page.locator('[data-minha-reta]').count() === 1 && await page.getByRole('button', { name: 'Pedir saque' }).count() === 0, 'Meu time fica com a reta (regras e grade), sem as ações de dinheiro');
 });
 
-// 4b) o nome de quem tem conta é dele: o jogador muda o próprio nome em Meu time (A-006)
+// 4b) o nome de quem tem conta é dele: o jogador muda o próprio nome em Minha conta (A-006)
 const dbNome = samba('aluno'); dbNome.__rpc = { ...dbNome.__rpc, renomear_pessoa: null };
 await cenario('jogador muda o próprio nome', dbNome, async (page, escritas) => {
-  await aba(page, 'Meu time');
-  await page.locator('[data-meu-nome]').getByRole('button', { name: 'Mudar' }).click();
+  await aba(page, 'Minha conta');
+  await page.locator('[data-minha-conta] [data-conta="nome"]').getByRole('button', { name: 'Mudar' }).click();
   await page.keyboard.press('Control+A'); await page.keyboard.type('Bruno Tavares');
   await page.getByRole('button', { name: 'Salvar', exact: true }).click(); await page.waitForTimeout(600);
   const r = escritas.filter(e => e.tabela === 'rpc.renomear_pessoa').map(e => JSON.parse(e.corpo || '{}')).pop();
@@ -135,6 +137,13 @@ await cenario('celular: jogador', samba('aluno'), async page => {
   await page.locator('nav.bottomnav').getByRole('button', { name: 'Mais' }).click(); await page.waitForTimeout(300);
   ok(await page.locator('[data-sair-mais]').count() === 1, '"Sair" fica no Mais, não no topo (A-038)');
 }, { largura: 390, altura: 844 });
+
+// 6) sem stop ligado no time, o "bateu" do servidor (que cai no padrão da configuração) não vira pendência
+const dbSemStop = samba('admin'); dbSemStop.__rpc = { ...dbSemStop.__rpc, stop_semana_do_time: [{ pessoa_id: 'p2', resultado: -80, bateu: true }] };
+await cenario('admin: sem stop ligado', dbSemStop, async page => {
+  await page.locator('[data-kpis]').waitFor({ timeout: 15000 });
+  ok(await page.locator('[data-pendencia^="Bateram o stop loss"]').count() === 0, 'sem regra de stop: sem pendência de stop (o time segue a grade)');
+});
 
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
 process.exit(falhas.length ? 1 : 0);

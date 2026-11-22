@@ -1214,10 +1214,12 @@ function regraDaUnidade(chave,unidadeId,data){
   return r?r.valor:null;
 }
 function regraDoJogador(chave,player,data){ return regraDaUnidade(chave,(GRADE_CTX.unidadeDe||{})[String(player||'').trim().toLowerCase()],data); }
-// stop loss do jogador: o da reta dele, ou o do time
+// stop loss do jogador: o da reta dele, ou o do time. No time, o stop só existe se a gestão ligou em Regras do time: o
+// padrão da configuração (10 buy-ins, 15%) não vale pra quem joga num time, que segue a grade (pedido do dono, 22/11).
+// Sem stop: sem cartão no Início, sem aviso no formulário e sem pendência da gestão.
 function stopDe(config,player){
-  const d=regraDoJogador('stop_dia_buyins',player), s=regraDoJogador('stop_semana_pct',player);
-  return {dia:d!=null?num(d):num(config.stoploss_daily_buyins),semana:s!=null?num(s):num(config.stoploss_weekly_pct)};
+  const d=regraDoJogador('stop_dia_buyins',player), s=regraDoJogador('stop_semana_pct',player), noTime=emTime();
+  return {dia:d!=null?num(d):noTime?0:num(config.stoploss_daily_buyins),semana:s!=null?num(s):noTime?0:num(config.stoploss_weekly_pct)};
 }
 // teto de ABI de um torneio sem grade: a regra da reta em que ele foi jogado, na data; senão a do jogador / do time
 function tetoDoTorneio(t,config){
@@ -3072,8 +3074,9 @@ function PlanilhaManualModal({nome,salas,onPronto,onClose}){
 // regras por reta (fase 1): o que cada unidade pode mudar; sem regra em nenhuma unidade vale o padrão do time
 const REGRAS_RETA=[
   {k:'abi_max',rot:'ABI máximo (reta sem grade)',kind:'money',padrao:c=>num(c.abi_max_player1)||num(c.abi_max)||2,txt:v=>fmt(v)},
-  {k:'stop_dia_buyins',rot:'Stop loss diário',kind:'money',padrao:c=>num(c.stoploss_daily_buyins),txt:v=>`${num(v)} buy-ins`},
-  {k:'stop_semana_pct',rot:'Stop loss semanal',kind:'percent',padrao:c=>num(c.stoploss_weekly_pct),txt:v=>`${pctFmt(num(v)*100)} da banca`},
+  // no time o stop é opcional: sem regra, desligado (o padrão da configuração não vale pro time)
+  {k:'stop_dia_buyins',rot:'Stop loss diário',kind:'money',padrao:()=>0,txt:v=>num(v)>0?`${num(v)} buy-ins`:'desligado'},
+  {k:'stop_semana_pct',rot:'Stop loss semanal',kind:'percent',padrao:()=>0,txt:v=>num(v)>0?`${pctFmt(num(v)*100)} da banca`:'desligado'},
   {k:'sites',rot:'Sites permitidos',kind:'list',padrao:c=>c.sites_permitidos||[],txt:v=>(Array.isArray(v)?v:[]).join(', ')||'—'},
   {k:'modalidades',rot:'Modalidades',kind:'list',padrao:c=>c.modalidades_permitidas||[],txt:v=>(Array.isArray(v)?v:[]).join(', ')||'—'},
   {k:'reserva_por_sala',rot:'Reserva por sala no saque',kind:'money',padrao:()=>0,txt:v=>num(v)>0?`${fmt(v)} por sala`:'nenhuma'},
@@ -3271,8 +3274,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
   const stops=linhas.filter(l=>l.status==='ativo'&&(!d.eu||l.pessoa_id!==d.eu.id)&&pode('ver_desempenho',l.unidade_id)).map(l=>{
     const sem=(d.stopSemana||[]).find(x=>x.pessoa_id===l.pessoa_id);
     const hojeRes=(tours||[]).filter(t=>t.entry_date===hoje&&(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))).reduce((a,t)=>a+lucroTorneio(t),0);
-    const slDia=stopDe(config||{},l.nome).dia*abiDoStop(config||{},l.nome,tours,hoje).valor;
-    return (sem&&sem.bateu)||(slDia>0&&hojeRes<=-slDia)?{pessoa_id:l.pessoa_id,nome:l.nome}:null; }).filter(Boolean);
+    const st=stopDe(config||{},l.nome), slDia=st.dia*abiDoStop(config||{},l.nome,tours,hoje).valor;
+    return (st.semana>0&&sem&&sem.bateu)||(slDia>0&&hojeRes<=-slDia)?{pessoa_id:l.pessoa_id,nome:l.nome}:null; }).filter(Boolean);
   // envio mensal (comprovação da GG): quem já confirmou o do mês passado; quem não jogou na GG naquele mês não deve nada
   const mesEnvio=mesCobrado();
   const envioLigado=d.unidades.some(u=>regraEf(u.id,'envio_ligado')===true);
@@ -3355,10 +3358,6 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       {!soDinheiro&&!d.sit&&<Card style={{padding:20}}><div style={{fontWeight:700}}>Você ainda não está numa reta do time.</div><div style={{fontSize:13,color:C.inkSoft,marginTop:4}}>Peça o link de convite da sua reta pro professor.</div></Card>}
       {!soDinheiro&&d.sit&&<Card data-minha-reta style={{padding:20}}>
         <h3 style={tituloS}>Sua reta{minhaUnidade?<span style={{fontSize:14,color:C.inkSoft,fontWeight:500}}> · {nomeUnidade(U[minhaUnidade])}</span>:null}</h3>
-        {d.eu&&<div data-meu-nome style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',fontSize:13.5,marginBottom:6}}>
-          <span style={{flex:1,minWidth:180}}><span style={{color:C.inkSoft}}>Seu nome no time: </span><b>{d.eu.nome}</b></span>
-          <button style={btnS} onClick={()=>setPerg({label:'Seu nome no time',hint:'É como o time vê você e como aparecem os seus lançamentos (os torneios acompanham a troca).',kind:'text',valor:d.eu.nome,
-            onSave:async n=>{ setPerg(null); const nn=String(n||'').trim(); if(!nn||nn===d.eu.nome) return; const r=await rodar('renomear_pessoa',{p_alvo:d.eu.id,p_nome:nn},`Agora você é ${nn} no time.`); if(r&&onMarca) onMarca(); }})}>Mudar</button></div>}
         <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.55}}>Contrato: {faixasTexto(d.sit.contrato)}</div>
         <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginTop:10}}><span style={{fontSize:13,color:C.inkSoft,flex:1,minWidth:200}}>MU, planilha de abertura, saque, reload e salas ficam na Banca.</span>
           {onIr&&<button style={btnS} onClick={()=>onIr('banca')}>Ir pra Banca</button>}</div>
@@ -3427,11 +3426,6 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
             if(error) return setAviso({erro:true,texto:error.message||'Não deu certo.'}); setConf(c=>({...c,resultado:data})); }}>Comparar com o sistema</button>}
           {conf&&<button style={btnS} onClick={()=>{ setConf(null); carregar(); }}>{conf.resultado?'Fechar':'Cancelar'}</button>}
         </div>
-      </Card>}
-      {!soDinheiro&&minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
-        <h3 style={tituloS}>Regras da sua reta</h3>
-        {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk'&&rr.k!=='envio_divisao').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
-          return <div key={rr.k} data-minha-regra={rr.k} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rr.rot}</span><b>{rr.txt(v)}</b></div>; })}
       </Card>}
       {!soDinheiro&&minhaGradeReta&&<Card style={{padding:20}}>
         <h3 style={tituloS}>Grade da {U[minhaGradeReta.unidade_id]?.nome||'reta'} {minhaGradeReta.simulada?<Tag tom="warn">simulada</Tag>:<Tag tom="ok">oficial</Tag>}</h3>
@@ -4090,7 +4084,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           {REGRAS_RETA.map(rr=>{ const r=regraComOrigem(selU.id,rr.k), proprio=!!(r&&r.unidade_id===selU.id), v=r?r.valor:rr.padrao(config||{});
             const origem=r?(proprio?(ehRaiz?'do time':'desta unidade'):`herdado de ${U[r.unidade_id]?.nome}`):'padrão do time';
             // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
-            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk','envio_divisao'].includes(rr.k)&&!proprio;
+            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk','envio_divisao','stop_dia_buyins','stop_semana_pct'].includes(rr.k)&&!proprio;
             const editavel=podeSel&&(!doPadrao||!!onPadrao);
             return <div key={rr.k} data-regra={rr.k} style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
               <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>{rr.rot}</span>
@@ -4502,7 +4496,7 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq,gr,rg,apo,rel,env]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+      const [pe,vi,ac,un,sq,gr,rg,apo,rel,env]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,inicio,fim'),
         sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'),
         lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')),
         sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'),
@@ -4525,7 +4519,9 @@ function Dashboard({session,profile}){
       const joga=!!(eu&&ativos.has(eu.id));
       const souAdmin=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id&&(a.capacidades||[]).includes('administrar')));
       const naRaiz=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id));
+      const meuVinculo=eu?(vi.data||[]).find(v=>v.pessoa_id===eu.id&&!v.fim)||null:null;
       setTimeGente({jogadores,eu,podeConfigurar,saquesPagos,caps,temGestao:meusAc.length>0,joga,souAdmin,naRaiz,carregado:true,
+        meuVinculo,meusAcessos:meusAc.map(a=>({unidade_id:a.unidade_id,caps:a.capacidades||[]})),
         pessoas:pessoas.map(x=>({id:x.id,nome:x.nome})),
         dinheiro:{saques:sq.error?[]:(sq.data||[]),aportes:apo.error?[]:(apo.data||[]),reloads:rel.error?[]:(rel.data||[])},
         envios:env&&!env.error?(env.data||[]):[]});
@@ -4577,6 +4573,7 @@ function Dashboard({session,profile}){
         if(tem){ const {data:av}=await sb.from('aviso').select('*').order('criado_em',{ascending:false}).limit(50); setAvisos(av||[]); } }catch(e){}
       const ehSolo=myWs?myWs.kind==='solo':!!(profile&&(profile.role==='guest'||profile.role==='solo'));
       if(myWs&&myWs.kind==='time') await carregarGenteTime();
+      else GRADE_CTX={unidades:[],grades:[],unidadeDe:{},regras:[]};
       // a config é SEMPRE a linha mais antiga. Só cria a padrão se o banco RESPONDEU e está
       // realmente vazio (primeiro uso) — falha transitória de leitura NUNCA pode virar
       // "cria outra config" (isso já duplicou a tabela e bagunçou a banca uma vez).
@@ -5328,7 +5325,7 @@ function Dashboard({session,profile}){
     } else {
       nav=[{id:'painel',label:'Início',Icon:IcoHome},{id:'torneios',label:'Torneios',Icon:IcoTrophy},{id:'stats',label:'Stats',Icon:IcoStats},
         ...(semDinheiro?[]:[{id:'banca',label:'Banca',Icon:IcoStack}]),
-        ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Ajustes',Icon:IcoGear}])];
+        ...(alunoAberto?[]:[{id:'time',label:'Meu time',Icon:IcoShield},{id:'config',label:'Minha conta',Icon:IcoUser}])];
       MAIN_TABS=alunoAberto?['painel','torneios','stats',...(semDinheiro?[]:['banca'])]:['painel','torneios','banca','time'];
     }
   }
@@ -6346,8 +6343,30 @@ function Dashboard({session,profile}){
           <button onClick={()=>{setTour(1); setView(TOUR_STEPS[0].v);}} style={{marginTop:12,marginLeft:8,padding:'12px 20px',borderRadius:13,border:`1.5px solid ${C.border}`,background:'transparent',color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>Rever o tour do sistema</button>
         </Card>}
         <Card style={{padding:20,marginTop:16}}>
-          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 4px'}}>Minha conta</h3>
-          <div style={{fontSize:13,color:C.inkSoft,marginBottom:14}}>Troque sua senha quando quiser.</div>
+          <h3 style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,margin:'0 0 8px'}}>Minha conta</h3>
+          {(()=>{ // quem é você no app e no time (pedido do dono, 22/11): nome, nickname, e-mail, time, reta, desde quando e papel
+            const eu=modoTime?timeGente.eu:null, vin=modoTime?timeGente.meuVinculo:null, us=GRADE_CTX.unidades||[];
+            const Ux=Object.fromEntries(us.map(u=>[u.id,u])), raizU=us.find(u=>!u.mae_id);
+            const caminhoDe=id=>{ const u=Ux[id]; if(!u) return null; if(!u.mae_id) return 'Time inteiro';
+              return String(u.caminho).split('/').filter(Boolean).map(i=>Ux[i]?.nome).filter(Boolean).slice(1).join(' › ')||u.nome; };
+            const papeis=[...(vin?['Jogador']:[]),...((modoTime&&timeGente.meusAcessos)||[]).map(a=>{ const pp=papelDe(a.caps);
+              return pp?`${PAPEL_ROT[pp]||'Acesso'} · ${a.unidade_id===raizU?.id?'time inteiro':caminhoDe(a.unidade_id)||'unidade'}`:null; }).filter(Boolean)];
+            const mudarNome=()=>setQuickEdit({label:'Seu nome no time',hint:'É como o time vê você. Os seus lançamentos acompanham a troca.',kind:'text',current:eu.nome,
+              onSave:async nv=>{ setQuickEdit(null); const nn=String(nv||'').trim(); if(!nn||nn===eu.nome) return;
+                const {error}=await sb.rpc('renomear_pessoa',{p_alvo:eu.id,p_nome:nn}); if(error){ alert(error.message||'Não deu certo.'); return; } await loadAll(); }});
+            const linhas=[
+              eu&&['nome','Nome no time',eu.nome,<button key="m" style={btnS} onClick={mudarNome}>Mudar</button>],
+              profile&&profile.nickname&&['nickname','Nickname',profile.nickname,null,'você também entra com ele'],
+              ['email','E-mail',session.user.email],
+              modoTime&&marcaTime&&['time','Time',marcaTime.nome],
+              vin&&['reta','Reta',caminhoDe(vin.unidade_id)||'—'],
+              vin&&vin.inicio&&['desde','No time desde',dataBR(vin.inicio)],
+              papeis.length>0&&['papel',papeis.length>1?'Papéis':'Papel',papeis.join(' · ')],
+            ].filter(Boolean);
+            return <div data-minha-conta style={{marginBottom:14}}>{linhas.map(([k,rot,val,acao,dica])=><div key={k} data-conta={k} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 0',borderBottom:`1px solid ${C.border}`,fontSize:14}}>
+              <span style={{color:C.inkSoft,width:108,flexShrink:0}}>{rot}</span>
+              <span style={{flex:1,minWidth:0}}><b style={{overflowWrap:'anywhere'}}>{val}</b>{dica&&<span style={{display:'block',fontSize:12,color:C.inkSoft,marginTop:1}}>{dica}</span>}</span>{acao}</div>)}
+              {vin&&<div style={{fontSize:12.5,color:C.inkSoft,marginTop:10,lineHeight:1.5}}>Pra sair do time, fale com a gestão: o acerto da banca é feito com ela.</div>}</div>; })()}
           <button className="mobile-only" data-sair-conta onClick={sair} style={{display:'flex',alignItems:'center',gap:8,padding:'11px 16px',borderRadius:12,border:`1px solid ${C.border}`,background:'transparent',color:C.inkSoft,fontWeight:700,fontSize:14,cursor:'pointer',marginBottom:12}}><IcoLogout s={16}/>Sair da conta</button>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             <button onClick={()=>setChangePass(true)} style={{display:'flex',alignItems:'center',gap:8,padding:'12px 18px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface,color:P,fontWeight:700,fontSize:14.5,cursor:'pointer'}}><IcoLogout s={18}/>Trocar minha senha</button>
