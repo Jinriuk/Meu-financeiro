@@ -745,7 +745,8 @@ function psTorneiosDoHH(text){
 const TS_DINHEIRO=['prize','bounty','reentries'];
 function tsMesclar(manual,linha,escolhas){
   const upd={site_tournament_id:linha.site_tournament_id, tournament_name:linha.tournament_name, modality:linha.modality,
-    site:linha.site, field_size:linha.field_size, final_position:linha.final_position, ticket:!!linha.ticket};
+    site:linha.site, field_size:linha.field_size, final_position:linha.final_position, ticket:!!linha.ticket,
+    ...(linha.comprovante?{comprovante:linha.comprovante}:{})};
   const conflitos=[];
   for(const k of TS_DINHEIRO){
     if(linha[k]==null) continue;                       // o arquivo não informa
@@ -756,6 +757,18 @@ function tsMesclar(manual,linha,escolhas){
   }
   return {upd,conflitos};
 }
+// comprovação (antifraude, plano seção 5): o que o arquivo do site disse no import x o que está lançado agora.
+// ok = bate com o arquivo · diverge = mudou depois do import · sem = digitado sem arquivo (GG: o resumo do torneio,
+// que é outro arquivo, não o das mãos; PokerStars: o próprio hand history traz o resultado)
+function comprovacaoDe(t){
+  const c=t&&t.comprovante; if(!c||typeof c!=='object') return {st:'sem',dif:[]};
+  const dif=[], cmp=(k,rot)=>{ if(c[k]==null) return; const a=num(c[k]), b=num(t[k]); if(Math.abs(a-b)>0.005) dif.push({campo:rot,arquivo:a,lancado:b}); };
+  cmp('buyin','buy-in'); cmp('prize','prêmio'); cmp('reentries','reentradas'); cmp('bounty','bounty');
+  return {st:dif.length?'diverge':'ok',dif};
+}
+// o que o arquivo disse, pra guardar junto do torneio (o banco carimba a hora)
+const comprovanteDoArquivo=(r,linha)=>({fonte:r.arquivo==='hand history PokerStars'?'hh_ps':'resumo',buyin:linha.buyin,prize:linha.prize,reentries:linha.reentries,
+  ...(linha.bounty!=null?{bounty:linha.bounty}:{})});
 // valores que valem pra um item da prévia (novo = do arquivo; completa = digitado salvo escolha contrária)
 const tsEfetivo=x=>x.atual?{...x.linha,...Object.fromEntries(TS_DINHEIRO.map(k=>[k,num(x.atual[k])])),...tsMesclar(x.atual,x.linha,x.escolhas).upd}:x.linha;
 // escolhe a modalidade do jogador (Ajustes) que combina com o torneio lido
@@ -1184,6 +1197,7 @@ function resumoCelulaGrade(txt){
 }
 // grades do time carregadas pelo Dashboard (time de staking); vazio no pool e na conta individual
 let GRADE_CTX={unidades:[],grades:[],unidadeDe:{},regras:[]};
+const emTime=()=>!!(GRADE_CTX.unidades&&GRADE_CTX.unidades.length);   // time de staking (no pool e na conta individual, não)
 // regra da unidade (fase 1): a da unidade mais funda com a chave (ela ou de cima), a mais nova até a data.
 // null = nenhuma unidade tem a regra: vale a configuração do time
 function regraDaUnidade(chave,unidadeId,data){
@@ -2075,6 +2089,10 @@ function TourRow({t,config,players,onEdit,onDelete}){
       <div style={{minWidth:0}}><div style={{fontWeight:700,fontSize:14.5,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.tournament_name||'Torneio'} <span style={{color:col,fontWeight:700}}>· {t.player}</span></div>
       <div style={{fontSize:12,color:C.inkSoft,display:'flex',alignItems:'center',gap:7,flexWrap:'wrap',marginTop:2}}>buy-in {fmt(t.buyin)}{num(t.reentries)>0?` +${num(t.reentries)}re`:''}{t.final_position?` · ${t.final_position}º`:''}{bountyTorneio(t)>0?` · bounty ${fmt(bountyTorneio(t))}`:''}
         {t.ticket&&<span style={{padding:'1px 7px',borderRadius:99,background:C.plumSoft,color:P,fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>BILHETE</span>}
+        {emTime()&&(()=>{ const cp=comprovacaoDe(t); if(cp.st==='ok') return null;
+          return cp.st==='sem'?<span data-comprovacao="sem" title="Lançado à mão, sem o arquivo do site (resumo da GG ou hand history da PokerStars)" style={{padding:'1px 7px',borderRadius:99,background:C.goldSoft,color:'#7a5a1f',fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>SEM COMPROVAÇÃO</span>
+            :<span data-comprovacao="diverge" title={cp.dif.map(d=>`${d.campo}: arquivo ${fmt(d.arquivo)}, lançado ${fmt(d.lancado)}`).join(' · ')} style={{display:'contents'}}><span style={{padding:'1px 7px',borderRadius:99,background:C.redSoft,color:C.red,fontWeight:800,fontSize:10.5,whiteSpace:'nowrap'}}>DIVERGE DO ARQUIVO</span>
+              <span style={{color:C.red,fontWeight:700}}>{cp.dif.map(d=>d.campo==='reentradas'?`reentradas: arquivo ${num(d.arquivo)}, lançado ${num(d.lancado)}`:`${d.campo}: arquivo ${fmt(d.arquivo)}, lançado ${fmt(d.lancado)}`).join(' · ')}</span></span>; })()}
         {sg.status!=='dentro'&&<span data-selo-grade={sg.status} style={{display:'contents'}}><Badge text={sg.status==='fora'?'FORA DA GRADE':'ATENÇÃO'}/><span style={{color:sg.status==='fora'?C.red:C.gold,fontWeight:700}}>{sg.motivo}{sg.simulada?' · grade simulada':''}</span></span>}</div></div></>}
     right={<span style={{fontWeight:800,fontSize:15,color:lp>=0?C.greenMid:C.red,flexShrink:0}}>{lp>=0?'+':'−'}{fmt(Math.abs(lp))}</span>}/>;
 }
@@ -3134,6 +3152,14 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const hojeRes=(tours||[]).filter(t=>t.entry_date===hoje&&(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))).reduce((a,t)=>a+lucroTorneio(t),0);
     const slDia=stopDe(config||{},l.nome).dia*abiDoStop(config||{},l.nome,tours,hoje).valor;
     return (sem&&sem.bateu)||(slDia>0&&hojeRes<=-slDia)?{pessoa_id:l.pessoa_id,nome:l.nome}:null; }).filter(Boolean);
+  // comprovação por jogador no período da tela (antifraude): digitado sem arquivo e o que mudou depois do import
+  const rotPeriodo={mes:'este mês','30':'30 dias',tudo:'todo o histórico'}[periodo]||'período';
+  const compPorPessoa={}, compTot={sem:0,diverge:0};
+  { const desde=desdePeriodo(); (tours||[]).forEach(t=>{ if(desde&&String(t.entry_date)<desde) return; const pid=t.pessoa_id||pessoaPorNome(t.player)?.id;
+      if(!pid||(d.eu&&pid===d.eu.id)) return; const c=comprovacaoDe(t); if(c.st==='ok') return;
+      const g=compPorPessoa[pid]||(compPorPessoa[pid]={sem:0,diverge:0}); g[c.st]++; compTot[c.st]++; }); }
+  const compTag=pid=>{ const g=compPorPessoa[pid]; if(!g) return <Tag tom="ok">ok</Tag>;
+    return <span style={{display:'inline-flex',gap:4,flexWrap:'wrap'}}>{g.sem>0&&<Tag tom="warn" data-sem-comprovacao={g.sem}>{g.sem} sem comprov.</Tag>}{g.diverge>0&&<Tag tom="bad" data-diverge={g.diverge}>{g.diverge} diverge</Tag>}</span>; };
   // conferência de saldos que não bateu (a última de cada um): pendência de quem vê o dinheiro (A-012)
   const ultimaConf={}; (d.conferencias||[]).forEach(c=>{ if(!ultimaConf[c.pessoa_id]) ultimaConf[c.pessoa_id]=c; });
   const divergentes=Object.values(ultimaConf).filter(c=>c.diverge&&(!d.eu||c.pessoa_id!==d.eu.id)&&pode('ver_financeiro',c.unidade_id)&&linhas.some(l=>l.pessoa_id===c.pessoa_id&&l.status==='ativo'));
@@ -3354,6 +3380,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       ...(paraConferir.length?[{n:paraConferir.length,t:'Planilhas para conferir',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(parados.length?[{n:parados.length,t:'Alunos sem lançar há mais de 7 dias',ir:'g_jogadores',sit:'parados',tom:'bad'}]:[]),
       ...(stops.length?[{n:stops.length,t:`Bateram o stop loss: ${stops.slice(0,3).map(x=>x.nome).join(', ')}${stops.length>3?'…':''}`,ir:'g_jogadores',sit:'stop',tom:'bad'}]:[]),
+      ...(compTot.diverge?[{n:compTot.diverge,t:`Torneios que mudaram depois do import (divergem do arquivo) · ${rotPeriodo}`,ir:'g_jogadores',sit:'comp',tom:'bad'}]:[]),
+      ...(compTot.sem?[{n:compTot.sem,t:`Torneios digitados sem comprovação (sem o arquivo do site) · ${rotPeriodo}`,ir:'g_jogadores',sit:'comp',tom:'warn'}]:[]),
       ...(divergentes.length?[{n:divergentes.length,t:`Conferência de saldos com diferença: ${divergentes.slice(0,3).map(c=>nomeDe(c.pessoa_id)).join(', ')}${divergentes.length>3?'…':''}`,ir:'g_financeiro',tom:'bad'}]:[]),
       ...(convidados.length&&podeConvidar?[{n:convidados.length,t:'Convites ainda não aceitos',ir:'g_jogadores',sit:'convidados',tom:'plum'}]:[]),
       ...((d.pedidos||[]).length&&podeAlgum('gerir_pessoas')?[{n:d.pedidos.length,t:'Pedidos pra entrar no time',ir:'g_equipe',tom:'plum'}]:[]),
@@ -3419,9 +3447,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const lista=linhas.filter(l=>(!filtro.reta||String(l.caminho||U[l.unidade_id]?.caminho||'').startsWith(U[filtro.reta]?.caminho||'§'))
       &&(!busca||l.nome.toLowerCase().includes(busca))
       &&(!filtro.sit||(filtro.sit==='fora'&&gradePorPessoa[l.pessoa_id]?.fora>0)||(filtro.sit==='mk'&&mkDe(l.banca,l.mu)<0)
-         ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='stop'&&stops.some(x=>x.pessoa_id===l.pessoa_id))||(filtro.sit==='convidados'&&l.status==='convidado')));
+         ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='stop'&&stops.some(x=>x.pessoa_id===l.pessoa_id))||(filtro.sit==='comp'&&!!compPorPessoa[l.pessoa_id])
+         ||(filtro.sit==='convidados'&&l.status==='convidado')));
     const chave={nome:l=>l.nome.toLowerCase(),torneios:l=>l.torneios??-1,lucro:l=>l.lucro??-1e9,banca:l=>l.banca??-1e9,mk:l=>mkDe(l.banca,l.mu)??-1e9,
-      grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||''}[ord.k]||(l=>l.nome);
+      grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||'',comp:l=>(compPorPessoa[l.pessoa_id]?.diverge||0)*1000+(compPorPessoa[l.pessoa_id]?.sem||0)}[ord.k]||(l=>l.nome);
     lista.sort((a,b)=>{ const x=chave(a), y=chave(b); return (x<y?-1:x>y?1:0)*ord.dir; });
     const temDin=linhas.some(l=>l.banca!=null), temPerf=linhas.some(l=>l.torneios!=null);
     // nome e ⋯ presos nas pontas: a tabela rola de lado sem esconder de quem é a linha (A-017)
@@ -3445,7 +3474,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <Chip on={!filtro.reta} onClick={()=>setFiltro(f=>({...f,reta:null}))}>Todas as retas</Chip>
         {retasComJogador.map(u=><Chip key={u.id} data-filtro-reta={u.nome} on={filtro.reta===u.id} onClick={()=>setFiltro(f=>({...f,reta:f.reta===u.id?null:u.id}))}>{u.nome}</Chip>)}
         <span style={{width:1,height:22,background:C.border,margin:'0 4px'}}/>
-        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[])]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
+        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[]),...(compTot.sem+compTot.diverge?[['comp','Sem comprovação']]:[])]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
         {periodoChips}
       </div>
       <Card style={{padding:celular?'8px':'6px 10px'}}>
@@ -3466,12 +3495,13 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
                 {temDin&&<div><span style={{color:C.inkSoft}}>MK / Profit </span><MkSelo v={mkDe(l.banca,l.mu)}/></div>}
                 {temPerf&&<div><span style={{color:C.inkSoft}}>Grade 7 dias </span>{!g?'—':g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</div>}
                 {temPerf&&<div><span style={{color:C.inkSoft}}>Último </span><b>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):'nunca lançou'}</b>{dd!=null&&dd>7&&<span data-parado style={{color:C.red,fontWeight:700}}> · parado há {dd} dias</span>}</div>}
+                {temPerf&&<div data-comp-de={l.nome} style={{gridColumn:'1/-1'}}><span style={{color:C.inkSoft}}>Comprovação </span>{compTag(l.pessoa_id)}</div>}
               </div>}
             </div>; })}
         </div>}
         {lista.length>0&&!celular&&<div style={{overflowX:'auto'}}><table data-jogadores style={{width:'100%',borderCollapse:'separate',borderSpacing:0}}>
           <thead><tr>{col('nome','Jogador',fixaEsq)}{temPerf&&col('torneios','Torneios')}{temPerf&&col('lucro','Resultado')}
-            {temDin&&col('banca','Banca')}{temDin&&col('mk','MK / Profit')}{temPerf&&col('grade','Grade 7 dias')}{temPerf&&col('ultimo','Último lançamento')}<th style={{...thS,...fixaDir}}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
+            {temDin&&col('banca','Banca')}{temDin&&col('mk','MK / Profit')}{temPerf&&col('grade','Grade 7 dias')}{temPerf&&col('comp','Comprovação')}{temPerf&&col('ultimo','Último lançamento')}<th style={{...thS,...fixaDir}}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
           <tbody>{lista.map(l=>{ const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado'; const ac=acoesJog(l);
             return <tr key={l.pessoa_id} data-jogador={l.nome}>
               <td style={{...tdS,...fixaEsq}}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
@@ -3482,6 +3512,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               {temDin&&<td style={tdS}>{conv||l.banca==null?'—':fmt(l.banca)}{!conv&&l.mu!=null&&<div style={{fontSize:12,color:C.inkSoft}}>MU {fmt(l.mu)}</div>}</td>}
               {temDin&&<td style={tdS}>{conv?<span style={{color:C.inkSoft}}>—</span>:<MkSelo v={mkDe(l.banca,l.mu)}/>}</td>}
               {temPerf&&<td style={tdS}>{!g?<span style={{color:C.inkSoft}}>—</span>:g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</td>}
+              {temPerf&&<td style={tdS} data-comp-de={l.nome}>{conv?<span style={{color:C.inkSoft}}>—</span>:compTag(l.pessoa_id)}</td>}
               {temPerf&&<td style={tdS}>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):(conv?'—':'nunca lançou')}{dd!=null&&dd>7&&<div data-parado style={{fontSize:12,color:C.red,fontWeight:700}}>parado há {dd} dias</div>}</td>}
               <td style={{...tdS,...fixaDir}}>{ac.length>0&&<button aria-label={`Ações de ${l.nome}`} data-acoes={l.nome} onClick={()=>setMenuDe(l.pessoa_id)}
                   style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>}</td>
@@ -4552,6 +4583,7 @@ function Dashboard({session,profile}){
         observacoes:[r.premioTicket?'Premiação paga em bilhete (não entrou dinheiro).':null,
           r.moeda&&r.moeda!=='USD'?`Valores em ${r.moeda} no arquivo, sem conversão para US$.`:null].filter(Boolean).join(' ')||null,
       };
+      linha.comprovante=comprovanteDoArquivo(r,linha);
       const jaTid=meus.find(t=>String(t.site_tournament_id||'')===r.tid);
       if(jaTid){ repetidos.push({r,linha,atual:jaTid}); continue; }
       const manual=meus.find(t=>!t.site_tournament_id&&!usados.has(t.id)&&t.entry_date===r.date
