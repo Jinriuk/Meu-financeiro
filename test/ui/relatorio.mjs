@@ -91,5 +91,18 @@ await cenario('aluno: sem relatório', samba('aluno', dadosMes(true)), async pag
   ok(await page.getByRole('button', { name: /^Relatórios$/ }).count() === 0, 'o menu do aluno não tem Relatórios');
 });
 
+// 5) relatório do jogador (Stats) num time: sai com a marca do time, não com "GrinderBank · banca de"
+const hh = { id: 'h1', workspace_id: 'w1', player: 'Bruno T.', pessoa_id: 'p0', unidade_id: 'u2', site: 'GG Poker', site_tournament_id: '901', tournament_name: 'Daily',
+  entry_date: dm(5), buyin: 2.5, hands: 120, net_bb: 15, vpip_cnt: 28, pfr_cnt: 22, pfr_opp: 110, rfi_cnt: 12, rfi_opp: 50, tb_cnt: 3, tb_opp: 30, f3b_cnt: 2, f3b_opp: 4,
+  steal_cnt: 8, steal_opp: 20, bbdef_cnt: 5, bbdef_opp: 10, cbet_cnt: 6, cbet_opp: 9, fcbet_cnt: 2, fcbet_opp: 5, sawflop_cnt: 25, wwsf_cnt: 12, wtsd_cnt: 8, wsd_cnt: 4,
+  af_bets: 14, af_calls: 7, allin_cnt: 2, allin_ev_bb: 5, allin_net_bb: 8, walk_cnt: 1, sq_cnt: 0, sq_opp: 3, sawflop_np_cnt: 24, wtsd_np_cnt: 7, engine_version: 2,
+  pos_json: { BTN: { h: 20, w: 0, v: 8, p: 7, po: 20, ro: 15, r: 7, net: 10, adj: 10, hn: 20 } }, stack_json: { '40bb+': { h: 120, v: 28, p: 22, net: 15 } }, created_at: dm(5) + 'T23:30:00Z' };
+await cenario('jogador: relatório com a marca do time', samba('aluno', { ...dadosMes(true), hh_tournament_stats: [hh] }), async page => {
+  await aba(page, 'Stats');
+  await page.getByRole('button', { name: /Relatório do jogador/ }).first().click(); await page.waitForTimeout(800);
+  const cab = await txt(page, '.printrep');
+  ok(/Samba por GrinderBank Relatório do jogador/.test(cab) && !/banca de/.test(cab), 'cabeçalho do PDF: o nome do time e "por GrinderBank": ' + cab.slice(0, 60));
+});
+
 console.log(falhas.length ? `${falhas.length} falha(s)` : 'tudo ok');
 process.exit(falhas.length ? 1 : 0);

@@ -23752,19 +23752,30 @@ function Dashboard({
         gap: 10,
         flexWrap: 'wrap'
       }
-    }, /*#__PURE__*/React.createElement("span", {
+    }, modoTime && marcaTime && marcaTime.logo && /*#__PURE__*/React.createElement("img", {
+      src: marcaTime.logo,
+      alt: "",
+      width: 30,
+      height: 30,
+      "data-rel-logo-jogador": true,
+      style: {
+        borderRadius: 8,
+        objectFit: 'contain',
+        alignSelf: 'center'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 24,
         fontWeight: 700,
         color: P
       }
-    }, solo ? 'GrinderBank' : 'PoolGG'), /*#__PURE__*/React.createElement("span", {
+    }, modoTime && marcaTime ? marcaTime.nome : solo ? 'GrinderBank' : 'PoolGG'), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 12,
         color: '#6B6455'
       }
-    }, solo ? `banca de ${config.player1_name}` : `pool de poker · ${config.player1_name} & ${config.player2_name}`)), /*#__PURE__*/React.createElement("div", {
+    }, modoTime && marcaTime ? 'por GrinderBank' : solo ? `banca de ${config.player1_name}` : `pool de poker · ${config.player1_name} & ${config.player2_name}`)), /*#__PURE__*/React.createElement("div", {
       style: {
         fontFamily: "'Space Grotesk',sans-serif",
         fontSize: 19,

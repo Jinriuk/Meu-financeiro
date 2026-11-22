@@ -6415,8 +6415,9 @@ function Dashboard({session,profile}){
       const hoje=todayISO();
       const Hdr=({title,sub})=><div style={{borderBottom:`3px solid ${P}`,paddingBottom:14,marginBottom:18}}>
         <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-          <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>{solo?'GrinderBank':'PoolGG'}</span>
-          <span style={{fontSize:12,color:'#6B6455'}}>{solo?`banca de ${config.player1_name}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
+          {modoTime&&marcaTime&&marcaTime.logo&&<img src={marcaTime.logo} alt="" width={30} height={30} data-rel-logo-jogador style={{borderRadius:8,objectFit:'contain',alignSelf:'center'}}/>}
+          <span style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:24,fontWeight:700,color:P}}>{modoTime&&marcaTime?marcaTime.nome:solo?'GrinderBank':'PoolGG'}</span>
+          <span style={{fontSize:12,color:'#6B6455'}}>{modoTime&&marcaTime?'por GrinderBank':solo?`banca de ${config.player1_name}`:`pool de poker · ${config.player1_name} & ${config.player2_name}`}</span>
         </div>
         <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:19,fontWeight:600,marginTop:8}}>{title}</div>
         <div style={{fontSize:11.5,color:'#6B6455',marginTop:2}}>{sub} · gerado em {dLabel(hoje)}/{hoje.slice(0,4)}</div>
