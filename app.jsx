@@ -2890,6 +2890,72 @@ function useEsc(onClose,ativo=true){
     const k=e=>{ if(e.key==='Escape'&&pilhaEsc[pilhaEsc.length-1]===f){ e.stopPropagation(); f(); } };
     window.addEventListener('keydown',k); return ()=>{ window.removeEventListener('keydown',k); const i=pilhaEsc.lastIndexOf(f); if(i>=0) pilhaEsc.splice(i,1); }; },[ativo]);
 }
+/* ---------- envio mensal pro time (comprovação da GG por e-mail) ---------- */
+// o mês cobrado é o anterior: em novembro, manda-se o arquivo dos torneios de outubro
+const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const mesCobrado=(hoje=todayISO())=>{ const [y,m]=String(hoje).slice(0,7).split('-').map(Number); const d=new Date(Date.UTC(y,m-2,1)); return d.toISOString().slice(0,10); };
+const nomeMes=iso=>MESES[Number(String(iso).slice(5,7))-1]||'';
+const prazoDoEnvio=(dia,hoje=todayISO())=>dia?`${String(hoje).slice(0,7)}-${String(Math.min(28,Math.max(1,Math.round(dia)))).padStart(2,'0')}`:null;
+const jogouGGno=(tours,player,mes)=>(tours||[]).some(t=>String(t.entry_date).slice(0,7)===String(mes).slice(0,7)&&salaChave(t.site)==='gg'&&(!player||nomeIgual(t.player,player)));
+const tituloDoEnvio=(nome,divisao)=>`${String(nome||'').trim().toUpperCase()} - ${String(divisao||'').trim().toUpperCase()}`;
+// modelo do passo a passo (o admin troca pelo texto do time em Regras do time)
+const ENVIO_MODELO=`Arquivo 1: torneios do mês
+1. No GG, abra o PokerCraft e vá em MY TOURNAMENTS.
+2. Em DATE, escolha CUSTOM RANGE com o mês inteiro e clique em SHOW.
+3. Marque o quadrado ao lado de START TIME e clique no botão verde DOWNLOAD GAME SUMMARIES (não é GAME HISTORIES). Se aparecer "too many hands/tournaments", baixe em duas partes (dia 1 a 15 e dia 16 ao fim do mês), cada uma com o seu print.
+4. Renomeie o arquivo com o título abaixo. Não converta o arquivo.
+5. Tire um print mostrando a opção TODOS OS TORNEIOS selecionada.
+
+Arquivo 2: refund do mês
+1. No mesmo lugar, com o mês inteiro, marque só SHOW ONLY REFUND e clique em SHOW.
+2. Marque todos e clique em DOWNLOAD GAME SUMMARIES. Se não tiver refund, mande só o print mostrando que não há nada.
+
+Mande os arquivos e os prints pro e-mail do time, com o título abaixo. Se entrou no time no meio do mês, mande a partir do dia em que entrou.`;
+// janela do jogador: o passo a passo, o título pronto, o e-mail e "Já enviei"
+function EnvioModal({mes,email,titulo,instrucoes,prazo,onEnviei,onClose}){
+  useEsc(onClose);
+  const [copiado,setCopiado]=useState(null);
+  const copiar=(k,txt)=>{ try{ navigator.clipboard.writeText(txt); setCopiado(k); setTimeout(()=>setCopiado(null),1500); }catch(e){} };
+  return <Portal><div onClick={onClose} style={fundoModal}><div onClick={e=>e.stopPropagation()} data-envio-modal role="dialog" aria-modal="true" aria-label="Envio do mês" className="ftfade" style={{...caixaModal,maxWidth:560}}>
+    {topoModal(`Envio de ${nomeMes(mes)}`,onClose)}
+    <div style={{fontSize:13.5,color:C.inkSoft,lineHeight:1.5}}>O time pede, todo mês, o arquivo dos torneios da GG do mês anterior por e-mail{prazo?<>, até <b style={{color:C.ink}}>{dataBR(prazo)}</b></>:null}. Sem ele, o time pode segurar reload e saque.</div>
+    <div style={{background:C.bg,borderRadius:12,padding:'12px 14px',fontSize:13,lineHeight:1.6,whiteSpace:'pre-line',maxHeight:280,overflowY:'auto'}} data-envio-passos>{instrucoes||ENVIO_MODELO}</div>
+    <div style={{display:'grid',gap:8}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontSize:12.5,color:C.inkSoft,minWidth:58}}>Título</span><b data-envio-titulo style={{flex:1,minWidth:0}}>{titulo}</b>
+        <button style={btnS} onClick={()=>copiar('t',titulo)}>{copiado==='t'?'Copiado':'Copiar'}</button></div>
+      {email&&<div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}><span style={{fontSize:12.5,color:C.inkSoft,minWidth:58}}>E-mail</span><b data-envio-email style={{flex:1,minWidth:0,overflowWrap:'anywhere'}}>{email}</b>
+        <button style={btnS} onClick={()=>copiar('e',email)}>{copiado==='e'?'Copiado':'Copiar'}</button></div>}
+    </div>
+    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+      {email&&<a href={`mailto:${email}?subject=${encodeURIComponent(titulo)}`} style={{...btnS,textDecoration:'none',display:'inline-flex',alignItems:'center'}}>Abrir o e-mail</a>}
+      <button data-envio-enviei style={{...btnP,flex:1}} onClick={onEnviei}>Já enviei</button></div>
+    <div style={{fontSize:12,color:C.inkSoft}}>Os arquivos vão anexados no e-mail; o app não manda nada sozinho. "Já enviei" só avisa o time que você mandou.</div>
+  </div></div></Portal>;
+}
+function EnvioConfig({atual,podeEditar,onSalvar}){
+  const [f,setF]=useState(()=>({ligado:atual.ligado===true,email:atual.email||'',prazo:atual.prazo?String(atual.prazo):'6',instrucoes:atual.instrucoes||ENVIO_MODELO}));
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const prazoN=parseInt(f.prazo,10), emailOk=/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim());
+  const valido=!f.ligado||(emailOk&&prazoN>=1&&prazoN<=28);
+  return <div data-envio-config style={{display:'flex',flexDirection:'column',gap:12}}>
+    <label style={{display:'flex',gap:10,alignItems:'flex-start',fontSize:14,fontWeight:600,cursor:podeEditar?'pointer':'default'}}>
+      <input type="checkbox" data-envio-ligado disabled={!podeEditar} checked={f.ligado} onChange={e=>set('ligado',e.target.checked)} style={{marginTop:3}}/>
+      <span>Lembrar os jogadores de mandar, todo mês, o arquivo dos torneios da GG por e-mail<span style={{display:'block',fontSize:12.5,color:C.inkSoft,fontWeight:400,marginTop:2}}>
+        A partir do dia 1, quem jogou na GG no mês anterior vê o lembrete no Início, com o passo a passo e o título pronto, e marca "Já enviei". Você vê quem falta em Jogadores.</span></span></label>
+    {f.ligado&&<>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
+        <div><label style={labelStyle} htmlFor="env-email">E-mail do time</label><input id="env-email" data-envio-email-in disabled={!podeEditar} style={inputStyle} value={f.email} placeholder="arquivos@seutime.com" onChange={e=>set('email',e.target.value)}/>
+          {f.email.trim()&&!emailOk&&<div style={{fontSize:12,color:C.red,marginTop:4}}>E-mail inválido.</div>}</div>
+        <div><label style={labelStyle} htmlFor="env-prazo">Prazo: até o dia</label><input id="env-prazo" data-envio-prazo disabled={!podeEditar} style={inputStyle} inputMode="numeric" value={f.prazo} onChange={e=>set('prazo',e.target.value.replace(/\D/g,'').slice(0,2))}/>
+          <div style={{fontSize:12,color:C.inkSoft,marginTop:4}}>do mês seguinte (de 1 a 28)</div></div>
+      </div>
+      <div><label style={labelStyle} htmlFor="env-instr">Passo a passo que o jogador vê</label>
+        <textarea id="env-instr" data-envio-instrucoes disabled={!podeEditar} rows={10} style={{...inputStyle,resize:'vertical',lineHeight:1.45,fontFamily:'inherit'}} value={f.instrucoes} onChange={e=>set('instrucoes',e.target.value)}/></div>
+      <div style={{fontSize:12.5,color:C.inkSoft,lineHeight:1.5}}>Título do e-mail, pronto pra copiar: <b>NOME - DIVISÃO</b>. A divisão de cada parte do time fica em "Regras por reta" (Divisão no título do e-mail); sem ela, vai o nome do time.</div>
+    </>}
+    {podeEditar&&<div><button data-envio-salvar style={{...btnP,opacity:valido?1:.5}} disabled={!valido} onClick={()=>onSalvar({...f,email:f.email.trim(),prazo:prazoN,instrucoes:f.instrucoes.trim()})}>Salvar envio mensal</button></div>}
+  </div>;
+}
 const fundoModal={position:'fixed',inset:0,background:'rgba(20,18,30,.45)',backdropFilter:'blur(3px)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:50};
 const caixaModal={background:C.surface,width:'100%',maxWidth:500,maxHeight:'92vh',overflowY:'auto',borderRadius:'24px 24px 0 0',padding:'22px 22px calc(22px + env(safe-area-inset-bottom))',display:'flex',flexDirection:'column',gap:12};
 // janela de baixo (o padrão do app): fundo escuro, Esc fecha e vai pro body
@@ -2963,6 +3029,7 @@ const REGRAS_RETA=[
   {k:'modalidades',rot:'Modalidades',kind:'list',padrao:c=>c.modalidades_permitidas||[],txt:v=>(Array.isArray(v)?v:[]).join(', ')||'—'},
   {k:'reserva_por_sala',rot:'Reserva por sala no saque',kind:'money',padrao:()=>0,txt:v=>num(v)>0?`${fmt(v)} por sala`:'nenhuma'},
   {k:'bloquear_promocao_com_mk',rot:'Não promover com MK',kind:'bool',padrao:()=>false,txt:v=>v===true?'ligado':'desligado'},
+  {k:'envio_divisao',rot:'Divisão no título do e-mail (envio mensal)',kind:'text',padrao:()=>null,txt:v=>v?String(v).toUpperCase():'nome do time'},
 ];
 
 // saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
@@ -3071,6 +3138,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       q('convite','id,unidade_id,pessoa_id,expira_em,usos_max,usos,revogado,criado_em'),q('saque'),q('contrato'),q('abertura'),q('reload'),q('grade'),q('regra_unidade'),
       sb.from('time_codigo').select('workspace_id,codigo,ativo'),q('pedido_entrada'),q('acerto_saida'),q('conferencia_saldo')]);
     const stp=await sb.rpc('stop_semana_do_time',{p_inicio:weekStart(weekEnding(todayISO()))});
+    const env=await sb.from('envio_mensal').select('pessoa_id,mes,enviado_em');
     const pessoas=p.data||[], vinculos=v.data||[];
     const eu=pessoas.find(x=>x.user_id===uid&&x.status!=='saiu')||null;
     let sit=null;
@@ -3084,7 +3152,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       grades:gr.error?[]:(gr.data||[]),regras:rg.error?[]:(rg.data||[]),
       codigo:tc.error?null:((tc.data||[])[0]||null),pedidos:pd.error?[]:(pd.data||[]).filter(x=>x.status==='pendente').sort((x,y)=>String(x.criado_em).localeCompare(String(y.criado_em))),
       acertos:acs.error?[]:(acs.data||[]).sort((x,y)=>String(y.registrado_em).localeCompare(String(x.registrado_em))),
-      stopSemana:stp&&!stp.error&&Array.isArray(stp.data)?stp.data:[]});
+      stopSemana:stp&&!stp.error&&Array.isArray(stp.data)?stp.data:[],
+      envios:env&&!env.error?(env.data||[]):[]});
   };
   useEffect(()=>{ carregar(); },[]);
   // trocou de tela: nenhuma janela da tela anterior fica aberta por cima da nova (A-036)
@@ -3152,6 +3221,19 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
     const hojeRes=(tours||[]).filter(t=>t.entry_date===hoje&&(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))).reduce((a,t)=>a+lucroTorneio(t),0);
     const slDia=stopDe(config||{},l.nome).dia*abiDoStop(config||{},l.nome,tours,hoje).valor;
     return (sem&&sem.bateu)||(slDia>0&&hojeRes<=-slDia)?{pessoa_id:l.pessoa_id,nome:l.nome}:null; }).filter(Boolean);
+  // envio mensal (comprovação da GG): quem já confirmou o do mês passado; quem não jogou na GG naquele mês não deve nada
+  const mesEnvio=mesCobrado();
+  const envioLigado=d.unidades.some(u=>regraEf(u.id,'envio_ligado')===true);
+  const envioDe=l=>{ if(l.status!=='ativo'||regraEf(l.unidade_id,'envio_ligado')!==true) return null;
+    const feito=(d.envios||[]).find(e=>e.pessoa_id===l.pessoa_id&&String(e.mes).slice(0,10)===mesEnvio); if(feito) return {st:'ok',em:feito.enviado_em};
+    if(l.torneios!=null&&!(tours||[]).some(t=>(t.pessoa_id===l.pessoa_id||(!t.pessoa_id&&nomeIgual(t.player,l.nome)))&&String(t.entry_date).slice(0,7)===mesEnvio.slice(0,7)&&salaChave(t.site)==='gg'))
+      return {st:'nao_jogou'};
+    const prazo=prazoDoEnvio(num(regraEf(l.unidade_id,'envio_prazo_dia')));
+    return {st:prazo&&hoje>prazo?'atrasado':'pendente',prazo}; };
+  const envioPend=linhas.filter(l=>(!d.eu||l.pessoa_id!==d.eu.id)&&['pendente','atrasado'].includes(envioDe(l)?.st));
+  const envioTag=l=>{ const e=envioDe(l); if(!e) return <span style={{color:C.inkSoft}}>—</span>;
+    return e.st==='ok'?<Tag tom="ok" title={`confirmou em ${dataBR(e.em)}`}>enviado</Tag>:e.st==='nao_jogou'?<span style={{color:C.inkSoft,fontSize:12.5}}>não jogou na GG</span>
+      :<Tag tom={e.st==='atrasado'?'bad':'warn'}>{e.st==='atrasado'?'atrasado':'pendente'}</Tag>; };
   // comprovação por jogador no período da tela (antifraude): digitado sem arquivo e o que mudou depois do import
   const rotPeriodo={mes:'este mês','30':'30 dias',tudo:'todo o histórico'}[periodo]||'período';
   const compPorPessoa={}, compTot={sem:0,diverge:0};
@@ -3293,7 +3375,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       </Card>}
       {!soDinheiro&&minhaUnidade&&<Card style={{padding:20}} data-minhas-regras>
         <h3 style={tituloS}>Regras da sua reta</h3>
-        {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
+        {REGRAS_RETA.filter(rr=>rr.k!=='bloquear_promocao_com_mk'&&rr.k!=='envio_divisao').map(rr=>{ const r=regraComOrigem(minhaUnidade,rr.k), v=r?r.valor:rr.padrao(config||{});
           return <div key={rr.k} data-minha-regra={rr.k} style={{display:'flex',justifyContent:'space-between',gap:10,padding:'5px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}><span style={{color:C.inkSoft}}>{rr.rot}</span><b>{rr.txt(v)}</b></div>; })}
       </Card>}
       {!soDinheiro&&minhaGradeReta&&<Card style={{padding:20}}>
@@ -3380,6 +3462,8 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       ...(paraConferir.length?[{n:paraConferir.length,t:'Planilhas para conferir',ir:'g_financeiro',tom:'warn'}]:[]),
       ...(parados.length?[{n:parados.length,t:'Alunos sem lançar há mais de 7 dias',ir:'g_jogadores',sit:'parados',tom:'bad'}]:[]),
       ...(stops.length?[{n:stops.length,t:`Bateram o stop loss: ${stops.slice(0,3).map(x=>x.nome).join(', ')}${stops.length>3?'…':''}`,ir:'g_jogadores',sit:'stop',tom:'bad'}]:[]),
+      ...(envioPend.length?[{n:envioPend.length,t:`Envio de ${nomeMes(mesEnvio)} (torneios da GG por e-mail) ainda não confirmado`,ir:'g_jogadores',sit:'envio',
+        tom:envioPend.some(l=>envioDe(l)?.st==='atrasado')?'bad':'warn'}]:[]),
       ...(compTot.diverge?[{n:compTot.diverge,t:`Torneios que mudaram depois do import (divergem do arquivo) · ${rotPeriodo}`,ir:'g_jogadores',sit:'comp',tom:'bad'}]:[]),
       ...(compTot.sem?[{n:compTot.sem,t:`Torneios digitados sem comprovação (sem o arquivo do site) · ${rotPeriodo}`,ir:'g_jogadores',sit:'comp',tom:'warn'}]:[]),
       ...(divergentes.length?[{n:divergentes.length,t:`Conferência de saldos com diferença: ${divergentes.slice(0,3).map(c=>nomeDe(c.pessoa_id)).join(', ')}${divergentes.length>3?'…':''}`,ir:'g_financeiro',tom:'bad'}]:[]),
@@ -3448,9 +3532,10 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
       &&(!busca||l.nome.toLowerCase().includes(busca))
       &&(!filtro.sit||(filtro.sit==='fora'&&gradePorPessoa[l.pessoa_id]?.fora>0)||(filtro.sit==='mk'&&mkDe(l.banca,l.mu)<0)
          ||(filtro.sit==='parados'&&parados.includes(l))||(filtro.sit==='stop'&&stops.some(x=>x.pessoa_id===l.pessoa_id))||(filtro.sit==='comp'&&!!compPorPessoa[l.pessoa_id])
+         ||(filtro.sit==='envio'&&envioPend.includes(l))
          ||(filtro.sit==='convidados'&&l.status==='convidado')));
     const chave={nome:l=>l.nome.toLowerCase(),torneios:l=>l.torneios??-1,lucro:l=>l.lucro??-1e9,banca:l=>l.banca??-1e9,mk:l=>mkDe(l.banca,l.mu)??-1e9,
-      grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||'',comp:l=>(compPorPessoa[l.pessoa_id]?.diverge||0)*1000+(compPorPessoa[l.pessoa_id]?.sem||0)}[ord.k]||(l=>l.nome);
+      grade:l=>gradePorPessoa[l.pessoa_id]?.fora||0,ultimo:l=>l.ultimo_lancamento||'',envio:l=>({atrasado:3,pendente:2,nao_jogou:1,ok:0})[envioDe(l)?.st]??-1,comp:l=>(compPorPessoa[l.pessoa_id]?.diverge||0)*1000+(compPorPessoa[l.pessoa_id]?.sem||0)}[ord.k]||(l=>l.nome);
     lista.sort((a,b)=>{ const x=chave(a), y=chave(b); return (x<y?-1:x>y?1:0)*ord.dir; });
     const temDin=linhas.some(l=>l.banca!=null), temPerf=linhas.some(l=>l.torneios!=null);
     // nome e ⋯ presos nas pontas: a tabela rola de lado sem esconder de quem é a linha (A-017)
@@ -3474,7 +3559,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <Chip on={!filtro.reta} onClick={()=>setFiltro(f=>({...f,reta:null}))}>Todas as retas</Chip>
         {retasComJogador.map(u=><Chip key={u.id} data-filtro-reta={u.nome} on={filtro.reta===u.id} onClick={()=>setFiltro(f=>({...f,reta:f.reta===u.id?null:u.id}))}>{u.nome}</Chip>)}
         <span style={{width:1,height:22,background:C.border,margin:'0 4px'}}/>
-        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[]),...(compTot.sem+compTot.diverge?[['comp','Sem comprovação']]:[])]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
+        {[...(temPerf?[['fora','Fora da grade']]:[]),...(temDin?[['mk','Em MK']]:[]),...(temPerf?[['parados','Sem lançar'],...(stops.length?[['stop','Stop loss']]:[]),...(compTot.sem+compTot.diverge?[['comp','Sem comprovação']]:[])]:[]),...(envioLigado?[['envio','Envio pendente']]:[]),['convidados','Convidados']].map(([k,r])=><Chip key={k} data-filtro-sit={k} on={filtro.sit===k} onClick={()=>setFiltro(f=>({...f,sit:f.sit===k?null:k}))}>{r}</Chip>)}
         {periodoChips}
       </div>
       <Card style={{padding:celular?'8px':'6px 10px'}}>
@@ -3496,12 +3581,13 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
                 {temPerf&&<div><span style={{color:C.inkSoft}}>Grade 7 dias </span>{!g?'—':g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</div>}
                 {temPerf&&<div><span style={{color:C.inkSoft}}>Último </span><b>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):'nunca lançou'}</b>{dd!=null&&dd>7&&<span data-parado style={{color:C.red,fontWeight:700}}> · parado há {dd} dias</span>}</div>}
                 {temPerf&&<div data-comp-de={l.nome} style={{gridColumn:'1/-1'}}><span style={{color:C.inkSoft}}>Comprovação </span>{compTag(l.pessoa_id)}</div>}
+                {envioLigado&&<div data-envio-de={l.nome} style={{gridColumn:'1/-1'}}><span style={{color:C.inkSoft}}>Envio de {nomeMes(mesEnvio)} </span>{envioTag(l)}</div>}
               </div>}
             </div>; })}
         </div>}
         {lista.length>0&&!celular&&<div style={{overflowX:'auto'}}><table data-jogadores style={{width:'100%',borderCollapse:'separate',borderSpacing:0}}>
           <thead><tr>{col('nome','Jogador',fixaEsq)}{temPerf&&col('torneios','Torneios')}{temPerf&&col('lucro','Resultado')}
-            {temDin&&col('banca','Banca')}{temDin&&col('mk','MK / Profit')}{temPerf&&col('grade','Grade 7 dias')}{temPerf&&col('comp','Comprovação')}{temPerf&&col('ultimo','Último lançamento')}<th style={{...thS,...fixaDir}}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
+            {temDin&&col('banca','Banca')}{temDin&&col('mk','MK / Profit')}{temPerf&&col('grade','Grade 7 dias')}{temPerf&&col('comp','Comprovação')}{envioLigado&&col('envio',`Envio ${nomeMes(mesEnvio).slice(0,3)}`)}{temPerf&&col('ultimo','Último lançamento')}<th style={{...thS,...fixaDir}}><span style={{position:'absolute',left:-9999}}>Ações</span></th></tr></thead>
           <tbody>{lista.map(l=>{ const g=gradePorPessoa[l.pessoa_id]; const dd=diasDesde(l.ultimo_lancamento); const conv=l.status==='convidado'; const ac=acoesJog(l);
             return <tr key={l.pessoa_id} data-jogador={l.nome}>
               <td style={{...tdS,...fixaEsq}}>{verPainel(l)?<button onClick={()=>onVerJogador(l.nome,l)} style={{border:'none',background:'transparent',padding:0,color:P,fontWeight:700,fontSize:14,cursor:'pointer'}}>{l.nome}</button>:<b>{l.nome}</b>}
@@ -3513,6 +3599,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
               {temDin&&<td style={tdS}>{conv?<span style={{color:C.inkSoft}}>—</span>:<MkSelo v={mkDe(l.banca,l.mu)}/>}</td>}
               {temPerf&&<td style={tdS}>{!g?<span style={{color:C.inkSoft}}>—</span>:g.fora?<Tag tom="bad">{g.fora} fora</Tag>:g.atencao?<Tag tom="warn">{g.atencao} atenção</Tag>:<Tag tom="ok">dentro</Tag>}</td>}
               {temPerf&&<td style={tdS} data-comp-de={l.nome}>{conv?<span style={{color:C.inkSoft}}>—</span>:compTag(l.pessoa_id)}</td>}
+              {envioLigado&&<td style={tdS} data-envio-de={l.nome}>{envioTag(l)}</td>}
               {temPerf&&<td style={tdS}>{l.ultimo_lancamento?dataBR(l.ultimo_lancamento):(conv?'—':'nunca lançou')}{dd!=null&&dd>7&&<div data-parado style={{fontSize:12,color:C.red,fontWeight:700}}>parado há {dd} dias</div>}</td>}
               <td style={{...tdS,...fixaDir}}>{ac.length>0&&<button aria-label={`Ações de ${l.nome}`} data-acoes={l.nome} onClick={()=>setMenuDe(l.pessoa_id)}
                   style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${C.border}`,background:C.surface,color:C.inkSoft,fontWeight:800,cursor:'pointer'}}>⋯</button>}</td>
@@ -3818,6 +3905,17 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
         <div data-contrato style={{fontSize:14,marginBottom:12,lineHeight:1.5}}>{faixasTexto(contratoRaiz?.faixas)}</div>
         {podeRegras&&<button data-editar-contrato style={btnS} onClick={()=>setContratoAberto(true)}>{contratoRaiz?'Mudar contrato':'Definir contrato'}</button>}
       </Card>
+      {raiz&&<Card style={{padding:20}} data-envio-mensal>
+        <h3 style={tituloS}>Envio mensal pro time</h3>
+        <EnvioConfig key={String(regraEf(raiz.id,'envio_ligado'))+String(regraEf(raiz.id,'envio_email'))} podeEditar={!!podeRegras}
+          atual={{ligado:regraEf(raiz.id,'envio_ligado'),email:regraEf(raiz.id,'envio_email'),prazo:regraEf(raiz.id,'envio_prazo_dia'),instrucoes:regraEf(raiz.id,'envio_instrucoes')}}
+          onSalvar={async f=>{ setAviso(null); const r0=raiz.id;
+            const cham=[['definir_regra',{p_unidade:r0,p_chave:'envio_ligado',p_valor:!!f.ligado,p_desde:null}],
+              ...(f.ligado?[['definir_regra',{p_unidade:r0,p_chave:'envio_email',p_valor:f.email,p_desde:null}],['definir_regra',{p_unidade:r0,p_chave:'envio_prazo_dia',p_valor:f.prazo,p_desde:null}],
+                f.instrucoes?['definir_regra',{p_unidade:r0,p_chave:'envio_instrucoes',p_valor:f.instrucoes,p_desde:null}]:['limpar_regra',{p_unidade:r0,p_chave:'envio_instrucoes'}]]:[])];
+            for(const [fn,args] of cham){ const {error}=await sb.rpc(fn,args); if(error){ setAviso({erro:true,texto:error.message||'Não deu certo.'}); await carregar(); return; } }
+            setAviso({erro:false,texto:f.ligado?'Envio mensal ligado: quem jogou na GG recebe o lembrete a partir do dia 1.':'Envio mensal desligado.'}); await carregar(); }}/>
+      </Card>}
       <Card style={{padding:20}}>
         <h3 style={tituloS}>Promoção</h3>
         <label style={{display:'flex',gap:10,alignItems:'center',fontSize:14,fontWeight:600,cursor:podeRegras?'pointer':'default'}}>
@@ -3842,7 +3940,7 @@ function TimeApp({session,secao,tours,config,banca,onVerJogador,onIr,marca,nomeT
           {REGRAS_RETA.map(rr=>{ const r=regraComOrigem(selU.id,rr.k), proprio=!!(r&&r.unidade_id===selU.id), v=r?r.valor:rr.padrao(config||{});
             const origem=r?(proprio?(ehRaiz?'do time':'desta unidade'):`herdado de ${U[r.unidade_id]?.nome}`):'padrão do time';
             // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
-            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk'].includes(rr.k)&&!proprio;
+            const doPadrao=ehRaiz&&!['reserva_por_sala','bloquear_promocao_com_mk','envio_divisao'].includes(rr.k)&&!proprio;
             const editavel=podeSel&&(!doPadrao||!!onPadrao);
             return <div key={rr.k} data-regra={rr.k} style={{display:'grid',gridTemplateColumns:celular?'1fr auto':'minmax(170px,1fr) auto auto',alignItems:'center',gap:'4px 10px',padding:'9px 0',borderTop:`1px solid ${C.border}`,fontSize:13.5}}>
               <span style={{color:C.inkSoft,gridColumn:celular?'1 / -1':undefined}}>{rr.rot}</span>
@@ -4115,6 +4213,7 @@ function Dashboard({session,profile}){
   const [installCard,setInstallCard]=useState(false); // convite "instalar na tela inicial"
   const [iosHelp,setIosHelp]=useState(false);     // modal com o passo a passo do iPhone
   const [alertDetail,setAlertDetail]=useState(null);
+  const [envioAberto,setEnvioAberto]=useState(false);   // janela do envio mensal (comprovação da GG)
   const [editing,setEditing]=useState(null);    // {type, item}
   const [quickEdit,setQuickEdit]=useState(null);
   const [month,setMonth]=useState(todayISO().slice(0,7));
@@ -4253,12 +4352,13 @@ function Dashboard({session,profile}){
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime=async()=>{
     try{
-      const [pe,vi,ac,un,sq,gr,rg,apo,rel]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
+      const [pe,vi,ac,un,sq,gr,rg,apo,rel,env]=await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'),sb.from('vinculo').select('pessoa_id,unidade_id,fim'),
         sb.from('acesso').select('pessoa_id,unidade_id,capacidades'),sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'),
         lerTudo(()=>sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')),
         sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'),sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'),
         lerTudo(()=>sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')),
-        lerTudo(()=>sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id'))]);
+        lerTudo(()=>sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id')),
+        sb.from('envio_mensal').select('pessoa_id,mes,enviado_em')]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe={}; (pe.data||[]).forEach(x=>{ const v=(vi.data||[]).find(v=>v.pessoa_id===x.id&&!v.fim); if(v) unidadeDe[String(x.nome).trim().toLowerCase()]=v.unidade_id; });
       GRADE_CTX={unidades:un.data||[],grades:gr.error?[]:(gr.data||[]),unidadeDe,regras:rg.error?[]:(rg.data||[])};
@@ -4277,7 +4377,8 @@ function Dashboard({session,profile}){
       const naRaiz=!!(raiz&&meusAc.some(a=>a.unidade_id===raiz.id));
       setTimeGente({jogadores,eu,podeConfigurar,saquesPagos,caps,temGestao:meusAc.length>0,joga,souAdmin,naRaiz,carregado:true,
         pessoas:pessoas.map(x=>({id:x.id,nome:x.nome})),
-        dinheiro:{saques:sq.error?[]:(sq.data||[]),aportes:apo.error?[]:(apo.data||[]),reloads:rel.error?[]:(rel.data||[])}});
+        dinheiro:{saques:sq.error?[]:(sq.data||[]),aportes:apo.error?[]:(apo.data||[]),reloads:rel.error?[]:(rel.data||[])},
+        envios:env&&!env.error?(env.data||[]):[]});
     }catch(e){ console.error(e); }
   };
   const loadAll=async()=>{
@@ -4883,8 +4984,17 @@ function Dashboard({session,profile}){
   // piso respeitado contra os saques SOMADOS (não por jogador isolado): desconta de uma banca que vai diminuindo
   let saqueAutTotal=0; { let bancaLivre=bancaAtual; players.forEach(p=>{ const w=curWeek[p]; if(!w||w.saqueAut===0||w.makeFinal>0) return; if(bancaLivre-w.saqueAut<piso) return; bancaLivre-=w.saqueAut; saqueAutTotal+=w.saqueAut; }); }
 
+  // envio mensal pro time (comprovação da GG): o do mês passado, enquanto o jogador não confirmar. Só pra quem jogou
+  // na GG naquele mês (quem não joga na GG não manda nada)
+  const envioJogador=(()=>{ if(!modoTime||somenteLeitura||gestaoAtiva||!timeGente.eu||!timeGente.joga) return null; const eu=timeGente.eu.nome;
+    if(regraDoJogador('envio_ligado',eu)!==true) return null; const mes=mesCobrado();
+    if(!jogouGGno(tours,eu,mes)||(timeGente.envios||[]).some(e=>String(e.mes).slice(0,10)===mes)) return null;
+    const prazo=prazoDoEnvio(num(regraDoJogador('envio_prazo_dia',eu))), div=regraDoJogador('envio_divisao',eu)||(ws?(ws.marca_nome||ws.name):'');
+    return {mes,prazo,atrasado:!!prazo&&todayISO()>prazo,email:regraDoJogador('envio_email',eu)||'',instrucoes:regraDoJogador('envio_instrucoes',eu)||'',titulo:tituloDoEnvio(eu,div)}; })();
   /* alertas */
   const alerts=[];
+  if(envioJogador) alerts.push({key:'envio:'+envioJogador.mes,tone:envioJogador.atrasado?C.red:C.gold,
+    text:`Envio de ${nomeMes(envioJogador.mes)}: mande o e-mail com os torneios da GG pro time${envioJogador.prazo?(envioJogador.atrasado?` (o prazo era ${dataBR(envioJogador.prazo)})`:` até ${dataBR(envioJogador.prazo)}`):''}. O passo a passo está no Início.`});
   if(!solo) players.forEach(p=>{ if(curMakeUp[p]>num(config.makeup_max_recomendado)) alerts.push({key:'makeup:'+p,tone:C.red,text:`Make-up de ${p} em ${fmt(curMakeUp[p])} — acima do recomendado (${fmt(config.makeup_max_recomendado)}).`}); });
   // no time, piso só vale quando o time definiu um e a banca já tem os saldos de entrada (planilha conferida) (A-051)
   if(bancaAtual<piso&&!(modoTime&&(!(piso>0)||(sitSel&&sitSel.abertura!=='confirmada')))) alerts.push({key:'piso',tone:C.red,text:`Banca atual ${fmt(bancaAtual)} está abaixo do piso mínimo (${fmt(piso)}).`});
@@ -4901,6 +5011,8 @@ function Dashboard({session,profile}){
       .sort((x,y)=>String(y.data).localeCompare(String(x.data))); })();
   // o que está em aberto, no Início (A-014, A-051, A-052, A-053, A-055): saque e reload pedidos, planilha, dias sem lançar
   const faixasInicio=(()=>{ if(!solo) return []; const f=[], quem=somenteLeitura?alunoAberto:null;
+    if(envioJogador) f.push({k:'envio',tom:envioJogador.atrasado?'bad':'warn',titulo:`Envio de ${nomeMes(envioJogador.mes)}: mande os torneios da GG pro time`,
+      texto:envioJogador.prazo?(envioJogador.atrasado?`o prazo era ${dataBR(envioJogador.prazo)}`:`até ${dataBR(envioJogador.prazo)}`):'pelo e-mail do time',acao:['Como fazer',()=>setEnvioAberto(true)]});
     const sq=modoTime&&sitSel?sitSel.saque_aberto:null, rl=modoTime&&sitSel?sitSel.reload_aberto:null, ab=modoTime&&sitSel?sitSel.abertura:null;
     if(sq) f.push(sq.status==='aprovado'
       ?{k:'saque',tom:'warn',titulo:'Saque aprovado',texto:quem?`o time espera ${fmt(sq.total_time)} de ${quem}`:`mande ${fmt(sq.total_time)} pro time; depois o time confirma que recebeu`}
@@ -6291,6 +6403,9 @@ function Dashboard({session,profile}){
       </div>;
     })()}
 
+    {envioAberto&&envioJogador&&<EnvioModal mes={envioJogador.mes} email={envioJogador.email} titulo={envioJogador.titulo} instrucoes={envioJogador.instrucoes} prazo={envioJogador.prazo}
+      onClose={()=>setEnvioAberto(false)} onEnviei={async()=>{ const {error}=await sb.rpc('marcar_envio_mensal',{p_mes:envioJogador.mes,p_enviado:true});
+        if(error){ alert(error.message||'Não deu certo.'); return; } setEnvioAberto(false); await carregarGenteTime(); }}/>}
     {/* modal adicionar */}
     {modal&&(()=>{const type=typeof modal==='string'?modal:modal.type; const initial=typeof modal==='object'?modal.initial:null;
       if(type==='transfer') return <AddModal title="Nova transferência" fields={FIELDS.transfer} initial={initial} onClose={()=>setModal(null)} onSave={addTransfer}/>;

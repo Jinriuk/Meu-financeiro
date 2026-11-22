@@ -9963,6 +9963,292 @@ function useEsc(onClose, ativo = true) {
     };
   }, [ativo]);
 }
+/* ---------- envio mensal pro time (comprovação da GG por e-mail) ---------- */
+// o mês cobrado é o anterior: em novembro, manda-se o arquivo dos torneios de outubro
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const mesCobrado = (hoje = todayISO()) => {
+  const [y, m] = String(hoje).slice(0, 7).split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return d.toISOString().slice(0, 10);
+};
+const nomeMes = iso => MESES[Number(String(iso).slice(5, 7)) - 1] || '';
+const prazoDoEnvio = (dia, hoje = todayISO()) => dia ? `${String(hoje).slice(0, 7)}-${String(Math.min(28, Math.max(1, Math.round(dia)))).padStart(2, '0')}` : null;
+const jogouGGno = (tours, player, mes) => (tours || []).some(t => String(t.entry_date).slice(0, 7) === String(mes).slice(0, 7) && salaChave(t.site) === 'gg' && (!player || nomeIgual(t.player, player)));
+const tituloDoEnvio = (nome, divisao) => `${String(nome || '').trim().toUpperCase()} - ${String(divisao || '').trim().toUpperCase()}`;
+// modelo do passo a passo (o admin troca pelo texto do time em Regras do time)
+const ENVIO_MODELO = `Arquivo 1: torneios do mês
+1. No GG, abra o PokerCraft e vá em MY TOURNAMENTS.
+2. Em DATE, escolha CUSTOM RANGE com o mês inteiro e clique em SHOW.
+3. Marque o quadrado ao lado de START TIME e clique no botão verde DOWNLOAD GAME SUMMARIES (não é GAME HISTORIES). Se aparecer "too many hands/tournaments", baixe em duas partes (dia 1 a 15 e dia 16 ao fim do mês), cada uma com o seu print.
+4. Renomeie o arquivo com o título abaixo. Não converta o arquivo.
+5. Tire um print mostrando a opção TODOS OS TORNEIOS selecionada.
+
+Arquivo 2: refund do mês
+1. No mesmo lugar, com o mês inteiro, marque só SHOW ONLY REFUND e clique em SHOW.
+2. Marque todos e clique em DOWNLOAD GAME SUMMARIES. Se não tiver refund, mande só o print mostrando que não há nada.
+
+Mande os arquivos e os prints pro e-mail do time, com o título abaixo. Se entrou no time no meio do mês, mande a partir do dia em que entrou.`;
+// janela do jogador: o passo a passo, o título pronto, o e-mail e "Já enviei"
+function EnvioModal({
+  mes,
+  email,
+  titulo,
+  instrucoes,
+  prazo,
+  onEnviei,
+  onClose
+}) {
+  useEsc(onClose);
+  const [copiado, setCopiado] = useState(null);
+  const copiar = (k, txt) => {
+    try {
+      navigator.clipboard.writeText(txt);
+      setCopiado(k);
+      setTimeout(() => setCopiado(null), 1500);
+    } catch (e) {}
+  };
+  return /*#__PURE__*/React.createElement(Portal, null, /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: fundoModal
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    "data-envio-modal": true,
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Envio do m\xEAs",
+    className: "ftfade",
+    style: {
+      ...caixaModal,
+      maxWidth: 560
+    }
+  }, topoModal(`Envio de ${nomeMes(mes)}`, onClose), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "O time pede, todo m\xEAs, o arquivo dos torneios da GG do m\xEAs anterior por e-mail", prazo ? /*#__PURE__*/React.createElement(React.Fragment, null, ", at\xE9 ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.ink
+    }
+  }, dataBR(prazo))) : null, ". Sem ele, o time pode segurar reload e saque."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.bg,
+      borderRadius: 12,
+      padding: '12px 14px',
+      fontSize: 13,
+      lineHeight: 1.6,
+      whiteSpace: 'pre-line',
+      maxHeight: 280,
+      overflowY: 'auto'
+    },
+    "data-envio-passos": true
+  }, instrucoes || ENVIO_MODELO), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      minWidth: 58
+    }
+  }, "T\xEDtulo"), /*#__PURE__*/React.createElement("b", {
+    "data-envio-titulo": true,
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, titulo), /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => copiar('t', titulo)
+  }, copiado === 't' ? 'Copiado' : 'Copiar')), email && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      minWidth: 58
+    }
+  }, "E-mail"), /*#__PURE__*/React.createElement("b", {
+    "data-envio-email": true,
+    style: {
+      flex: 1,
+      minWidth: 0,
+      overflowWrap: 'anywhere'
+    }
+  }, email), /*#__PURE__*/React.createElement("button", {
+    style: btnS,
+    onClick: () => copiar('e', email)
+  }, copiado === 'e' ? 'Copiado' : 'Copiar'))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      flexWrap: 'wrap'
+    }
+  }, email && /*#__PURE__*/React.createElement("a", {
+    href: `mailto:${email}?subject=${encodeURIComponent(titulo)}`,
+    style: {
+      ...btnS,
+      textDecoration: 'none',
+      display: 'inline-flex',
+      alignItems: 'center'
+    }
+  }, "Abrir o e-mail"), /*#__PURE__*/React.createElement("button", {
+    "data-envio-enviei": true,
+    style: {
+      ...btnP,
+      flex: 1
+    },
+    onClick: onEnviei
+  }, "J\xE1 enviei")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft
+    }
+  }, "Os arquivos v\xE3o anexados no e-mail; o app n\xE3o manda nada sozinho. \"J\xE1 enviei\" s\xF3 avisa o time que voc\xEA mandou."))));
+}
+function EnvioConfig({
+  atual,
+  podeEditar,
+  onSalvar
+}) {
+  const [f, setF] = useState(() => ({
+    ligado: atual.ligado === true,
+    email: atual.email || '',
+    prazo: atual.prazo ? String(atual.prazo) : '6',
+    instrucoes: atual.instrucoes || ENVIO_MODELO
+  }));
+  const set = (k, v) => setF(x => ({
+    ...x,
+    [k]: v
+  }));
+  const prazoN = parseInt(f.prazo, 10),
+    emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim());
+  const valido = !f.ligado || emailOk && prazoN >= 1 && prazoN <= 28;
+  return /*#__PURE__*/React.createElement("div", {
+    "data-envio-config": true,
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'flex',
+      gap: 10,
+      alignItems: 'flex-start',
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: podeEditar ? 'pointer' : 'default'
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    "data-envio-ligado": true,
+    disabled: !podeEditar,
+    checked: f.ligado,
+    onChange: e => set('ligado', e.target.checked),
+    style: {
+      marginTop: 3
+    }
+  }), /*#__PURE__*/React.createElement("span", null, "Lembrar os jogadores de mandar, todo m\xEAs, o arquivo dos torneios da GG por e-mail", /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: 'block',
+      fontSize: 12.5,
+      color: C.inkSoft,
+      fontWeight: 400,
+      marginTop: 2
+    }
+  }, "A partir do dia 1, quem jogou na GG no m\xEAs anterior v\xEA o lembrete no In\xEDcio, com o passo a passo e o t\xEDtulo pronto, e marca \"J\xE1 enviei\". Voc\xEA v\xEA quem falta em Jogadores."))), f.ligado && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))',
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "env-email"
+  }, "E-mail do time"), /*#__PURE__*/React.createElement("input", {
+    id: "env-email",
+    "data-envio-email-in": true,
+    disabled: !podeEditar,
+    style: inputStyle,
+    value: f.email,
+    placeholder: "arquivos@seutime.com",
+    onChange: e => set('email', e.target.value)
+  }), f.email.trim() && !emailOk && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.red,
+      marginTop: 4
+    }
+  }, "E-mail inv\xE1lido.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "env-prazo"
+  }, "Prazo: at\xE9 o dia"), /*#__PURE__*/React.createElement("input", {
+    id: "env-prazo",
+    "data-envio-prazo": true,
+    disabled: !podeEditar,
+    style: inputStyle,
+    inputMode: "numeric",
+    value: f.prazo,
+    onChange: e => set('prazo', e.target.value.replace(/\D/g, '').slice(0, 2))
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.inkSoft,
+      marginTop: 4
+    }
+  }, "do m\xEAs seguinte (de 1 a 28)"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: labelStyle,
+    htmlFor: "env-instr"
+  }, "Passo a passo que o jogador v\xEA"), /*#__PURE__*/React.createElement("textarea", {
+    id: "env-instr",
+    "data-envio-instrucoes": true,
+    disabled: !podeEditar,
+    rows: 10,
+    style: {
+      ...inputStyle,
+      resize: 'vertical',
+      lineHeight: 1.45,
+      fontFamily: 'inherit'
+    },
+    value: f.instrucoes,
+    onChange: e => set('instrucoes', e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: C.inkSoft,
+      lineHeight: 1.5
+    }
+  }, "T\xEDtulo do e-mail, pronto pra copiar: ", /*#__PURE__*/React.createElement("b", null, "NOME - DIVIS\xC3O"), ". A divis\xE3o de cada parte do time fica em \"Regras por reta\" (Divis\xE3o no t\xEDtulo do e-mail); sem ela, vai o nome do time.")), podeEditar && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+    "data-envio-salvar": true,
+    style: {
+      ...btnP,
+      opacity: valido ? 1 : .5
+    },
+    disabled: !valido,
+    onClick: () => onSalvar({
+      ...f,
+      email: f.email.trim(),
+      prazo: prazoN,
+      instrucoes: f.instrucoes.trim()
+    })
+  }, "Salvar envio mensal")));
+}
 const fundoModal = {
   position: 'fixed',
   inset: 0,
@@ -10350,6 +10636,12 @@ const REGRAS_RETA = [{
   kind: 'bool',
   padrao: () => false,
   txt: v => v === true ? 'ligado' : 'desligado'
+}, {
+  k: 'envio_divisao',
+  rot: 'Divisão no título do e-mail (envio mensal)',
+  kind: 'text',
+  padrao: () => null,
+  txt: v => v ? String(v).toUpperCase() : 'nome do time'
 }];
 
 // saída do jogador (opção B do plano): a prévia do acerto vem do servidor (refeita com a banca que quem confere digita),
@@ -10671,6 +10963,7 @@ function TimeApp({
     const stp = await sb.rpc('stop_semana_do_time', {
       p_inicio: weekStart(weekEnding(todayISO()))
     });
+    const env = await sb.from('envio_mensal').select('pessoa_id,mes,enviado_em');
     const pessoas = p.data || [],
       vinculos = v.data || [];
     const eu = pessoas.find(x => x.user_id === uid && x.status !== 'saiu') || null;
@@ -10705,7 +10998,8 @@ function TimeApp({
       codigo: tc.error ? null : (tc.data || [])[0] || null,
       pedidos: pd.error ? [] : (pd.data || []).filter(x => x.status === 'pendente').sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em))),
       acertos: acs.error ? [] : (acs.data || []).sort((x, y) => String(y.registrado_em).localeCompare(String(x.registrado_em))),
-      stopSemana: stp && !stp.error && Array.isArray(stp.data) ? stp.data : []
+      stopSemana: stp && !stp.error && Array.isArray(stp.data) ? stp.data : [],
+      envios: env && !env.error ? env.data || [] : []
     });
   };
   useEffect(() => {
@@ -10893,6 +11187,45 @@ function TimeApp({
       nome: l.nome
     } : null;
   }).filter(Boolean);
+  // envio mensal (comprovação da GG): quem já confirmou o do mês passado; quem não jogou na GG naquele mês não deve nada
+  const mesEnvio = mesCobrado();
+  const envioLigado = d.unidades.some(u => regraEf(u.id, 'envio_ligado') === true);
+  const envioDe = l => {
+    if (l.status !== 'ativo' || regraEf(l.unidade_id, 'envio_ligado') !== true) return null;
+    const feito = (d.envios || []).find(e => e.pessoa_id === l.pessoa_id && String(e.mes).slice(0, 10) === mesEnvio);
+    if (feito) return {
+      st: 'ok',
+      em: feito.enviado_em
+    };
+    if (l.torneios != null && !(tours || []).some(t => (t.pessoa_id === l.pessoa_id || !t.pessoa_id && nomeIgual(t.player, l.nome)) && String(t.entry_date).slice(0, 7) === mesEnvio.slice(0, 7) && salaChave(t.site) === 'gg')) return {
+      st: 'nao_jogou'
+    };
+    const prazo = prazoDoEnvio(num(regraEf(l.unidade_id, 'envio_prazo_dia')));
+    return {
+      st: prazo && hoje > prazo ? 'atrasado' : 'pendente',
+      prazo
+    };
+  };
+  const envioPend = linhas.filter(l => (!d.eu || l.pessoa_id !== d.eu.id) && ['pendente', 'atrasado'].includes(envioDe(l)?.st));
+  const envioTag = l => {
+    const e = envioDe(l);
+    if (!e) return /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft
+      }
+    }, "\u2014");
+    return e.st === 'ok' ? /*#__PURE__*/React.createElement(Tag, {
+      tom: "ok",
+      title: `confirmou em ${dataBR(e.em)}`
+    }, "enviado") : e.st === 'nao_jogou' ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.inkSoft,
+        fontSize: 12.5
+      }
+    }, "n\xE3o jogou na GG") : /*#__PURE__*/React.createElement(Tag, {
+      tom: e.st === 'atrasado' ? 'bad' : 'warn'
+    }, e.st === 'atrasado' ? 'atrasado' : 'pendente');
+  };
   // comprovação por jogador no período da tela (antifraude): digitado sem arquivo e o que mudou depois do import
   const rotPeriodo = {
     mes: 'este mês',
@@ -11605,7 +11938,7 @@ function TimeApp({
       "data-minhas-regras": true
     }, /*#__PURE__*/React.createElement("h3", {
       style: tituloS
-    }, "Regras da sua reta"), REGRAS_RETA.filter(rr => rr.k !== 'bloquear_promocao_com_mk').map(rr => {
+    }, "Regras da sua reta"), REGRAS_RETA.filter(rr => rr.k !== 'bloquear_promocao_com_mk' && rr.k !== 'envio_divisao').map(rr => {
       const r = regraComOrigem(minhaUnidade, rr.k),
         v = r ? r.valor : rr.padrao(config || {});
       return /*#__PURE__*/React.createElement("div", {
@@ -11998,6 +12331,12 @@ function TimeApp({
       ir: 'g_jogadores',
       sit: 'stop',
       tom: 'bad'
+    }] : []), ...(envioPend.length ? [{
+      n: envioPend.length,
+      t: `Envio de ${nomeMes(mesEnvio)} (torneios da GG por e-mail) ainda não confirmado`,
+      ir: 'g_jogadores',
+      sit: 'envio',
+      tom: envioPend.some(l => envioDe(l)?.st === 'atrasado') ? 'bad' : 'warn'
     }] : []), ...(compTot.diverge ? [{
       n: compTot.diverge,
       t: `Torneios que mudaram depois do import (divergem do arquivo) · ${rotPeriodo}`,
@@ -12349,7 +12688,7 @@ function TimeApp({
   if (secao === 'g_jogadores') {
     const retasComJogador = [...new Set(linhas.map(l => l.unidade_id))].map(id => U[id]).filter(Boolean).sort((a, b) => posU[a.id] - posU[b.id]);
     const busca = filtro.busca.trim().toLowerCase();
-    const lista = linhas.filter(l => (!filtro.reta || String(l.caminho || U[l.unidade_id]?.caminho || '').startsWith(U[filtro.reta]?.caminho || '§')) && (!busca || l.nome.toLowerCase().includes(busca)) && (!filtro.sit || filtro.sit === 'fora' && gradePorPessoa[l.pessoa_id]?.fora > 0 || filtro.sit === 'mk' && mkDe(l.banca, l.mu) < 0 || filtro.sit === 'parados' && parados.includes(l) || filtro.sit === 'stop' && stops.some(x => x.pessoa_id === l.pessoa_id) || filtro.sit === 'comp' && !!compPorPessoa[l.pessoa_id] || filtro.sit === 'convidados' && l.status === 'convidado'));
+    const lista = linhas.filter(l => (!filtro.reta || String(l.caminho || U[l.unidade_id]?.caminho || '').startsWith(U[filtro.reta]?.caminho || '§')) && (!busca || l.nome.toLowerCase().includes(busca)) && (!filtro.sit || filtro.sit === 'fora' && gradePorPessoa[l.pessoa_id]?.fora > 0 || filtro.sit === 'mk' && mkDe(l.banca, l.mu) < 0 || filtro.sit === 'parados' && parados.includes(l) || filtro.sit === 'stop' && stops.some(x => x.pessoa_id === l.pessoa_id) || filtro.sit === 'comp' && !!compPorPessoa[l.pessoa_id] || filtro.sit === 'envio' && envioPend.includes(l) || filtro.sit === 'convidados' && l.status === 'convidado'));
     const chave = {
       nome: l => l.nome.toLowerCase(),
       torneios: l => l.torneios ?? -1,
@@ -12358,6 +12697,12 @@ function TimeApp({
       mk: l => mkDe(l.banca, l.mu) ?? -1e9,
       grade: l => gradePorPessoa[l.pessoa_id]?.fora || 0,
       ultimo: l => l.ultimo_lancamento || '',
+      envio: l => ({
+        atrasado: 3,
+        pendente: 2,
+        nao_jogou: 1,
+        ok: 0
+      })[envioDe(l)?.st] ?? -1,
       comp: l => (compPorPessoa[l.pessoa_id]?.diverge || 0) * 1000 + (compPorPessoa[l.pessoa_id]?.sem || 0)
     }[ord.k] || (l => l.nome);
     lista.sort((a, b) => {
@@ -12474,7 +12819,7 @@ function TimeApp({
         background: C.border,
         margin: '0 4px'
       }
-    }), [...(temPerf ? [['fora', 'Fora da grade']] : []), ...(temDin ? [['mk', 'Em MK']] : []), ...(temPerf ? [['parados', 'Sem lançar'], ...(stops.length ? [['stop', 'Stop loss']] : []), ...(compTot.sem + compTot.diverge ? [['comp', 'Sem comprovação']] : [])] : []), ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
+    }), [...(temPerf ? [['fora', 'Fora da grade']] : []), ...(temDin ? [['mk', 'Em MK']] : []), ...(temPerf ? [['parados', 'Sem lançar'], ...(stops.length ? [['stop', 'Stop loss']] : []), ...(compTot.sem + compTot.diverge ? [['comp', 'Sem comprovação']] : [])] : []), ...(envioLigado ? [['envio', 'Envio pendente']] : []), ['convidados', 'Convidados']].map(([k, r]) => /*#__PURE__*/React.createElement(Chip, {
       key: k,
       "data-filtro-sit": k,
       on: filtro.sit === k,
@@ -12631,7 +12976,16 @@ function TimeApp({
         style: {
           color: C.inkSoft
         }
-      }, "Comprova\xE7\xE3o "), compTag(l.pessoa_id))));
+      }, "Comprova\xE7\xE3o "), compTag(l.pessoa_id)), envioLigado && /*#__PURE__*/React.createElement("div", {
+        "data-envio-de": l.nome,
+        style: {
+          gridColumn: '1/-1'
+        }
+      }, /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.inkSoft
+        }
+      }, "Envio de ", nomeMes(mesEnvio), " "), envioTag(l))));
     })), lista.length > 0 && !celular && /*#__PURE__*/React.createElement("div", {
       style: {
         overflowX: 'auto'
@@ -12643,7 +12997,7 @@ function TimeApp({
         borderCollapse: 'separate',
         borderSpacing: 0
       }
-    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, col('nome', 'Jogador', fixaEsq), temPerf && col('torneios', 'Torneios'), temPerf && col('lucro', 'Resultado'), temDin && col('banca', 'Banca'), temDin && col('mk', 'MK / Profit'), temPerf && col('grade', 'Grade 7 dias'), temPerf && col('comp', 'Comprovação'), temPerf && col('ultimo', 'Último lançamento'), /*#__PURE__*/React.createElement("th", {
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, col('nome', 'Jogador', fixaEsq), temPerf && col('torneios', 'Torneios'), temPerf && col('lucro', 'Resultado'), temDin && col('banca', 'Banca'), temDin && col('mk', 'MK / Profit'), temPerf && col('grade', 'Grade 7 dias'), temPerf && col('comp', 'Comprovação'), envioLigado && col('envio', `Envio ${nomeMes(mesEnvio).slice(0, 3)}`), temPerf && col('ultimo', 'Último lançamento'), /*#__PURE__*/React.createElement("th", {
       style: {
         ...thS,
         ...fixaDir
@@ -12735,7 +13089,10 @@ function TimeApp({
         style: {
           color: C.inkSoft
         }
-      }, "\u2014") : compTag(l.pessoa_id)), temPerf && /*#__PURE__*/React.createElement("td", {
+      }, "\u2014") : compTag(l.pessoa_id)), envioLigado && /*#__PURE__*/React.createElement("td", {
+        style: tdS,
+        "data-envio-de": l.nome
+      }, envioTag(l)), temPerf && /*#__PURE__*/React.createElement("td", {
         style: tdS
       }, l.ultimo_lancamento ? dataBR(l.ultimo_lancamento) : conv ? '—' : 'nunca lançou', dd != null && dd > 7 && /*#__PURE__*/React.createElement("div", {
         "data-parado": true,
@@ -14304,7 +14661,69 @@ function TimeApp({
       "data-editar-contrato": true,
       style: btnS,
       onClick: () => setContratoAberto(true)
-    }, contratoRaiz ? 'Mudar contrato' : 'Definir contrato')), /*#__PURE__*/React.createElement(Card, {
+    }, contratoRaiz ? 'Mudar contrato' : 'Definir contrato')), raiz && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 20
+      },
+      "data-envio-mensal": true
+    }, /*#__PURE__*/React.createElement("h3", {
+      style: tituloS
+    }, "Envio mensal pro time"), /*#__PURE__*/React.createElement(EnvioConfig, {
+      key: String(regraEf(raiz.id, 'envio_ligado')) + String(regraEf(raiz.id, 'envio_email')),
+      podeEditar: !!podeRegras,
+      atual: {
+        ligado: regraEf(raiz.id, 'envio_ligado'),
+        email: regraEf(raiz.id, 'envio_email'),
+        prazo: regraEf(raiz.id, 'envio_prazo_dia'),
+        instrucoes: regraEf(raiz.id, 'envio_instrucoes')
+      },
+      onSalvar: async f => {
+        setAviso(null);
+        const r0 = raiz.id;
+        const cham = [['definir_regra', {
+          p_unidade: r0,
+          p_chave: 'envio_ligado',
+          p_valor: !!f.ligado,
+          p_desde: null
+        }], ...(f.ligado ? [['definir_regra', {
+          p_unidade: r0,
+          p_chave: 'envio_email',
+          p_valor: f.email,
+          p_desde: null
+        }], ['definir_regra', {
+          p_unidade: r0,
+          p_chave: 'envio_prazo_dia',
+          p_valor: f.prazo,
+          p_desde: null
+        }], f.instrucoes ? ['definir_regra', {
+          p_unidade: r0,
+          p_chave: 'envio_instrucoes',
+          p_valor: f.instrucoes,
+          p_desde: null
+        }] : ['limpar_regra', {
+          p_unidade: r0,
+          p_chave: 'envio_instrucoes'
+        }]] : [])];
+        for (const [fn, args] of cham) {
+          const {
+            error
+          } = await sb.rpc(fn, args);
+          if (error) {
+            setAviso({
+              erro: true,
+              texto: error.message || 'Não deu certo.'
+            });
+            await carregar();
+            return;
+          }
+        }
+        setAviso({
+          erro: false,
+          texto: f.ligado ? 'Envio mensal ligado: quem jogou na GG recebe o lembrete a partir do dia 1.' : 'Envio mensal desligado.'
+        });
+        await carregar();
+      }
+    })), /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 20
       }
@@ -14419,7 +14838,7 @@ function TimeApp({
           v = r ? r.valor : rr.padrao(config || {});
         const origem = r ? proprio ? ehRaiz ? 'do time' : 'desta unidade' : `herdado de ${U[r.unidade_id]?.nome}` : 'padrão do time';
         // no "Time inteiro", ABI, stop, sites e modalidades são o padrão do time (a configuração): editados aqui mesmo (A-029)
-        const doPadrao = ehRaiz && !['reserva_por_sala', 'bloquear_promocao_com_mk'].includes(rr.k) && !proprio;
+        const doPadrao = ehRaiz && !['reserva_por_sala', 'bloquear_promocao_com_mk', 'envio_divisao'].includes(rr.k) && !proprio;
         const editavel = podeSel && (!doPadrao || !!onPadrao);
         return /*#__PURE__*/React.createElement("div", {
           key: rr.k,
@@ -15582,6 +16001,7 @@ function Dashboard({
   const [installCard, setInstallCard] = useState(false); // convite "instalar na tela inicial"
   const [iosHelp, setIosHelp] = useState(false); // modal com o passo a passo do iPhone
   const [alertDetail, setAlertDetail] = useState(null);
+  const [envioAberto, setEnvioAberto] = useState(false); // janela do envio mensal (comprovação da GG)
   const [editing, setEditing] = useState(null); // {type, item}
   const [quickEdit, setQuickEdit] = useState(null);
   const [month, setMonth] = useState(todayISO().slice(0, 7));
@@ -15922,7 +16342,7 @@ function Dashboard({
   // modo time: jogadores visíveis (com vínculo ativo), a própria pessoa e se pode configurar o time
   const carregarGenteTime = async () => {
     try {
-      const [pe, vi, ac, un, sq, gr, rg, apo, rel] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'), sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'), lerTudo(() => sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')), lerTudo(() => sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id'))]);
+      const [pe, vi, ac, un, sq, gr, rg, apo, rel, env] = await Promise.all([sb.from('pessoa').select('id,nome,user_id,status'), sb.from('vinculo').select('pessoa_id,unidade_id,fim'), sb.from('acesso').select('pessoa_id,unidade_id,capacidades'), sb.from('unidade').select('id,mae_id,caminho,nome,rotulo,ordem'), lerTudo(() => sb.from('saque').select('id,pessoa_id,devolucao,cashout,parte_jogador,total_time,pago_em,status,solicitado_em').order('id')), sb.from('grade').select('id,unidade_id,vigente_desde,simulada,celulas'), sb.from('regra_unidade').select('unidade_id,chave,valor,vigente_desde'), lerTudo(() => sb.from('aporte').select('id,pessoa_id,valor,data,sala,criado_em').order('id')), lerTudo(() => sb.from('reload').select('id,pessoa_id,valor,sala,status,enviado_valor,enviado_em,aporte_id').order('id')), sb.from('envio_mensal').select('pessoa_id,mes,enviado_em')]);
       // grade da reta: torneio novo ainda não tem unidade gravada -> usa a reta atual do jogador
       const unidadeDe = {};
       (pe.data || []).forEach(x => {
@@ -15974,7 +16394,8 @@ function Dashboard({
           saques: sq.error ? [] : sq.data || [],
           aportes: apo.error ? [] : apo.data || [],
           reloads: rel.error ? [] : rel.data || []
-        }
+        },
+        envios: env && !env.error ? env.data || [] : []
       });
     } catch (e) {
       console.error(e);
@@ -17290,8 +17711,32 @@ function Dashboard({
     });
   }
 
+  // envio mensal pro time (comprovação da GG): o do mês passado, enquanto o jogador não confirmar. Só pra quem jogou
+  // na GG naquele mês (quem não joga na GG não manda nada)
+  const envioJogador = (() => {
+    if (!modoTime || somenteLeitura || gestaoAtiva || !timeGente.eu || !timeGente.joga) return null;
+    const eu = timeGente.eu.nome;
+    if (regraDoJogador('envio_ligado', eu) !== true) return null;
+    const mes = mesCobrado();
+    if (!jogouGGno(tours, eu, mes) || (timeGente.envios || []).some(e => String(e.mes).slice(0, 10) === mes)) return null;
+    const prazo = prazoDoEnvio(num(regraDoJogador('envio_prazo_dia', eu))),
+      div = regraDoJogador('envio_divisao', eu) || (ws ? ws.marca_nome || ws.name : '');
+    return {
+      mes,
+      prazo,
+      atrasado: !!prazo && todayISO() > prazo,
+      email: regraDoJogador('envio_email', eu) || '',
+      instrucoes: regraDoJogador('envio_instrucoes', eu) || '',
+      titulo: tituloDoEnvio(eu, div)
+    };
+  })();
   /* alertas */
   const alerts = [];
+  if (envioJogador) alerts.push({
+    key: 'envio:' + envioJogador.mes,
+    tone: envioJogador.atrasado ? C.red : C.gold,
+    text: `Envio de ${nomeMes(envioJogador.mes)}: mande o e-mail com os torneios da GG pro time${envioJogador.prazo ? envioJogador.atrasado ? ` (o prazo era ${dataBR(envioJogador.prazo)})` : ` até ${dataBR(envioJogador.prazo)}` : ''}. O passo a passo está no Início.`
+  });
   if (!solo) players.forEach(p => {
     if (curMakeUp[p] > num(config.makeup_max_recomendado)) alerts.push({
       key: 'makeup:' + p,
@@ -17339,6 +17784,13 @@ function Dashboard({
     if (!solo) return [];
     const f = [],
       quem = somenteLeitura ? alunoAberto : null;
+    if (envioJogador) f.push({
+      k: 'envio',
+      tom: envioJogador.atrasado ? 'bad' : 'warn',
+      titulo: `Envio de ${nomeMes(envioJogador.mes)}: mande os torneios da GG pro time`,
+      texto: envioJogador.prazo ? envioJogador.atrasado ? `o prazo era ${dataBR(envioJogador.prazo)}` : `até ${dataBR(envioJogador.prazo)}` : 'pelo e-mail do time',
+      acao: ['Como fazer', () => setEnvioAberto(true)]
+    });
     const sq = modoTime && sitSel ? sitSel.saque_aberto : null,
       rl = modoTime && sitSel ? sitSel.reload_aberto : null,
       ab = modoTime && sitSel ? sitSel.abertura : null;
@@ -23175,7 +23627,28 @@ function Dashboard({
         color: '#6B6455'
       }
     }, solo ? 'GrinderBank' : 'PoolGG', " \xB7 gerado pelo app \xB7 valores financeiros v\xEAm dos lan\xE7amentos; estat\xEDsticas de jogo v\xEAm dos hand histories importados.")));
-  })(), modal && (() => {
+  })(), envioAberto && envioJogador && /*#__PURE__*/React.createElement(EnvioModal, {
+    mes: envioJogador.mes,
+    email: envioJogador.email,
+    titulo: envioJogador.titulo,
+    instrucoes: envioJogador.instrucoes,
+    prazo: envioJogador.prazo,
+    onClose: () => setEnvioAberto(false),
+    onEnviei: async () => {
+      const {
+        error
+      } = await sb.rpc('marcar_envio_mensal', {
+        p_mes: envioJogador.mes,
+        p_enviado: true
+      });
+      if (error) {
+        alert(error.message || 'Não deu certo.');
+        return;
+      }
+      setEnvioAberto(false);
+      await carregarGenteTime();
+    }
+  }), modal && (() => {
     const type = typeof modal === 'string' ? modal : modal.type;
     const initial = typeof modal === 'object' ? modal.initial : null;
     if (type === 'transfer') return /*#__PURE__*/React.createElement(AddModal, {
